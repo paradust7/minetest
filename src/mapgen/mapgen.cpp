@@ -465,6 +465,66 @@ void Mapgen::lightSpread(VoxelArea &a, std::queue<std::pair<v3s16, u8>> &queue,
 	queue.emplace(p, light);
 }
 
+static bool use_cutoff;
+static u64 total_time_v1 = 0;
+static u64 total_time_v2 = 0;
+
+static std::vector<u8> saveLightData(v3s16 nmin, v3s16 nmax, MMVManip *vm)
+{
+	std::vector<u8> lightdata;
+	VoxelArea a(nmin, nmax);
+	for (int z = a.MinEdge.Z; z <= a.MaxEdge.Z; z++) {
+	for (int y = a.MinEdge.Y; y <= a.MaxEdge.Y; y++) {
+	for (int x = a.MinEdge.X; x <= a.MaxEdge.X; x++) {
+		u32 i = vm->m_area.index(x, y, z);
+		lightdata.push_back(vm->m_data[i].param1);
+	}
+	}
+	}
+	return lightdata;
+}
+
+static void restoreLightData(v3s16 nmin, v3s16 nmax, MMVManip *vm, const std::vector<u8> &lightdata)
+{
+	VoxelArea a(nmin, nmax);
+	if (lightdata.size() != (size_t)a.getVolume()) {
+		std::cout << "Bad lightdata" << std::endl;
+		abort();
+	}
+	size_t index = 0;
+	for (int z = a.MinEdge.Z; z <= a.MaxEdge.Z; z++) {
+	for (int y = a.MinEdge.Y; y <= a.MaxEdge.Y; y++) {
+	for (int x = a.MinEdge.X; x <= a.MaxEdge.X; x++) {
+		u32 i = vm->m_area.index(x, y, z);
+		vm->m_data[i].param1 = lightdata[index++];
+	}
+	}
+	}
+}
+
+static void compareLightData(const std::vector<u8> &a, const std::vector<u8> &b) {
+	if (a.size() != b.size() || !std::equal(a.begin(), a.end(), b.begin())) {
+		std::cout << "Lightdata not equal!" << std::endl;
+		abort();
+	}
+}
+
+#define SAVE_LIGHTDATA(varname)    auto varname = saveLightData(full_nmin, full_nmax, vm);
+#define RESTORE_LIGHTDATA(varname) restoreLightData(full_nmin, full_nmax, vm, varname);
+
+struct QuickTimer {
+	QuickTimer(u64 &acc) : acc(acc)
+	{
+		start = porting::getTimeNs();
+	}
+
+	~QuickTimer()
+	{
+		acc += porting::getTimeNs() - start;
+	}
+	u64 &acc;
+	u64 start;
+};
 
 void Mapgen::calcLighting(v3s16 nmin, v3s16 nmax, v3s16 full_nmin, v3s16 full_nmax,
 	bool propagate_shadow)
@@ -472,12 +532,33 @@ void Mapgen::calcLighting(v3s16 nmin, v3s16 nmax, v3s16 full_nmin, v3s16 full_nm
 	ScopeProfiler sp(g_profiler, "EmergeThread: update lighting", SPT_AVG);
 	//TimeTaker t("updateLighting");
 
-	propagateSunlight(nmin, nmax, propagate_shadow);
-	spreadLight(full_nmin, full_nmax);
+	SAVE_LIGHTDATA(orig);
+	{
+		use_cutoff = false;
+		QuickTimer qt(total_time_v1);
+		propagateSunlight(nmin, nmax, propagate_shadow);
+		spreadLight(full_nmin, full_nmax);
+	}
+	SAVE_LIGHTDATA(data1);
+
+	RESTORE_LIGHTDATA(orig);
+	{
+		use_cutoff = true;
+		QuickTimer qt(total_time_v2);
+		propagateSunlight(nmin, nmax, propagate_shadow);
+		spreadLight(full_nmin, full_nmax);
+	}
+	SAVE_LIGHTDATA(data2);
+
+	compareLightData(data1, data2);
+
+	std::cout << "calcLighting times: "
+		<< (total_time_v1 / 1000000.0) << " ms vs."
+		<< (total_time_v2 / 1000000.0) << " ms (ratio "
+		<< ((double)total_time_v1 / total_time_v2) << ")" << std::endl;
 
 	//printf("updateLighting: %dms\n", t.stop());
 }
-
 
 void Mapgen::propagateSunlight(v3s16 nmin, v3s16 nmax, bool propagate_shadow)
 {
@@ -531,6 +612,8 @@ void Mapgen::propagateSunlight(v3s16 nmin, v3s16 nmax, bool propagate_shadow)
 int Mapgen::findPropagationCutoff(const v3s16 &nmin, const v3s16 &nmax)
 {
 	VoxelArea a(nmin, nmax);
+	if (!use_cutoff)
+		return a.MaxEdge.Y;
 	for (int y = a.MaxEdge.Y; y >= a.MinEdge.Y; y--) {
 		for (int z = a.MinEdge.Z; z <= a.MaxEdge.Z; z++) {
 			u32 i = vm->m_area.index(a.MinEdge.X, y, z);
