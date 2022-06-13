@@ -712,7 +712,16 @@ void *EmergeThread::run()
 				m_mapgen->makeChunk(&bmdata);
 			}
 
+			static double total_time = 0;
+			static u64 total_count = 0;
+			u64 st = porting::getTimeNs();
 			block = finishGen(pos, &bmdata, &modified_blocks);
+			u64 et = porting::getTimeNs();
+			total_time += (et - st) / 1000000.f;
+			total_count += 1;
+			std::cout << "------------------------------------------------------------" << std::endl;
+			std::cout << "finishGen avg time: " << (total_time / total_count) <<  " ms" << std::endl;
+			std::cout << "------------------------------------------------------------" << std::endl;
 			if (!block)
 				action = EMERGE_ERRORED;
 		}
