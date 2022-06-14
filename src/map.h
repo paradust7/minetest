@@ -27,6 +27,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "irrlichttypes_bloated.h"
 #include "mapnode.h"
+#include "mapblock.h"
+#include "mapsector.h"
 #include "constants.h"
 #include "voxel.h"
 #include "modifiedstate.h"
@@ -39,9 +41,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 class Settings;
 class MapDatabase;
 class ClientMap;
-class MapSector;
 class ServerMapSector;
-class MapBlock;
 class NodeMetadata;
 class IGameDef;
 class IRollbackManager;
@@ -137,9 +137,32 @@ public:
 	void dispatchEvent(const MapEditEvent &event);
 
 	// On failure returns NULL
-	MapSector * getSectorNoGenerateNoLock(v2s16 p2d);
+	MapSector * getSectorNoGenerateNoLock(v2s16 p)
+	{
+		if(m_sector_cache != NULL && p == m_sector_cache_p){
+			MapSector * sector = m_sector_cache;
+			return sector;
+		}
+
+		auto n = m_sectors.find(p);
+
+		if (n == m_sectors.end())
+			return NULL;
+
+		MapSector *sector = n->second;
+
+		// Cache the last result
+		m_sector_cache_p = p;
+		m_sector_cache = sector;
+
+		return sector;
+	}
+
 	// Same as the above (there exists no lock anymore)
-	MapSector * getSectorNoGenerate(v2s16 p2d);
+	MapSector * getSectorNoGenerate(v2s16 p)
+	{
+		return getSectorNoGenerateNoLock(p);
+	}
 
 	/*
 		This is overloaded by ClientMap and ServerMap to allow
@@ -148,9 +171,24 @@ public:
 	virtual MapSector * emergeSector(v2s16 p){ return NULL; }
 
 	// Returns InvalidPositionException if not found
-	MapBlock * getBlockNoCreate(v3s16 p);
+	MapBlock * getBlockNoCreate(v3s16 p3d)
+	{
+		MapBlock *block = getBlockNoCreateNoEx(p3d);
+		if(block == NULL)
+			throw InvalidPositionException();
+		return block;
+	}
+
 	// Returns NULL if not found
-	MapBlock * getBlockNoCreateNoEx(v3s16 p);
+	MapBlock * getBlockNoCreateNoEx(v3s16 p3d)
+	{
+		v2s16 p2d(p3d.X, p3d.Z);
+		MapSector * sector = getSectorNoGenerate(p2d);
+		if(sector == NULL)
+			return NULL;
+		MapBlock *block = sector->getBlockNoCreateNoEx(p3d.Y);
+		return block;
+	}
 
 	/* Server overrides */
 	virtual MapBlock * emergeBlock(v3s16 p, bool create_blank=true)
@@ -158,7 +196,12 @@ public:
 
 	inline const NodeDefManager * getNodeDefManager() { return m_nodedef; }
 
-	bool isValidPosition(v3s16 p);
+	bool isValidPosition(v3s16 p)
+	{
+		v3s16 blockpos = getNodeBlockPos(p);
+		MapBlock *block = getBlockNoCreateNoEx(blockpos);
+		return (block != NULL);
+	}
 
 	// throws InvalidPositionException if not found
 	void setNode(v3s16 p, MapNode & n);
@@ -166,7 +209,23 @@ public:
 	// Returns a CONTENT_IGNORE node if not found
 	// If is_valid_position is not NULL then this will be set to true if the
 	// position is valid, otherwise false
-	MapNode getNode(v3s16 p, bool *is_valid_position = NULL);
+	MapNode getNode(v3s16 p, bool *is_valid_position = NULL)
+	{
+		v3s16 blockpos = getNodeBlockPos(p);
+		MapBlock *block = getBlockNoCreateNoEx(blockpos);
+		if (block == NULL) {
+			if (is_valid_position != NULL)
+				*is_valid_position = false;
+			return {CONTENT_IGNORE};
+		}
+
+		v3s16 relpos = p - blockpos*MAP_BLOCKSIZE;
+		bool is_valid_p;
+		MapNode node = block->getNodeNoCheck(relpos, &is_valid_p);
+		if (is_valid_position != NULL)
+			*is_valid_position = is_valid_p;
+		return node;
+	}
 
 	/*
 		These handle lighting but not faces.

@@ -50,7 +50,11 @@ public:
 		return m_pos;
 	}
 
-	MapBlock * getBlockNoCreateNoEx(s16 y);
+	MapBlock * getBlockNoCreateNoEx(s16 y)
+	{
+		return getBlockBuffered(y);
+	}
+
 	MapBlock * createBlankBlockNoInsert(s16 y);
 	MapBlock * createBlankBlock(s16 y);
 
@@ -82,6 +86,22 @@ protected:
 	/*
 		Private methods
 	*/
-	MapBlock *getBlockBuffered(s16 y);
+	MapBlock *getBlockBuffered(s16 y)
+	{
+		MapBlock *block;
 
+		if (m_block_cache && y == m_block_cache_y) {
+			return m_block_cache;
+		}
+
+		// If block doesn't exist, return NULL
+		std::unordered_map<s16, MapBlock*>::const_iterator n = m_blocks.find(y);
+		block = (n != m_blocks.end() ? n->second : nullptr);
+
+		// Cache the last result
+		m_block_cache_y = y;
+		m_block_cache = block;
+
+		return block;
+	}
 };

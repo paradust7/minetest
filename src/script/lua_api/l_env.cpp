@@ -851,6 +851,8 @@ int ModApiEnvMod::l_find_node_near(lua_State *L)
 	GET_PLAIN_ENV_PTR;
 
 	const NodeDefManager *ndef = env->getGameDef()->ndef();
+
+	// getMap is virtual method, so this needs to be cached for performance
 	Map &map = env->getMap();
 
 	v3s16 pos = read_v3s16(L, 1);
@@ -933,9 +935,9 @@ int ModApiEnvMod::l_find_nodes_in_area(lua_State *L)
 			lua_newtable(L);
 
 		v3s16 p;
-		for (p.X = minp.X; p.X <= maxp.X; p.X++)
+		for (p.Z = minp.Z; p.Z <= maxp.Z; p.Z++)
 		for (p.Y = minp.Y; p.Y <= maxp.Y; p.Y++)
-		for (p.Z = minp.Z; p.Z <= maxp.Z; p.Z++) {
+		for (p.X = minp.X; p.X <= maxp.X; p.X++) {
 			content_t c = map.getNode(p).getContent();
 
 			auto it = std::find(filter.begin(), filter.end(), c);
@@ -968,10 +970,10 @@ int ModApiEnvMod::l_find_nodes_in_area(lua_State *L)
 		lua_newtable(L);
 		u32 i = 0;
 		v3s16 p;
-		for (p.X = minp.X; p.X <= maxp.X; p.X++)
+		for (p.Z = minp.Z; p.Z <= maxp.Z; p.Z++)
 		for (p.Y = minp.Y; p.Y <= maxp.Y; p.Y++)
-		for (p.Z = minp.Z; p.Z <= maxp.Z; p.Z++) {
-			content_t c = env->getMap().getNode(p).getContent();
+		for (p.X = minp.X; p.X <= maxp.X; p.X++) {
+			content_t c = map.getNode(p).getContent();
 
 			auto it = std::find(filter.begin(), filter.end(), c);
 			if (it != filter.end()) {

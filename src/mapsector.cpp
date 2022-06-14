@@ -48,30 +48,6 @@ void MapSector::deleteBlocks()
 	m_blocks.clear();
 }
 
-MapBlock * MapSector::getBlockBuffered(s16 y)
-{
-	MapBlock *block;
-
-	if (m_block_cache && y == m_block_cache_y) {
-		return m_block_cache;
-	}
-
-	// If block doesn't exist, return NULL
-	std::unordered_map<s16, MapBlock*>::const_iterator n = m_blocks.find(y);
-	block = (n != m_blocks.end() ? n->second : nullptr);
-
-	// Cache the last result
-	m_block_cache_y = y;
-	m_block_cache = block;
-
-	return block;
-}
-
-MapBlock * MapSector::getBlockNoCreateNoEx(s16 y)
-{
-	return getBlockBuffered(y);
-}
-
 MapBlock * MapSector::createBlankBlockNoInsert(s16 y)
 {
 	assert(getBlockBuffered(y) == NULL);	// Pre-condition
