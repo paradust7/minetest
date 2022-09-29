@@ -25,6 +25,40 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "util/string.h"
 #include "log.h"
 
+#if USE_GETTEXT && defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+
+EM_ASYNC_JS(char*, get_sys_lang, (), {
+	let lang;
+	const invoke = window.__TAURI__ && window.__TAURI__.invoke;
+	const nav = window.navigator;
+	if (typeof invoke === "function") {
+		// tauri supported
+		lang = await invoke("lang");
+	} else if (nav.languages && nav.languages.length) {
+		// latest versions of Chrome and Firefox set this correctly
+		lang = nav.languages[0];
+	} else if (nav.userLanguage) {
+		lang = nav.userLanguage;
+	} else {
+		lang = nav.language;
+	}
+	if (!lang) {
+		lang = "en";
+	} else if (lang === "zh") {
+		lang = "zh_CN";
+	} else {
+		lang = lang.replace("-", "_");
+	};
+	lang = lang + ".UTF-8";
+	const lengthBytes = lengthBytesUTF8(lang)+1;
+	const result = _malloc(lengthBytes);
+	stringToUTF8(lang, result, lengthBytes);
+	return result;
+});
+
+#endif
+
 #if USE_GETTEXT && defined(_MSC_VER)
 #include <windows.h>
 #include <map>
@@ -203,6 +237,11 @@ void init_gettext(const char *path, const std::string &configured_language,
 #endif // ifndef _WIN32
 	}
 	else {
+#ifdef __EMSCRIPTEN__
+		char* lang = get_sys_lang();
+		setenv("LANG", lang, 1);
+		free(lang);
+#endif
 		 /* set current system default locale */
 		setlocale(LC_ALL, "");
 	}
@@ -246,7 +285,7 @@ void init_gettext(const char *path, const std::string &configured_language,
 	/* no matter what locale is used we need number format to be "C" */
 	/* to ensure formspec parameters are evaluated correct!          */
 
-	setlocale(LC_NUMERIC, "C");
+	setlocale(LC_NUMERIC, "C.UTF-8");
 	infostream << "Message locale is now set to: "
 			<< setlocale(LC_ALL, 0) << std::endl;
 }
