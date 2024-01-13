@@ -86,6 +86,7 @@ static std::optional<video::E_DRIVER_TYPE> chooseVideoDriver()
 
 static irr::IrrlichtDevice *createDevice(SIrrlichtCreationParameters params, std::optional<video::E_DRIVER_TYPE> requested_driver)
 {
+	params.DeviceType = EIDT_XR;
 	if (requested_driver) {
 		params.DriverType = *requested_driver;
 		if (auto *device = createDeviceEx(params))

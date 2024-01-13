@@ -977,6 +977,7 @@ int ModApiMainMenu::l_get_active_irrlicht_device(lua_State *L)
 		case EIDT_X11: return "X11";
 		case EIDT_OSX: return "OSX";
 		case EIDT_SDL: return "SDL";
+		case EIDT_XR: return "XR";
 		case EIDT_ANDROID: return "ANDROID";
 		default: return "Unknown";
 		}
