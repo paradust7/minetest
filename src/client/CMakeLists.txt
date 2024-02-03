@@ -35,6 +35,7 @@ set(client_SRCS
 	${CMAKE_CURRENT_SOURCE_DIR}/render/stereo.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/render/secondstage.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/render/pipeline.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/render/xr.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/activeobjectmgr.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/camera.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/client.cpp

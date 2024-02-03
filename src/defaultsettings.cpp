@@ -70,6 +70,7 @@ void set_default_settings()
 	settings->setDefault("occlusion_culler", "bfs");
 	settings->setDefault("enable_raytraced_culling", "true");
 	settings->setDefault("chat_weblink_color", "#8888FF");
+	settings->setDefault("xr_pitchlock", "true");
 
 	// Keymap
 	settings->setDefault("remote_port", "30000");
@@ -87,6 +88,8 @@ void set_default_settings()
 	settings->setDefault("keymap_inventory", "KEY_KEY_I");
 	settings->setDefault("keymap_aux1", "KEY_KEY_E");
 	settings->setDefault("keymap_chat", "KEY_KEY_T");
+	settings->setDefault("keymap_xr_recenter", "KEY_KEY_P");
+	settings->setDefault("keymap_xr_lockpitch", "KEY_KEY_L");
 	settings->setDefault("keymap_cmd", "/");
 	settings->setDefault("keymap_cmd_local", ".");
 	settings->setDefault("keymap_minimap", "KEY_KEY_V");

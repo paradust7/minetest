@@ -153,6 +153,7 @@ private:
 	v2u32 _getWindowSize() const;
 
 	std::unique_ptr<RenderingCore> core;
+	std::unique_ptr<RenderingCore> xr_core;
 	irr::IrrlichtDevice *m_device = nullptr;
 	irr::video::IVideoDriver *driver;
 	static RenderingEngine *s_singleton;

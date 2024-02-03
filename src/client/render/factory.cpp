@@ -25,6 +25,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "interlaced.h"
 #include "sidebyside.h"
 #include "secondstage.h"
+#include "xr.h"
 #include "client/shadows/dynamicshadowsrender.h"
 
 struct CreatePipelineResult
@@ -76,6 +77,10 @@ void createPipeline(const std::string &stereo_mode, IrrlichtDevice *device, Clie
 	}
 	if (stereo_mode == "crossview") {
 		populateSideBySidePipeline(result.pipeline, client, false, true, result.virtual_size_scale);
+		return;
+	}
+	if (stereo_mode == "xr") {
+		populateXrPipeline(result.pipeline, client);
 		return;
 	}
 

@@ -844,6 +844,8 @@ protected:
 	void decreaseViewRange();
 	void toggleFullViewRange();
 	void checkZoomEnabled();
+	void xrRecenter();
+	void xrToggleLockPitch();
 
 	void updateCameraDirection(CameraOrientation *cam, float dtime);
 	void updateCameraOrientation(CameraOrientation *cam, float dtime);
@@ -2181,6 +2183,10 @@ void Game::processKeyInput()
 		quicktune->inc();
 	} else if (wasKeyDown(KeyType::QUICKTUNE_DEC)) {
 		quicktune->dec();
+	} else if (wasKeyDown(KeyType::XR_RECENTER)) {
+		xrRecenter();
+	} else if (wasKeyDown(KeyType::XR_LOCKPITCH)) {
+		xrToggleLockPitch();
 	}
 
 	if (!isKeyDown(KeyType::JUMP) && runData.reset_jump_timer) {
@@ -2564,6 +2570,24 @@ void Game::toggleUpdateCamera()
 		m_game_ui->showTranslatedStatusText("Camera update disabled");
 	else
 		m_game_ui->showTranslatedStatusText("Camera update enabled");
+}
+
+void Game::xrRecenter()
+{
+	device->recenterXR();
+	m_game_ui->showTranslatedStatusText("Recentering XR Headset");
+}
+
+void Game::xrToggleLockPitch()
+{
+        bool xr_pitchlock = !g_settings->getBool("xr_pitchlock");
+        g_settings->set("xr_pitchlock", bool_to_cstr(xr_pitchlock));
+
+	if (xr_pitchlock) {
+		m_game_ui->showTranslatedStatusText("Enabled XR pitchlock");
+	} else {
+		m_game_ui->showTranslatedStatusText("Disabled XR pitchlock");
+	}
 }
 
 
