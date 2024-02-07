@@ -26,6 +26,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include <memory>
 
+extern uint64_t XrFrameCounter;
+
 using std::unique_ptr;
 
 class XrPipeline : public RenderStep
@@ -96,6 +98,19 @@ void XrPipeline::run(PipelineContext &context)
 		cameraNode->setFarValue(info.ZFar);
 		cameraNode->setFOV(info.AngleUp, info.AngleDown, info.AngleRight, info.AngleLeft);
 		m_draw3d->run(context);
+/*
+TODO(paradust): Add as a debug feature
+		gui::IGUIFont *font = device->getGUIEnvironment()->getBuiltInFont();
+		if (!font) {
+			std::cout << "font is NULL" << std::endl;
+		} else {
+			wchar_t buf[256];
+			swprintf(buf, 256, L"F%u", (unsigned int)XrFrameCounter);
+			font->draw(buf,
+				core::rect<s32>(info.Width/2, info.Height/2, info.Width/2 + 100, info.Height/2 + 100),
+				video::SColor(255, 255, 255, 255));
+		}
+*/
 	}
 	// Reset to screen
 	driver->setRenderTarget(nullptr, video::ECBF_NONE);
