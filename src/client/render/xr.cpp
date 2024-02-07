@@ -63,18 +63,7 @@ void XrPipeline::run(PipelineContext &context)
 	oldNear = cameraNode->getNearValue();
 	oldFar = cameraNode->getFarValue();
 
-	// Ignore the pitch given by mouse movement.
-	if (g_settings->getBool("xr_pitchlock")) {
-		core::vector3df levelForward = oldCameraRot.rotationToDirection();
-		levelForward.Y = 0;
-		levelForward.normalize();
-		core::vector3df levelRotation = levelForward.getHorizontalAngle();
-		cameraNode->setRotation(levelRotation);
-		cameraNode->setUpVector(levelRotation.rotationToDirection(core::vector3df(0, 1, 0)));
-	}
-
 	core::matrix4 baseTransform = cameraNode->getRelativeTransformation();
-	core::matrix4 move;
 	core::quaternion baseRotation(cameraNode->getRotation() * core::DEGTORAD);
 
 	core::XrViewInfo info;
@@ -82,21 +71,24 @@ void XrPipeline::run(PipelineContext &context)
 		driver->setRenderTargetEx(info.Target, video::ECBF_ALL, context.clear_color);
 		driver->OnResize(core::dimension2du(info.Width, info.Height));
 
+		core::vector3df adjPos = info.Position * BS;
+		baseTransform.transformVect(adjPos);
+
+		core::quaternion adjRot = info.Orientation * baseRotation;
+
 		// Scale device coordinates by BS
-		core::vector3df scaledPosition = info.Position * BS;
-		move.setTranslation(scaledPosition);
-		auto finalPos = (move * baseTransform).getTranslation();
-		cameraNode->setPosition(finalPos);
+		cameraNode->setPosition(adjPos);
 		cameraNode->updateAbsolutePosition();
 
 		core::vector3df euler;
-		(info.Orientation * baseRotation).toEulerDeg(euler);
+		adjRot.toEulerDeg(euler);
 		cameraNode->setRotation(euler);
 		cameraNode->setUpVector(euler.rotationToDirection(core::vector3df(0, 1, 0)));
-
 		cameraNode->setNearValue(info.ZNear);
 		cameraNode->setFarValue(info.ZFar);
 		cameraNode->setFOV(info.AngleUp, info.AngleDown, info.AngleRight, info.AngleLeft);
+		cameraNode->updateMatrices();
+
 		m_draw3d->run(context);
 /*
 TODO(paradust): Add as a debug feature
