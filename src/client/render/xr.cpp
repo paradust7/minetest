@@ -30,51 +30,143 @@ extern uint64_t XrFrameCounter;
 
 using std::unique_ptr;
 
-class XrPipeline : public RenderStep
+struct ViewState : public RenderPipelineObject
+{
+	core::XrViewInfo info;
+};
+
+struct CameraState : public RenderPipelineObject
+{
+	core::vector3df cameraPos;
+	core::vector3df cameraRot;
+	f32 fovUp, fovDown, fovRight, fovLeft;
+	f32 znear, zfar;
+	// These are computed values
+	core::matrix4 baseTransform;
+	core::quaternion baseRotation;
+};
+
+class XrTarget : public RenderTarget
 {
 public:
-	XrPipeline(unique_ptr<RenderStep>&& draw3d) : m_draw3d(std::move(draw3d)) {}
+	XrTarget() = delete;
+	XrTarget(ViewState* viewState) : view(viewState) {}
+	virtual void activate(PipelineContext &context) override
+	{
+		auto driver = context.device->getVideoDriver();
+		driver->setRenderTargetEx(view->info.Target, video::ECBF_ALL, context.clear_color);
+		driver->OnResize(core::dimension2du(view->info.Width, view->info.Height));
+	}
+private:
+	ViewState* view;
+};
+
+class SaveCameraState : public RenderStep
+{
+public:
+	SaveCameraState() = delete;
+	SaveCameraState(CameraState* camState) : state(camState) {}
+
+	virtual void setRenderSource(RenderSource *source) override {}
+	virtual void setRenderTarget(RenderTarget *target) override {}
+
+	virtual void reset(PipelineContext &) override {}
+
+	virtual void run(PipelineContext &context) override
+	{
+		scene::ICameraSceneNode* cameraNode = context.client->getCamera()->getCameraNode();
+		state->cameraPos = cameraNode->getPosition();
+		state->cameraRot = cameraNode->getRotation();
+		cameraNode->getFOV(&state->fovUp, &state->fovDown, &state->fovRight, &state->fovLeft);
+		state->znear = cameraNode->getNearValue();
+		state->zfar = cameraNode->getFarValue();
+		state->baseTransform = cameraNode->getRelativeTransformation();
+		state->baseRotation = core::quaternion(cameraNode->getRotation() * core::DEGTORAD);
+	};
+
+private:
+	CameraState* state;
+};
+
+class RestoreCameraState : public RenderStep
+{
+public:
+	RestoreCameraState() = delete;
+	RestoreCameraState(CameraState* camState) : state(camState) {}
+
+	virtual void setRenderSource(RenderSource *source) override {}
+	virtual void setRenderTarget(RenderTarget *target) override {}
+
+	virtual void reset(PipelineContext &) override {}
+
+	virtual void run(PipelineContext &context) override {
+		scene::ICameraSceneNode* cameraNode = context.client->getCamera()->getCameraNode();
+		cameraNode->setPosition(state->cameraPos);
+		cameraNode->setRotation(state->cameraRot);
+		cameraNode->setNearValue(state->znear);
+		cameraNode->setFarValue(state->zfar);
+		cameraNode->setFOV(state->fovUp, state->fovDown, state->fovRight, state->fovLeft);
+	}
+private:
+	CameraState* state;
+};
+
+class XrForEachView : public RenderStep {
+public:
+	XrForEachView(ViewState *viewState, RenderStep* renderView)
+		: view(viewState), render_view(renderView) {}
+
         virtual void setRenderSource(RenderSource *) override {}
         virtual void setRenderTarget(RenderTarget *target) override {}
 
         virtual void reset(PipelineContext &context) override {}
-        virtual void run(PipelineContext &context) override;
+        virtual void run(PipelineContext &context) override {
+		auto device = context.device;
+		if (!device->beginFrame())
+			return;
+
+		auto driver = device->getVideoDriver();
+		auto oldScreenSize = driver->getScreenSize();
+		auto oldViewPort = driver->getViewPort();
+		v2u32 old_target_size = context.target_size;
+		while (device->nextView(&view->info)) {
+			context.target_size = v2u32(view->info.Width, view->info.Height);
+			render_view->reset(context);
+			render_view->run(context);
+		}
+		context.target_size = old_target_size;
+
+		// Reset driver
+		driver->setRenderTarget(nullptr, video::ECBF_NONE);
+		driver->OnResize(oldScreenSize);
+		driver->setViewPort(oldViewPort);
+	}
 private:
-	unique_ptr<RenderStep> m_draw3d;
+	ViewState* view;
+	RenderStep* render_view;
 };
 
-void XrPipeline::run(PipelineContext &context)
+//! Setup the camera for rendering to an XR view target
+class XrSetupCamera : public RenderStep
 {
-	auto device = context.device;
-	auto driver = device->getVideoDriver();
+public:
+	XrSetupCamera(const CameraState* camState, const ViewState* viewState)
+		: cam(camState), view(viewState) {}
 
-	if (!device->beginFrame())
-		return;
+	virtual void setRenderSource(RenderSource *source) override {}
+	virtual void setRenderTarget(RenderTarget *target) override {}
 
-	auto oldScreenSize = driver->getScreenSize();
-	auto oldViewPort = driver->getViewPort();
+	virtual void reset(PipelineContext &) override {}
 
-	scene::ICameraSceneNode* cameraNode = context.client->getCamera()->getCameraNode();
-	core::vector3df oldCameraPos = cameraNode->getPosition();
-	core::vector3df oldCameraRot = cameraNode->getRotation();
-	f32 oldFovUp, oldFovDown, oldFovRight, oldFovLeft;
-	f32 oldNear, oldFar;
-	cameraNode->getFOV(&oldFovUp, &oldFovDown, &oldFovRight, &oldFovLeft);
-	oldNear = cameraNode->getNearValue();
-	oldFar = cameraNode->getFarValue();
-
-	core::matrix4 baseTransform = cameraNode->getRelativeTransformation();
-	core::quaternion baseRotation(cameraNode->getRotation() * core::DEGTORAD);
-
-	core::XrViewInfo info;
-	while (device->nextView(&info)) {
-		driver->setRenderTargetEx(info.Target, video::ECBF_ALL, context.clear_color);
-		driver->OnResize(core::dimension2du(info.Width, info.Height));
+	virtual void run(PipelineContext &context) override
+	{
+		scene::ICameraSceneNode* cameraNode = context.client->getCamera()->getCameraNode();
+		const auto& info = view->info;
 
 		core::vector3df adjPos = info.Position * BS;
-		baseTransform.transformVect(adjPos);
+		cam->baseTransform.transformVect(adjPos);
 
-		core::quaternion adjRot = info.Orientation * baseRotation;
+		core::quaternion adjRot = info.Orientation * cam->baseRotation;
 
 		// Scale device coordinates by BS
 		cameraNode->setPosition(adjPos);
@@ -88,8 +180,12 @@ void XrPipeline::run(PipelineContext &context)
 		cameraNode->setFarValue(info.ZFar);
 		cameraNode->setFOV(info.AngleUp, info.AngleDown, info.AngleRight, info.AngleLeft);
 		cameraNode->updateMatrices();
+	}
+private:
+	const CameraState* cam;
+	const ViewState* view;
+};
 
-		m_draw3d->run(context);
 /*
 TODO(paradust): Add as a debug feature
 		gui::IGUIFont *font = device->getGUIEnvironment()->getBuiltInFont();
@@ -103,22 +199,24 @@ TODO(paradust): Add as a debug feature
 				video::SColor(255, 255, 255, 255));
 		}
 */
-	}
-	// Reset to screen
-	driver->setRenderTarget(nullptr, video::ECBF_NONE);
-	driver->OnResize(oldScreenSize);
-	driver->setViewPort(oldViewPort);
-	// Reset camera
-	cameraNode->setPosition(oldCameraPos);
-	cameraNode->setRotation(oldCameraRot);
-	cameraNode->setNearValue(oldNear);
-	cameraNode->setFarValue(oldFar);
-	cameraNode->setFOV(oldFovUp, oldFovDown, oldFovRight, oldFovLeft);
-}
 
+static unique_ptr<RenderStep> createRenderViewPipeline(Client *client, CameraState *camState, ViewState *viewState)
+{
+	unique_ptr<RenderPipeline> inner(new RenderPipeline());
+	RenderStep* draw3d = inner->own(create3DStage(client, v2f(1.0f, 1.0f)));
+	RenderTarget* target = inner->createOwned<XrTarget>(viewState);
+	inner->addStep<XrSetupCamera>(camState, viewState);
+	inner->addStep(draw3d);
+	draw3d->setRenderTarget(target);
+	return inner;
+}
 
 void populateXrPipeline(RenderPipeline *pipeline, Client *client)
 {
-	unique_ptr<RenderStep> draw3d(new Draw3D());
-        pipeline->addStep<XrPipeline>(std::move(draw3d));
+	CameraState* camState = pipeline->createOwned<CameraState>();
+	ViewState* viewState = pipeline->createOwned<ViewState>();
+	RenderStep* renderView = pipeline->own(createRenderViewPipeline(client, camState, viewState));
+	pipeline->addStep<SaveCameraState>(camState);
+	pipeline->addStep<XrForEachView>(viewState, renderView);
+	pipeline->addStep<RestoreCameraState>(camState);
 }

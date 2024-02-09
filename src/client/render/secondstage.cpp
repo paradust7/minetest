@@ -107,7 +107,9 @@ RenderStep *addPostProcessing(RenderPipeline *pipeline, RenderStep *previousStep
 		color_format = video::ECF_A16B16G16R16F;
 
 	video::ECOLOR_FORMAT depth_format = video::ECF_D16; // fallback depth format
-	if (driver->queryTextureFormat(video::ECF_D32))
+	if (driver->queryTextureFormat(video::ECF_D32F))
+		depth_format = video::ECF_D32F;
+	else if (driver->queryTextureFormat(video::ECF_D32))
 		depth_format = video::ECF_D32;
 	else if (driver->queryTextureFormat(video::ECF_D24S8))
 		depth_format = video::ECF_D24S8;
