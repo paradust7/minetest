@@ -23,8 +23,13 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "pipeline.h"
 #include "plain.h"
 #include "XrViewInfo.h"
+#include "SColor.h"
+#include "CImage.h"
 
 #include <memory>
+
+// Move state to xr controller class
+extern bool isMenuActive();
 
 extern uint64_t XrFrameCounter;
 
@@ -113,8 +118,8 @@ private:
 
 class XrForEachView : public RenderStep {
 public:
-	XrForEachView(ViewState *viewState, RenderStep* renderView)
-		: view(viewState), render_view(renderView) {}
+	XrForEachView(ViewState *viewState, CameraState *camState, RenderStep* renderView, RenderStep* renderHud)
+		: view(viewState), cam(camState), render_view(renderView), render_hud(renderHud) {}
 
         virtual void setRenderSource(RenderSource *) override {}
         virtual void setRenderTarget(RenderTarget *target) override {}
@@ -122,17 +127,45 @@ public:
         virtual void reset(PipelineContext &context) override {}
         virtual void run(PipelineContext &context) override {
 		auto device = context.device;
-		if (!device->beginFrame())
+		auto driver = device->getVideoDriver();
+
+		core::XrFrameConfig config = {};
+
+		// DrawHUD is very sensitive to changes in the size of the "screen".
+		// If it gets rendered to targets of different sizes, the UI breaks.
+		// So always make the xr HUD target the same resolution as the screen.
+		config.HudSize = driver->getScreenSize();
+
+		// This reference is only valid for immediate use.
+		const auto& hud_mode = g_settings->get("xr_hud");
+		f32 aspect_ratio = (f32)config.HudSize.Width / config.HudSize.Height;
+		config.FloatingHud.Size = core::dimension2df(2.0f * aspect_ratio, 2.0f);
+		config.FloatingHud.Position = core::vector3df(0, 0, 1.25f);
+		config.FloatingHud.Orientation = core::quaternion();
+		if (hud_mode != "off" || isMenuActive()) {
+			config.FloatingHud.Enable = true;
+			config.FloatingHud.Position = core::vector3df(0, 0, 2.0f);
+			config.FloatingHud.Orientation = core::quaternion();
+		}
+
+		if (!device->beginFrame(config))
 			return;
 
-		auto driver = device->getVideoDriver();
 		auto oldScreenSize = driver->getScreenSize();
 		auto oldViewPort = driver->getViewPort();
 		v2u32 old_target_size = context.target_size;
 		while (device->nextView(&view->info)) {
 			context.target_size = v2u32(view->info.Width, view->info.Height);
-			render_view->reset(context);
-			render_view->run(context);
+			if (view->info.Kind == core::XRVK_HUD) {
+				video::SColor oldClearColor = context.clear_color;
+				context.clear_color = video::SColor(0, 0, 0, 0); // transparent
+				render_hud->reset(context);
+				render_hud->run(context);
+				context.clear_color = oldClearColor;
+			} else {
+				render_view->reset(context);
+				render_view->run(context);
+			}
 		}
 		context.target_size = old_target_size;
 
@@ -143,7 +176,9 @@ public:
 	}
 private:
 	ViewState* view;
+	CameraState* cam;
 	RenderStep* render_view;
+	RenderStep* render_hud;
 };
 
 //! Setup the camera for rendering to an XR view target
@@ -186,6 +221,85 @@ private:
 	const ViewState* view;
 };
 
+class DrawMouse : public RenderStep {
+public:
+	static constexpr const char* cursorArt[] = {
+		".                ",
+		"..               ",
+		"._.              ",
+		".__.             ",
+		".___.            ",
+		".____.           ",
+		"._____.          ",
+		".______.         ",
+		"._______.        ",
+		".________.       ",
+		"._________.      ",
+		".__________.     ",
+		".___.__......    ",
+		".__..__.         ",
+		"._.  .__.        ",
+		"..   .__.        ",
+		".     .__.       ",
+		"      .__.       ",
+		"       .__.      ",
+		"       .__.      ",
+		"        .__.     ",
+		"        .__.     ",
+		"         ....    ",
+	};
+	video::IImage* cursorImage = nullptr;
+	video::ITexture* cursorTexture = nullptr;
+
+	virtual void setRenderSource(RenderSource *) override {}
+	virtual void setRenderTarget(RenderTarget *target) override {}
+
+	virtual void reset(PipelineContext &context) override {}
+	virtual void run(PipelineContext &context) override {
+		auto device = context.device;
+		auto driver = device->getVideoDriver();
+		auto control = device->getCursorControl();
+		if (!cursorTexture) {
+			initTexture(context);
+		}
+
+		if (isMenuActive() && control) {
+			core::position2d<s32> mousePos = control->getPosition();
+			driver->draw2DImage(cursorTexture, mousePos, true);
+		}
+	}
+private:
+	void initTexture(PipelineContext &context) {
+		size_t cursorWidth = strlen(cursorArt[0]);
+		size_t cursorHeight = sizeof(cursorArt) / sizeof(cursorArt[0]);
+		// The image takes ownership of this
+		u32* imageData = new u32[cursorWidth * cursorHeight];
+		for (size_t y = 0; y < cursorHeight; ++y) {
+			for (size_t x = 0; x < cursorWidth; ++x) {
+				video::SColor color;
+				switch (cursorArt[y][x]) {
+				case '.':
+					color = video::SColor(255, 0, 0, 0); // black
+					break;
+				case '_':
+					color = video::SColor(255, 255, 255, 255); // white
+					break;
+				default:
+					color = video::SColor(0, 0, 0, 0); // transparent
+					break;
+				}
+				imageData[y * cursorWidth + x] = color.color;
+			}
+		}
+		cursorImage = new video::CImage(
+			video::ECF_A8R8G8B8,
+			core::dimension2d<u32>(cursorWidth, cursorHeight),
+			imageData);
+		auto driver = context.device->getVideoDriver();
+		cursorTexture = driver->addTexture("xr_mouse_cursor", cursorImage);
+	}
+};
+
 /*
 TODO(paradust): Add as a debug feature
 		gui::IGUIFont *font = device->getGUIEnvironment()->getBuiltInFont();
@@ -211,12 +325,27 @@ static unique_ptr<RenderStep> createRenderViewPipeline(Client *client, CameraSta
 	return inner;
 }
 
+static unique_ptr<RenderStep> createRenderHudPipeline(Client *client, CameraState *camState, ViewState *viewState)
+{
+	unique_ptr<RenderPipeline> inner(new RenderPipeline());
+	RenderTarget* target = inner->createOwned<XrTarget>(viewState);
+	inner->addStep<XrSetupCamera>(camState, viewState);
+	inner->addStep<DrawHUD>()->setRenderTarget(target);
+	inner->addStep<DrawMouse>();
+	return inner;
+}
+
 void populateXrPipeline(RenderPipeline *pipeline, Client *client)
 {
 	CameraState* camState = pipeline->createOwned<CameraState>();
 	ViewState* viewState = pipeline->createOwned<ViewState>();
+
+	// First render to screen normally
+	populatePlainPipeline(pipeline, client);
+
 	RenderStep* renderView = pipeline->own(createRenderViewPipeline(client, camState, viewState));
+	RenderStep* renderHud = pipeline->own(createRenderHudPipeline(client, camState, viewState));
 	pipeline->addStep<SaveCameraState>(camState);
-	pipeline->addStep<XrForEachView>(viewState, renderView);
+	pipeline->addStep<XrForEachView>(viewState, camState, renderView, renderHud);
 	pipeline->addStep<RestoreCameraState>(camState);
 }

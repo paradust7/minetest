@@ -164,7 +164,6 @@ RenderingEngine::RenderingEngine(IEventReceiver *receiver)
 RenderingEngine::~RenderingEngine()
 {
 	core.reset();
-	xr_core.reset();
 	m_device->closeDevice();
 	s_singleton = nullptr;
 }
@@ -312,23 +311,17 @@ void RenderingEngine::initialize(Client *client, Hud *hud)
 {
 	const std::string &draw_mode = g_settings->get("3d_mode");
 	core.reset(createRenderingCore(draw_mode, m_device, client, hud));
-	if (m_device->hasXR()) {
-		xr_core.reset(createRenderingCore("xr", m_device, client, hud));
-	}
 }
 
 void RenderingEngine::finalize()
 {
 	core.reset();
-	xr_core.reset();
 }
 
 void RenderingEngine::draw_scene(video::SColor skycolor, bool show_hud,
 		bool show_minimap, bool draw_wield_tool, bool draw_crosshair)
 {
 	core->draw(skycolor, show_hud, show_minimap, draw_wield_tool, draw_crosshair);
-	if (xr_core)
-		xr_core->draw(skycolor, show_hud, show_minimap, draw_wield_tool, draw_crosshair);
 }
 
 const VideoDriverInfo &RenderingEngine::getVideoDriverInfo(irr::video::E_DRIVER_TYPE type)

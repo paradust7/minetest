@@ -58,10 +58,12 @@ class DrawHUD : public RenderStep
 {
 public:
 	virtual void setRenderSource(RenderSource *) override {}
-	virtual void setRenderTarget(RenderTarget *) override {}
+	virtual void setRenderTarget(RenderTarget *target) override { m_target = target; }
 
 	virtual void reset(PipelineContext &context) override {}
 	virtual void run(PipelineContext &context) override;
+private:
+	RenderTarget *m_target {nullptr};
 };
 
 class MapPostFxStep : public TrivialRenderStep

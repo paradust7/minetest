@@ -52,6 +52,9 @@ void DrawWield::run(PipelineContext &context)
 
 void DrawHUD::run(PipelineContext &context)
 {
+	if (m_target)
+		m_target->activate(context);
+
 	if (context.show_hud) {
 		if (context.shadow_renderer)
 			context.shadow_renderer->drawDebug();

@@ -845,7 +845,7 @@ protected:
 	void toggleFullViewRange();
 	void checkZoomEnabled();
 	void xrRecenter();
-	void xrToggleLockPitch();
+	void xrSwitchHud();
 
 	void updateCameraDirection(CameraOrientation *cam, float dtime);
 	void updateCameraOrientation(CameraOrientation *cam, float dtime);
@@ -2187,8 +2187,8 @@ void Game::processKeyInput()
 		quicktune->dec();
 	} else if (wasKeyDown(KeyType::XR_RECENTER)) {
 		xrRecenter();
-	} else if (wasKeyDown(KeyType::XR_LOCKPITCH)) {
-		xrToggleLockPitch();
+	} else if (wasKeyDown(KeyType::XR_SWITCH_HUD)) {
+		xrSwitchHud();
 	}
 
 	if (!isKeyDown(KeyType::JUMP) && runData.reset_jump_timer) {
@@ -2580,16 +2580,17 @@ void Game::xrRecenter()
 	m_game_ui->showTranslatedStatusText("Recentering XR Headset");
 }
 
-void Game::xrToggleLockPitch()
+void Game::xrSwitchHud()
 {
-        bool xr_pitchlock = !g_settings->getBool("xr_pitchlock");
-        g_settings->set("xr_pitchlock", bool_to_cstr(xr_pitchlock));
-
-	if (xr_pitchlock) {
-		m_game_ui->showTranslatedStatusText("Enabled XR pitchlock");
+        std::string xr_hud = g_settings->get("xr_hud");
+	if (xr_hud == "off") {
+		xr_hud = "on";
+		m_game_ui->showTranslatedStatusText("Enabled XR HUD");
 	} else {
-		m_game_ui->showTranslatedStatusText("Disabled XR pitchlock");
+		xr_hud = "off";
+		m_game_ui->showTranslatedStatusText("Disabled XR HUD");
 	}
+	g_settings->set("xr_hud", xr_hud);
 }
 
 

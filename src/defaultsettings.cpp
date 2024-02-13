@@ -70,7 +70,7 @@ void set_default_settings()
 	settings->setDefault("occlusion_culler", "bfs");
 	settings->setDefault("enable_raytraced_culling", "true");
 	settings->setDefault("chat_weblink_color", "#8888FF");
-	settings->setDefault("xr_pitchlock", "true");
+	settings->setDefault("xr_hud", "right");
 
 	// Keymap
 	settings->setDefault("remote_port", "30000");
@@ -89,7 +89,7 @@ void set_default_settings()
 	settings->setDefault("keymap_aux1", "KEY_KEY_E");
 	settings->setDefault("keymap_chat", "KEY_KEY_T");
 	settings->setDefault("keymap_xr_recenter", "KEY_KEY_P");
-	settings->setDefault("keymap_xr_lockpitch", "KEY_KEY_L");
+	settings->setDefault("keymap_xr_switch_hud", "KEY_KEY_O");
 	settings->setDefault("keymap_cmd", "/");
 	settings->setDefault("keymap_cmd_local", ".");
 	settings->setDefault("keymap_minimap", "KEY_KEY_V");
@@ -184,12 +184,12 @@ void set_default_settings()
 	settings->setDefault("texture_min_size", "64");
 	settings->setDefault("enable_fog", "true");
 	settings->setDefault("fog_start", "0.4");
-	settings->setDefault("3d_mode", "none");
+	settings->setDefault("3d_mode", "xr");
 	settings->setDefault("3d_paralax_strength", "0.025");
 	settings->setDefault("tooltip_show_delay", "400");
 	settings->setDefault("tooltip_append_itemname", "false");
-	settings->setDefault("fps_max", "150");
-	settings->setDefault("fps_max_unfocused", "150");
+	settings->setDefault("fps_max", "200");
+	settings->setDefault("fps_max_unfocused", "200");
 	settings->setDefault("viewing_range", "190");
 	settings->setDefault("client_mesh_chunk", "1");
 	settings->setDefault("screen_w", "1024");

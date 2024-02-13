@@ -81,7 +81,7 @@ void KeyCache::populate()
 	key[KeyType::QUICKTUNE_DEC] = getKeySetting("keymap_quicktune_dec");
 
 	key[KeyType::XR_RECENTER] = getKeySetting("keymap_xr_recenter");
-	key[KeyType::XR_LOCKPITCH] = getKeySetting("keymap_xr_lockpitch");
+	key[KeyType::XR_SWITCH_HUD] = getKeySetting("keymap_xr_switch_hud");
 
 	for (int i = 0; i < HUD_HOTBAR_ITEMCOUNT_MAX; i++) {
 		std::string slot_key_name = "keymap_slot" + std::to_string(i + 1);

@@ -78,7 +78,7 @@ public:
 		QUICKTUNE_DEC,
 
 		XR_RECENTER,
-		XR_LOCKPITCH,
+		XR_SWITCH_HUD,
 
 		// hotbar
 		SLOT_1,

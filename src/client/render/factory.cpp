@@ -80,8 +80,11 @@ void createPipeline(const std::string &stereo_mode, IrrlichtDevice *device, Clie
 		return;
 	}
 	if (stereo_mode == "xr") {
-		populateXrPipeline(result.pipeline, client);
-		return;
+		if (device->hasXR()) {
+			populateXrPipeline(result.pipeline, client);
+			return;
+		}
+		errorstream << "Irrlicht device does not support XR" << std::endl;
 	}
 
 	// fallback to plain renderer
