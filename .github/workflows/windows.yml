@@ -100,7 +100,8 @@ jobs:
       - name: Checkout IrrlichtMt
         run: |
           $ref = @(Get-Content misc\irrlichtmt_tag.txt)
-          git clone https://github.com/paradust7/irrlicht lib\irrlichtmt --depth 1 -b $ref[0]
+          git clone https://github.com/paradust7/irrlicht lib\irrlichtmt --depth 5 -b xr
+          git -C lib\irrlichtmt reset --hard $ref[0]
 
       - name: Restore from cache and run vcpkg
         uses: lukka/run-vcpkg@v7
