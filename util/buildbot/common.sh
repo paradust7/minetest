@@ -49,7 +49,8 @@ get_sources_irrlicht () {
 	local ref=`cat "$sourcedir/misc/irrlichtmt_tag.txt"`
 	pushd "$sourcedir"
 	rm -rf lib/irrlichmt
-	git clone https://github.com/paradust7/irrlicht lib/irrlichtmt --depth 1 -b "$ref"
+	git clone https://github.com/paradust7/irrlicht lib/irrlichtmt --depth 5 -b xr
+	git -C lib/irrlichtmt reset --hard "$ref"
 	popd
 }
 
