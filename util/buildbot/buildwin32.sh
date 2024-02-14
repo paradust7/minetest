@@ -50,6 +50,13 @@ download "$libhost/luajit-$luajit_version-win32.zip"
 download "$libhost/ucrt/libleveldb-$leveldb_version-win32.zip" leveldb-$leveldb_version-win32.zip
 download "$libhost/openal-soft-$openal_version-win32.zip"
 
+variant=win32
+download "http://minetest.kitsunemimi.pw/libjpeg-$libjpeg_version-$variant.zip"
+download "http://minetest.kitsunemimi.pw/libpng-$libpng_version-$variant.zip"
+download "http://minetest.kitsunemimi.pw/sdl2-$sdl2_version-$variant.zip"
+download "http://minetest.kitsunemimi.pw/zlib-$zlib_version-$variant.zip"
+
+
 # Set source dir, downloading Minetest as needed
 get_sources
 get_sources_irrlicht

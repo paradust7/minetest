@@ -14,6 +14,11 @@ leveldb_version=1.23
 zlib_version=1.3
 zstd_version=1.5.5
 
+# for irrlicht
+libjpeg_version=3.0.1
+libpng_version=1.6.40
+sdl2_version=2.28.5
+
 download () {
 	local url=$1
 	local filename=$2

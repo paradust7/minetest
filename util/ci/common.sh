@@ -13,8 +13,9 @@ install_linux_deps() {
 		shift
 	else
 		local ver=$(cat misc/irrlichtmt_tag.txt)
-		wget "https://github.com/minetest/irrlicht/releases/download/$ver/ubuntu-bionic.tar.gz"
-		sudo tar -xaf ubuntu-bionic.tar.gz -C /usr/local
+		mkdir -p lib/irrlichtmt
+		git clone https://github.com/paradust7/irrlicht lib/irrlichtmt --depth 5 -b xr
+		git -C lib/irrlichtmt reset --hard "$ver"
 	fi
 
 	sudo apt-get update
