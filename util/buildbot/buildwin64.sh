@@ -37,7 +37,7 @@ mkdir -p $libdir
 
 cd $libdir
 libhost="http://minetest.kitsunemimi.pw"
-download "https://github.com/minetest/irrlicht/releases/download/$irrlicht_version/win64-ucrt.zip" irrlicht-$irrlicht_version-win64.zip
+#download "https://github.com/minetest/irrlicht/releases/download/$irrlicht_version/win64-ucrt.zip" irrlicht-$irrlicht_version-win64.zip
 download "$libhost/zlib-$zlib_version-win64.zip"
 download "$libhost/ucrt/zstd-$zstd_version-win64.zip"
 download "$libhost/ucrt/libogg-$ogg_version-win64.zip"
@@ -52,6 +52,7 @@ download "$libhost/openal-soft-$openal_version-win64.zip"
 
 # Set source dir, downloading Minetest as needed
 get_sources
+get_sources_irrlicht
 
 # Build the thing
 cd $builddir
