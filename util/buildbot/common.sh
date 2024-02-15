@@ -133,5 +133,14 @@ add_cmake_libs () {
 		-DLEVELDB_INCLUDE_DIR=$libdir/leveldb/include
 		-DLEVELDB_LIBRARY=$libdir/leveldb/lib/libleveldb.dll.a
 		-DLEVELDB_DLL=$libdir/leveldb/bin/libleveldb.dll
+
+		-DPNG_LIBRARY=$libdir/libpng/lib/libpng.dll.a
+		-DPNG_PNG_INCLUDE_DIR=$libdir/libpng/include
+
+		-DJPEG_LIBRARY=$libdir/libjpeg/lib/libjpeg.dll.a
+		-DJPEG_INCLUDE_DIR=$libdir/libjpeg/include
+
+		-DUSE_SDL2=ON
+		-DCMAKE_PREFIX_PATH=$libdir/sdl2/lib/cmake
 	)
 }
