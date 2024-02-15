@@ -28,26 +28,6 @@ on:
       - '.github/workflows/windows.yml'
 
 jobs:
-  mingw32:
-    name: "MinGW cross-compiler (32-bit)"
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install compiler
-        run: |
-          sudo apt-get update && sudo apt-get install -y gettext
-          sudo ./util/buildbot/download_toolchain.sh i686 /usr
-
-      - name: Build
-        run: |
-           EXISTING_MINETEST_DIR=$PWD ./util/buildbot/buildwin32.sh B
-
-      - uses: actions/upload-artifact@v3
-        with:
-          name: mingw32
-          path: B/build/*.zip
-          if-no-files-found: error
-
   mingw64:
     name: "MinGW cross-compiler (64-bit)"
     runs-on: ubuntu-22.04

@@ -26,6 +26,10 @@ download () {
 	local foldername=${filename%%[.-]*}
 	local extract=${3:-unzip}
 
+	case "$filename" in
+	  *.tar.zst) extract="unzstd" ;;
+	esac
+
 	[ -d "./$foldername" ] && return 0
 	wget "$url" -c -O "./$filename"
 	sha256sum -w -c <(grep -F "$filename" "$topdir/sha256sums.txt")
@@ -33,6 +37,8 @@ download () {
 		unzip -o "$filename" -d "$foldername"
 	elif [ "$extract" = "unzip_nofolder" ]; then
 		unzip -o "$filename"
+	elif [ "$extract" = "unzstd" ]; then
+		tar --use-compress-program=unzstd -xvf "$filename"
 	else
 		return 1
 	fi
@@ -142,5 +148,9 @@ add_cmake_libs () {
 
 		-DUSE_SDL2=ON
 		-DCMAKE_PREFIX_PATH=$libdir/sdl2/lib/cmake
+
+		-DOPENXR_LIBRARY=$libdir/mingw64/lib/ibopenxr_loader.dll.a
+		-DOPENXR_INCLUDE_DIR=$libdir/mingw64/include
+
 	)
 }

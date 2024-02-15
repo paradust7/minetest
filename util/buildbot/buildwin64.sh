@@ -55,6 +55,7 @@ download "http://minetest.kitsunemimi.pw/libjpeg-$libjpeg_version-$variant.zip"
 download "http://minetest.kitsunemimi.pw/libpng-$libpng_version-$variant.zip"
 download "http://minetest.kitsunemimi.pw/sdl2-$sdl2_version-$variant.zip"
 download "http://minetest.kitsunemimi.pw/zlib-$zlib_version-$variant.zip"
+download "https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-openxr-sdk-1.0.33-1-any.pkg.tar.zst"
 
 
 # Set source dir, downloading Minetest as needed
