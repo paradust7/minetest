@@ -115,7 +115,9 @@ int MetaDataRef::l_set_string(lua_State *L)
 
 	MetaDataRef *ref = checkAnyMetadata(L, 1);
 	std::string name = luaL_checkstring(L, 2);
-	auto str = readParam<std::string_view>(L, 3);
+	size_t len = 0;
+	const char *s = lua_tolstring(L, 3, &len);
+	auto str = std::string_view(s, len);
 
 	IMetadata *meta = ref->getmeta(!str.empty());
 	if (meta != NULL && meta->setString(name, str))
