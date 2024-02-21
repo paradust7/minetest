@@ -57,6 +57,18 @@ jobs:
           cd nowrite
           ../bin/minetest --run-unittests
 
+      - name: CPack
+        run: |
+          cpack -G TBZ2 -B "$env:GITHUB_WORKSPACE\Package"
+          rm -r "$env:GITHUB_WORKSPACE\Package\_CPack_Packages"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86-64
+          path: .\Package\
+          if-no-files-found: error
+
+
   # Current clang version
   clang_14:
     runs-on: ubuntu-22.04
