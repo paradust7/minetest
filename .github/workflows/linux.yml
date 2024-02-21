@@ -59,15 +59,14 @@ jobs:
 
       - name: CPack
         run: |
-          cpack -G TBZ2 -B "$env:GITHUB_WORKSPACE\Package"
-          rm -r "$env:GITHUB_WORKSPACE\Package\_CPack_Packages"
+          cd build
+          cpack -G TGZ
 
       - uses: actions/upload-artifact@v4
         with:
           name: linux-x86-64
-          path: .\Package\
+          path: build/minetest-5.9.0-dev-linux.tar.gz
           if-no-files-found: error
-
 
   # Current clang version
   clang_14:
