@@ -40,13 +40,11 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "util/basic_macros.h"
 
 static const char *modified_reason_strings[] = {
-	"initial",
-	"reallocate",
+	"reallocate or initial",
 	"setIsUnderground",
 	"setLightingExpired",
 	"setGenerated",
 	"setNode",
-	"setNodeNoCheck",
 	"setTimestamp",
 	"NodeMetaRef::reportMetadataChange",
 	"clearAllObjects",
@@ -73,6 +71,7 @@ MapBlock::MapBlock(v3s16 pos, IGameDef *gamedef):
 		m_gamedef(gamedef)
 {
 	reallocate();
+	assert(m_modified > MOD_STATE_CLEAN);
 }
 
 MapBlock::~MapBlock()
@@ -383,7 +382,7 @@ void MapBlock::serialize(std::ostream &os_compressed, u8 version, bool disk, int
 		Bulk node data
 	*/
 	NameIdMapping nimap;
-	SharedBuffer<u8> buf;
+	Buffer<u8> buf;
 	const u8 content_width = 2;
 	const u8 params_width = 2;
  	if(disk)
@@ -654,7 +653,7 @@ void MapBlock::deSerialize_pre22(std::istream &is, u8 version, bool disk)
 
 	// Make a temporary buffer
 	u32 ser_length = MapNode::serializedLength(version);
-	SharedBuffer<u8> databuf_nodelist(nodecount * ser_length);
+	Buffer<u8> databuf_nodelist(nodecount * ser_length);
 
 	// These have no compression
 	if (version <= 3 || version == 5 || version == 6) {

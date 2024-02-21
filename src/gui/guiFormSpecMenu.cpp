@@ -33,9 +33,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <IGUICheckBox.h>
 #include <IGUIComboBox.h>
 #include <IGUIEditBox.h>
-#include <IGUIStaticText.h>
 #include <IGUIFont.h>
 #include <IGUITabControl.h>
+#include <IGUIImage.h>
+#include <IAnimatedMeshSceneNode.h>
 #include "client/renderingengine.h"
 #include "log.h"
 #include "client/tile.h" // ITextureSource
@@ -754,7 +755,7 @@ void GUIFormSpecMenu::parseScrollBarOptions(parserData* data, const std::string 
 			data->scrollbar_options.thumb_size = value <= 0 ? 1 : value;
 			continue;
 		} else if (options[0] == "arrows") {
-			std::string value = trim(options[1]);
+			auto value = trim(options[1]);
 			if (value == "hide")
 				data->scrollbar_options.arrow_visiblity = GUIScrollBar::HIDE;
 			else if (value == "show")
@@ -2448,8 +2449,8 @@ bool GUIFormSpecMenu::parseSizeDirect(parserData* data, const std::string &eleme
 	if (parts.size() < 2)
 		return false;
 
-	std::string type = trim(parts[0]);
-	std::string description = trim(parts[1]);
+	auto type = trim(parts[0]);
+	std::string description(trim(parts[1]));
 
 	if (type != "size" && type != "invsize")
 		return false;
@@ -2472,8 +2473,8 @@ bool GUIFormSpecMenu::parsePositionDirect(parserData *data, const std::string &e
 	if (parts.size() != 2)
 		return false;
 
-	std::string type = trim(parts[0]);
-	std::string description = trim(parts[1]);
+	auto type = trim(parts[0]);
+	std::string description(trim(parts[1]));
 
 	if (type != "position")
 		return false;
@@ -2511,8 +2512,8 @@ bool GUIFormSpecMenu::parseAnchorDirect(parserData *data, const std::string &ele
 	if (parts.size() != 2)
 		return false;
 
-	std::string type = trim(parts[0]);
-	std::string description = trim(parts[1]);
+	auto type = trim(parts[0]);
+	std::string description(trim(parts[1]));
 
 	if (type != "anchor")
 		return false;
@@ -2551,8 +2552,8 @@ bool GUIFormSpecMenu::parsePaddingDirect(parserData *data, const std::string &el
 	if (parts.size() != 2)
 		return false;
 
-	std::string type = trim(parts[0]);
-	std::string description = trim(parts[1]);
+	auto type = trim(parts[0]);
+	std::string description(trim(parts[1]));
 
 	if (type != "padding")
 		return false;
@@ -2623,7 +2624,7 @@ bool GUIFormSpecMenu::parseStyle(parserData *data, const std::string &element, b
 
 	std::vector<std::string> selectors = split(parts[0], ',');
 	for (size_t sel = 0; sel < selectors.size(); sel++) {
-		std::string selector = trim(selectors[sel]);
+		std::string selector(trim(selectors[sel]));
 
 		// Copy the style properties to a new StyleSpec
 		// This allows a separate state mask per-selector
@@ -3215,7 +3216,7 @@ void GUIFormSpecMenu::regenerateGui(v2u32 screensize)
 	mydata.real_coordinates = m_formspec_version >= 2;
 	for (; i < elements.size(); i++) {
 		std::vector<std::string> parts = split(elements[i], '[');
-		std::string name = trim(parts[0]);
+		auto name = trim(parts[0]);
 		if (name != "real_coordinates" || parts.size() != 2)
 			break; // Invalid format
 

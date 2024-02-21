@@ -19,7 +19,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 */
 
 #include <optional>
-#include <IrrlichtDevice.h>
+#include <irrlicht.h>
 #include "fontengine.h"
 #include "client.h"
 #include "clouds.h"
@@ -152,6 +152,9 @@ RenderingEngine::RenderingEngine(IEventReceiver *receiver)
 	m_device = createDevice(params, driverType);
 	driver = m_device->getVideoDriver();
 	infostream << "Using the " << RenderingEngine::getVideoDriverInfo(driver->getDriverType()).friendly_name << " video driver" << std::endl;
+
+	// This changes the minimum allowed number of vertices in a VBO. Default is 500.
+	driver->setMinHardwareBufferVertexCount(4);
 
 	s_singleton = this;
 
@@ -293,15 +296,16 @@ std::vector<video::E_DRIVER_TYPE> RenderingEngine::getSupportedVideoDrivers()
 	// Order by preference (best first)
 	static const video::E_DRIVER_TYPE glDrivers[] = {
 		video::EDT_OPENGL,
+		video::EDT_OPENGL3,
 		video::EDT_OGLES2,
 		video::EDT_OGLES1,
 		video::EDT_NULL,
 	};
 	std::vector<video::E_DRIVER_TYPE> drivers;
 
-	for (u32 i = 0; i < ARRLEN(glDrivers); i++) {
-		if (IrrlichtDevice::isDriverSupported(glDrivers[i]))
-			drivers.push_back(glDrivers[i]);
+	for (video::E_DRIVER_TYPE driver: glDrivers) {
+		if (IrrlichtDevice::isDriverSupported(driver))
+			drivers.push_back(driver);
 	}
 
 	return drivers;
@@ -319,9 +323,9 @@ void RenderingEngine::finalize()
 }
 
 void RenderingEngine::draw_scene(video::SColor skycolor, bool show_hud,
-		bool show_minimap, bool draw_wield_tool, bool draw_crosshair)
+		bool draw_wield_tool, bool draw_crosshair)
 {
-	core->draw(skycolor, show_hud, show_minimap, draw_wield_tool, draw_crosshair);
+	core->draw(skycolor, show_hud, draw_wield_tool, draw_crosshair);
 }
 
 const VideoDriverInfo &RenderingEngine::getVideoDriverInfo(irr::video::E_DRIVER_TYPE type)
@@ -329,6 +333,7 @@ const VideoDriverInfo &RenderingEngine::getVideoDriverInfo(irr::video::E_DRIVER_
 	static const std::unordered_map<int, VideoDriverInfo> driver_info_map = {
 		{(int)video::EDT_NULL,   {"null",   "NULL Driver"}},
 		{(int)video::EDT_OPENGL, {"opengl", "OpenGL"}},
+		{(int)video::EDT_OPENGL3, {"opengl3", "OpenGL 3+"}},
 		{(int)video::EDT_OGLES1, {"ogles1", "OpenGL ES1"}},
 		{(int)video::EDT_OGLES2, {"ogles2", "OpenGL ES2"}},
 	};

@@ -55,7 +55,7 @@ jobs:
 # Enable it, when working on the installer.
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Checkout IrrlichtMt
         run: |
@@ -85,6 +85,13 @@ jobs:
       - name: Build Minetest
         run: cmake --build . --config Release
 
+      - name: Unittests
+        # need this workaround for stdout to work
+        run: |
+          $proc = start .\bin\Release\minetest.exe --run-unittests -NoNewWindow -Wait -PassThru
+          exit $proc.ExitCode
+        continue-on-error: true # FIXME!!
+
       - name: CPack
         run: |
           If ($env:TYPE -eq "installer")
@@ -95,13 +102,11 @@ jobs:
           {
             cpack -G ZIP -B "$env:GITHUB_WORKSPACE\Package"
           }
+          rm -r $env:GITHUB_WORKSPACE\Package\_CPack_Packages
         env:
           TYPE: ${{matrix.type}}
 
-      - name: Package Clean
-        run: rm -r $env:GITHUB_WORKSPACE\Package\_CPack_Packages
-
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: msvc-${{ matrix.config.arch }}-${{ matrix.type }}
           path: .\Package\

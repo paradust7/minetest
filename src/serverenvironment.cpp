@@ -625,13 +625,6 @@ bool ServerEnvironment::removePlayerFromDatabase(const std::string &name)
 	return m_player_database->removePlayer(name);
 }
 
-void ServerEnvironment::kickAllPlayers(AccessDeniedCode reason,
-	const std::string &str_reason, bool reconnect)
-{
-	for (RemotePlayer *player : m_players)
-		m_server->DenyAccess(player->getPeerId(), reason, str_reason, reconnect);
-}
-
 void ServerEnvironment::saveLoadedPlayers(bool force)
 {
 	for (RemotePlayer *player : m_players) {
@@ -1051,7 +1044,8 @@ void ServerEnvironment::activateBlock(MapBlock *block, u32 additional_dtime)
 			<<stamp<<", game time: "<<m_game_time<<std::endl;*/
 
 	// Remove stored static objects if clearObjects was called since block's timestamp
-	if (stamp == BLOCK_TIMESTAMP_UNDEFINED || stamp < m_last_clear_objects_time) {
+	// Note that non-generated blocks may still have stored static objects
+	if (stamp != BLOCK_TIMESTAMP_UNDEFINED && stamp < m_last_clear_objects_time) {
 		block->m_static_objects.clearStored();
 		// do not set changed flag to avoid unnecessary mapblock writes
 	}
@@ -1457,7 +1451,7 @@ void ServerEnvironment::step(float dtime)
 		*/
 
 		for (const v3s16 &p: blocks_added) {
-			MapBlock *block = m_map->getBlockOrEmerge(p);
+			MapBlock *block = m_map->getBlockOrEmerge(p, true);
 			if (!block) {
 				// TODO: The blocks removed here will only be picked up again
 				// on the next cycle. To minimize the latency of objects being
@@ -1622,9 +1616,8 @@ void ServerEnvironment::step(float dtime)
 		Manage particle spawner expiration
 	*/
 	if (m_particle_management_interval.step(dtime, 1.0)) {
-		for (std::unordered_map<u32, float>::iterator i = m_particle_spawners.begin();
-			i != m_particle_spawners.end(); ) {
-			//non expiring spawners
+		for (auto i = m_particle_spawners.begin(); i != m_particle_spawners.end(); ) {
+			// non expiring spawners
 			if (i->second == PARTICLE_SPAWNER_NO_EXPIRY) {
 				++i;
 				continue;
@@ -1632,7 +1625,7 @@ void ServerEnvironment::step(float dtime)
 
 			i->second -= 1.0f;
 			if (i->second <= 0.f)
-				m_particle_spawners.erase(i++);
+				i = m_particle_spawners.erase(i);
 			else
 				++i;
 		}
@@ -1643,9 +1636,8 @@ void ServerEnvironment::step(float dtime)
 		if (player->getPeerId() == PEER_ID_INEXISTENT)
 			continue;
 
-		PlayerSAO *sao = player->getPlayerSAO();
-		if (sao && player->inventory.checkModified())
-			m_server->SendInventory(sao, true);
+		if (player->inventory.checkModified())
+			m_server->SendInventory(player, true);
 	}
 
 	// Send outdated detached inventories
@@ -1830,11 +1822,12 @@ bool ServerEnvironment::getActiveObjectMessage(ActiveObjectMessage *dest)
 
 void ServerEnvironment::getSelectedActiveObjects(
 	const core::line3d<f32> &shootline_on_map,
-	std::vector<PointedThing> &objects)
+	std::vector<PointedThing> &objects,
+	const std::optional<Pointabilities> &pointabilities)
 {
 	std::vector<ServerActiveObject *> objs;
-	getObjectsInsideRadius(objs, shootline_on_map.start,
-		shootline_on_map.getLength() + 10.0f, nullptr);
+	getObjectsInsideRadius(objs, shootline_on_map.getMiddle(),
+		0.5 * shootline_on_map.getLength() + 5 * BS, nullptr);
 	const v3f line_vector = shootline_on_map.getVector();
 
 	for (auto obj : objs) {
@@ -1863,10 +1856,26 @@ void ServerEnvironment::getSelectedActiveObjects(
 			current_raw_normal = current_normal;
 		}
 		if (collision) {
-			current_intersection += pos;
-			objects.emplace_back(
-				(s16) obj->getId(), current_intersection, current_normal, current_raw_normal,
-				(current_intersection - shootline_on_map.start).getLengthSQ());
+			PointabilityType pointable;
+			if (pointabilities) {
+				if (LuaEntitySAO* lsao = dynamic_cast<LuaEntitySAO*>(obj)) {
+					pointable = pointabilities->matchObject(lsao->getName(),
+							usao->getArmorGroups()).value_or(props->pointable);
+				} else if (PlayerSAO* psao = dynamic_cast<PlayerSAO*>(obj)) {
+					pointable = pointabilities->matchPlayer(psao->getArmorGroups()).value_or(
+							props->pointable);
+				} else {
+					pointable = props->pointable;
+				}
+			} else {
+				pointable = props->pointable;
+			}
+			if (pointable != PointabilityType::POINTABLE_NOT) {
+				current_intersection += pos;
+				objects.emplace_back(
+					(s16) obj->getId(), current_intersection, current_normal, current_raw_normal,
+					(current_intersection - shootline_on_map.start).getLengthSQ(), pointable);
+			}
 		}
 	}
 }
@@ -1882,11 +1891,6 @@ u16 ServerEnvironment::addActiveObjectRaw(std::unique_ptr<ServerActiveObject> ob
 	if (!m_ao_manager.registerObject(std::move(object_u))) {
 		return 0;
 	}
-
-	// Register reference in scripting api (must be done before post-init)
-	m_script->addObjectReference(object);
-	// Post-initialize object
-	object->addedToEnvironment(dtime_s);
 
 	// Add static data to block
 	if (object->isStaticAllowed()) {
@@ -1906,11 +1910,19 @@ u16 ServerEnvironment::addActiveObjectRaw(std::unique_ptr<ServerActiveObject> ob
 					MOD_REASON_ADD_ACTIVE_OBJECT_RAW);
 		} else {
 			v3s16 p = floatToInt(objectpos, BS);
-			errorstream<<"ServerEnvironment::addActiveObjectRaw(): "
-				<<"could not emerge block for storing id="<<object->getId()
-				<<" statically (pos="<<p<<")"<<std::endl;
+			errorstream << "ServerEnvironment::addActiveObjectRaw(): "
+				<< "could not emerge block " << p << " for storing id="
+				<< object->getId() << " statically" << std::endl;
+			// clean in case of error
+			m_ao_manager.removeObject(object->getId());
+			return 0;
 		}
 	}
+
+	// Register reference in scripting api (must be done before post-init)
+	m_script->addObjectReference(object);
+	// Post-initialize object
+	object->addedToEnvironment(dtime_s);
 
 	return object->getId();
 }

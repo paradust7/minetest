@@ -33,6 +33,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "client/mapblock_mesh.h"
 #include "client/sound.h"
 #include "clientmap.h"
+#include "clientmedia.h" // For clientMediaUpdateCacheCopy
 #include "clouds.h"
 #include "config.h"
 #include "content_cao.h"
@@ -74,6 +75,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "script/scripting_client.h"
 #include "hud.h"
 #include "clientdynamicinfo.h"
+#include <IAnimatedMeshSceneNode.h>
 
 #if USE_SOUND
 	#include "client/sound/sound_openal.h"
@@ -373,43 +375,55 @@ class GameGlobalShaderConstantSetter : public IShaderConstantSetter
 	bool *m_force_fog_off;
 	f32 *m_fog_range;
 	bool m_fog_enabled;
-	CachedPixelShaderSetting<float, 4> m_sky_bg_color;
-	CachedPixelShaderSetting<float> m_fog_distance;
-	CachedPixelShaderSetting<float> m_fog_shading_parameter;
-	CachedVertexShaderSetting<float> m_animation_timer_vertex;
-	CachedPixelShaderSetting<float> m_animation_timer_pixel;
-	CachedVertexShaderSetting<float> m_animation_timer_delta_vertex;
-	CachedPixelShaderSetting<float> m_animation_timer_delta_pixel;
-	CachedPixelShaderSetting<float, 3> m_day_light;
-	CachedPixelShaderSetting<float, 4> m_star_color;
-	CachedPixelShaderSetting<float, 3> m_eye_position_pixel;
-	CachedVertexShaderSetting<float, 3> m_eye_position_vertex;
-	CachedPixelShaderSetting<float, 3> m_minimap_yaw;
-	CachedPixelShaderSetting<float, 3> m_camera_offset_pixel;
-	CachedPixelShaderSetting<float, 3> m_camera_offset_vertex;
-	CachedPixelShaderSetting<SamplerLayer_t> m_texture0;
-	CachedPixelShaderSetting<SamplerLayer_t> m_texture1;
-	CachedPixelShaderSetting<SamplerLayer_t> m_texture2;
-	CachedPixelShaderSetting<SamplerLayer_t> m_texture3;
-	CachedVertexShaderSetting<float, 2> m_texel_size0_vertex;
-	CachedPixelShaderSetting<float, 2> m_texel_size0_pixel;
+	CachedPixelShaderSetting<float, 4> m_fog_color{"fogColor"};
+	CachedPixelShaderSetting<float> m_fog_distance{"fogDistance"};
+	CachedPixelShaderSetting<float>
+		m_fog_shading_parameter{"fogShadingParameter"};
+	CachedVertexShaderSetting<float> m_animation_timer_vertex{"animationTimer"};
+	CachedPixelShaderSetting<float> m_animation_timer_pixel{"animationTimer"};
+	CachedVertexShaderSetting<float>
+		m_animation_timer_delta_vertex{"animationTimerDelta"};
+	CachedPixelShaderSetting<float>
+		m_animation_timer_delta_pixel{"animationTimerDelta"};
+	CachedPixelShaderSetting<float, 3> m_day_light{"dayLight"};
+	CachedPixelShaderSetting<float, 4> m_star_color{"starColor"};
+	CachedPixelShaderSetting<float, 3> m_eye_position_pixel{"eyePosition"};
+	CachedVertexShaderSetting<float, 3> m_eye_position_vertex{"eyePosition"};
+	CachedPixelShaderSetting<float, 3> m_minimap_yaw{"yawVec"};
+	CachedPixelShaderSetting<float, 3> m_camera_offset_pixel{"cameraOffset"};
+	CachedPixelShaderSetting<float, 3> m_camera_offset_vertex{"cameraOffset"};
+	CachedPixelShaderSetting<SamplerLayer_t> m_texture0{"texture0"};
+	CachedPixelShaderSetting<SamplerLayer_t> m_texture1{"texture1"};
+	CachedPixelShaderSetting<SamplerLayer_t> m_texture2{"texture2"};
+	CachedPixelShaderSetting<SamplerLayer_t> m_texture3{"texture3"};
+	CachedVertexShaderSetting<float, 2> m_texel_size0_vertex{"texelSize0"};
+	CachedPixelShaderSetting<float, 2> m_texel_size0_pixel{"texelSize0"};
 	std::array<float, 2> m_texel_size0_values;
-	CachedStructPixelShaderSetting<float, 7> m_exposure_params_pixel;
+	CachedStructPixelShaderSetting<float, 7> m_exposure_params_pixel{
+		"exposureParams",
+		std::array<const char*, 7> {
+			"luminanceMin", "luminanceMax", "exposureCorrection",
+			"speedDarkBright", "speedBrightDark", "centerWeightPower",
+			"compensationFactor"
+		}};
 	float m_user_exposure_compensation;
 	bool m_bloom_enabled;
-	CachedPixelShaderSetting<float> m_bloom_intensity_pixel;
+	CachedPixelShaderSetting<float> m_bloom_intensity_pixel{"bloomIntensity"};
 	float m_bloom_intensity;
-	CachedPixelShaderSetting<float> m_bloom_strength_pixel;
+	CachedPixelShaderSetting<float> m_bloom_strength_pixel{"bloomStrength"};
 	float m_bloom_strength;
-	CachedPixelShaderSetting<float> m_bloom_radius_pixel;
+	CachedPixelShaderSetting<float> m_bloom_radius_pixel{"bloomRadius"};
 	float m_bloom_radius;
-	CachedPixelShaderSetting<float> m_saturation_pixel;
+	CachedPixelShaderSetting<float> m_saturation_pixel{"saturation"};
 	bool m_volumetric_light_enabled;
-	CachedPixelShaderSetting<float, 3> m_sun_position_pixel;
-	CachedPixelShaderSetting<float> m_sun_brightness_pixel;
-	CachedPixelShaderSetting<float, 3> m_moon_position_pixel;
-	CachedPixelShaderSetting<float> m_moon_brightness_pixel;
-	CachedPixelShaderSetting<float> m_volumetric_light_strength_pixel;
+	CachedPixelShaderSetting<float, 3>
+		m_sun_position_pixel{"sunPositionScreen"};
+	CachedPixelShaderSetting<float> m_sun_brightness_pixel{"sunBrightness"};
+	CachedPixelShaderSetting<float, 3>
+		m_moon_position_pixel{"moonPositionScreen"};
+	CachedPixelShaderSetting<float> m_moon_brightness_pixel{"moonBrightness"};
+	CachedPixelShaderSetting<float>
+		m_volumetric_light_strength_pixel{"volumetricLightStrength"};
 
 public:
 	void onSettingsChange(const std::string &name)
@@ -438,41 +452,7 @@ public:
 		m_sky(sky),
 		m_client(client),
 		m_force_fog_off(force_fog_off),
-		m_fog_range(fog_range),
-		m_sky_bg_color("skyBgColor"),
-		m_fog_distance("fogDistance"),
-		m_fog_shading_parameter("fogShadingParameter"),
-		m_animation_timer_vertex("animationTimer"),
-		m_animation_timer_pixel("animationTimer"),
-		m_animation_timer_delta_vertex("animationTimerDelta"),
-		m_animation_timer_delta_pixel("animationTimerDelta"),
-		m_day_light("dayLight"),
-		m_star_color("starColor"),
-		m_eye_position_pixel("eyePosition"),
-		m_eye_position_vertex("eyePosition"),
-		m_minimap_yaw("yawVec"),
-		m_camera_offset_pixel("cameraOffset"),
-		m_camera_offset_vertex("cameraOffset"),
-		m_texture0("texture0"),
-		m_texture1("texture1"),
-		m_texture2("texture2"),
-		m_texture3("texture3"),
-		m_texel_size0_vertex("texelSize0"),
-		m_texel_size0_pixel("texelSize0"),
-		m_exposure_params_pixel("exposureParams",
-				std::array<const char*, 7> {
-						"luminanceMin", "luminanceMax", "exposureCorrection",
-						"speedDarkBright", "speedBrightDark", "centerWeightPower", "compensationFactor"
-				}),
-		m_bloom_intensity_pixel("bloomIntensity"),
-		m_bloom_strength_pixel("bloomStrength"),
-		m_bloom_radius_pixel("bloomRadius"),
-		m_saturation_pixel("saturation"),
-		m_sun_position_pixel("sunPositionScreen"),
-		m_sun_brightness_pixel("sunBrightness"),
-		m_moon_position_pixel("moonPositionScreen"),
-		m_moon_brightness_pixel("moonBrightness"),
-		m_volumetric_light_strength_pixel("volumetricLightStrength")
+		m_fog_range(fog_range)
 	{
 		g_settings->registerChangedCallback("enable_fog", settingsCallback, this);
 		g_settings->registerChangedCallback("exposure_compensation", settingsCallback, this);
@@ -496,20 +476,13 @@ public:
 
 	void onSetConstants(video::IMaterialRendererServices *services) override
 	{
-		// Background color
-		video::SColor bgcolor = m_sky->getBgColor();
-		video::SColorf bgcolorf(bgcolor);
-		float bgcolorfa[4] = {
-			bgcolorf.r,
-			bgcolorf.g,
-			bgcolorf.b,
-			bgcolorf.a,
+		video::SColorf fogcolorf(m_sky->getFogColor());
+		float fogcolorfa[4] = {
+			fogcolorf.r, fogcolorf.g, fogcolorf.b, fogcolorf.a,
 		};
-		m_sky_bg_color.set(bgcolorfa, services);
+		m_fog_color.set(fogcolorfa, services);
 
-		// Fog distance
 		float fog_distance = 10000 * BS;
-
 		if (m_fog_enabled && !*m_force_fog_off)
 			fog_distance = *m_fog_range;
 
@@ -797,6 +770,7 @@ protected:
 	bool initSound();
 	bool createSingleplayerServer(const std::string &map_dir,
 			const SubgameSpec &gamespec, u16 port);
+	void copyServerClientCache();
 
 	// Client creation
 	bool createClient(const GameStartData &start_data);
@@ -864,6 +838,7 @@ protected:
 	 * the camera position. This also gives the maximal distance
 	 * of the search.
 	 * @param[in]  liquids_pointable if false, liquids are ignored
+	 * @param[in]  pointabilities    item specific pointable overriding
 	 * @param[in]  look_for_object   if false, objects are ignored
 	 * @param[in]  camera_offset     offset of the camera
 	 * @param[out] selected_object   the selected object or
@@ -871,6 +846,7 @@ protected:
 	 */
 	PointedThing updatePointedThing(
 			const core::line3d<f32> &shootline, bool liquids_pointable,
+			const std::optional<Pointabilities> &pointabilities,
 			bool look_for_object, const v3s16 &camera_offset);
 	void handlePointingAtNothing(const ItemStack &playerItem);
 	void handlePointingAtNode(const PointedThing &pointed,
@@ -1004,7 +980,6 @@ private:
 	bool *kill;
 	std::string *error_message;
 	bool *reconnect_requested;
-	scene::ISceneNode *skybox;
 	PausedNodesList paused_animated_nodes;
 
 	bool simple_singleplayer_mode;
@@ -1318,9 +1293,6 @@ void Game::run()
 		updateFrame(&graph, &stats, dtime, cam_view);
 		updateProfilerGraphs(&graph);
 
-		// Update if minimap has been disabled by the server
-		m_game_ui->m_flags.show_minimap &= client->shouldShowMinimap();
-
 		if (m_does_lost_focus_pause_game && !device->isWindowFocused() && !isMenuActive()) {
 			showPauseMenu();
 		}
@@ -1484,7 +1456,29 @@ bool Game::createSingleplayerServer(const std::string &map_dir,
 			false, nullptr, error_message);
 	server->start();
 
+	copyServerClientCache();
+
 	return true;
+}
+
+void Game::copyServerClientCache()
+{
+	// It would be possible to let the client directly read the media files
+	// from where the server knows they are. But aside from being more complicated
+	// it would also *not* fill the media cache and cause slower joining of 
+	// remote servers.
+	// (Imagine that you launch a game once locally and then connect to a server.)
+
+	assert(server);
+	auto map = server->getMediaList();
+	u32 n = 0;
+	for (auto &it : map) {
+		assert(it.first.size() == 20); // SHA1
+		if (clientMediaUpdateCacheCopy(it.first, it.second))
+			n++;
+	}
+	infostream << "Copied " << n << " files directly from server to client cache"
+		<< std::endl;
 }
 
 bool Game::createClient(const GameStartData &start_data)
@@ -1545,7 +1539,6 @@ bool Game::createClient(const GameStartData &start_data)
 	 */
 	sky = new Sky(-1, m_rendering_engine, texture_src, shader_src);
 	scsf->setSky(sky);
-	skybox = NULL;	// This is used/set later on in the main run loop
 
 	/* Pre-calculated values
 	 */
@@ -1562,18 +1555,20 @@ bool Game::createClient(const GameStartData &start_data)
 
 	/* Set window caption
 	 */
-	std::wstring str = utf8_to_wide(PROJECT_NAME_C);
-	str += L" ";
-	str += utf8_to_wide(g_version_hash);
-	str += L" [";
-	str += simple_singleplayer_mode ? wstrgettext("Singleplayer")
-			: wstrgettext("Multiplayer");
-	str += L"]";
-	str += L" [";
-	str += driver->getName();
-	str += L"]";
+#if IRRLICHT_VERSION_MT_REVISION >= 15
+	auto driver_name = driver->getName();
+#else
+	auto driver_name = wide_to_utf8(driver->getName());
+#endif
+	std::string str = std::string(PROJECT_NAME_C) +
+			" " + g_version_hash + " [";
+	str += simple_singleplayer_mode ? gettext("Singleplayer")
+			: gettext("Multiplayer");
+	str += "] [";
+	str += driver_name;
+	str += "]";
 
-	device->setWindowCaption(str.c_str());
+	device->setWindowCaption(utf8_to_wide(str).c_str());
 
 	LocalPlayer *player = client->getEnv().getLocalPlayer();
 	player->hurt_tilt_timer = 0;
@@ -1775,7 +1770,7 @@ bool Game::getServerContent(bool *aborted)
 		// End condition
 		if (client->mediaReceived() && client->itemdefReceived() &&
 				client->nodedefReceived()) {
-			break;
+			return true;
 		}
 
 		// Error conditions
@@ -1834,7 +1829,9 @@ bool Game::getServerContent(bool *aborted)
 		}
 	}
 
-	return true;
+	*aborted = true;
+	infostream << "Connect aborted [device]" << std::endl;
+	return false;
 }
 
 
@@ -2484,23 +2481,16 @@ void Game::toggleMinimap(bool shift_pressed)
 	// -->
 	u32 hud_flags = client->getEnv().getLocalPlayer()->hud_flags;
 
-	if (!(hud_flags & HUD_FLAG_MINIMAP_VISIBLE)) {
-		m_game_ui->m_flags.show_minimap = false;
-	} else {
-
+	if (hud_flags & HUD_FLAG_MINIMAP_VISIBLE) {
 	// If radar is disabled, try to find a non radar mode or fall back to 0
 		if (!(hud_flags & HUD_FLAG_MINIMAP_RADAR_VISIBLE))
 			while (mapper->getModeIndex() &&
 					mapper->getModeDef().type == MINIMAP_TYPE_RADAR)
 				mapper->nextMode();
-
-		m_game_ui->m_flags.show_minimap = mapper->getModeDef().type !=
-				MINIMAP_TYPE_OFF;
 	}
 	// <--
 	// End of 'not so satifying code'
-	if ((hud_flags & HUD_FLAG_MINIMAP_VISIBLE) ||
-			(hud && hud->hasElementOfType(HUD_ELEM_MINIMAP)))
+	if (hud && hud->hasElementOfType(HUD_ELEM_MINIMAP))
 		m_game_ui->showStatusText(utf8_to_wide(mapper->getModeDef().label));
 	else
 		m_game_ui->showTranslatedStatusText("Minimap currently disabled by game or mod");
@@ -2662,23 +2652,27 @@ void Game::checkZoomEnabled()
 
 void Game::updateCameraDirection(CameraOrientation *cam, float dtime)
 {
-#ifndef __ANDROID__
-	if (isMenuActive())
-		device->getCursorControl()->setRelativeMode(false);
-	else
-		device->getCursorControl()->setRelativeMode(true);
+	auto *cur_control = device->getCursorControl();
+
+	/* With CIrrDeviceSDL on Linux and Windows, enabling relative mouse mode
+	somehow results in simulated mouse events being generated from touch events,
+	although SDL_HINT_MOUSE_TOUCH_EVENTS and SDL_HINT_TOUCH_MOUSE_EVENTS are set to 0.
+	Since Minetest has its own code to synthesize mouse events from touch events,
+	this results in duplicated input. To avoid that, we don't enable relative
+	mouse mode if we're in touchscreen mode. */
+#ifndef HAVE_TOUCHSCREENGUI
+	if (cur_control)
+		cur_control->setRelativeMode(!isMenuActive());
 #endif
 
 	if ((device->isWindowActive() && device->isWindowFocused()
 			&& !isMenuActive()) || input->isRandom()) {
 
-#ifndef __ANDROID__
-		if (!input->isRandom()) {
+		if (cur_control && !input->isRandom()) {
 			// Mac OSX gets upset if this is set every frame
-			if (device->getCursorControl()->isVisible())
-				device->getCursorControl()->setVisible(false);
+			if (cur_control->isVisible())
+				cur_control->setVisible(false);
 		}
-#endif
 
 		if (m_first_loop_after_window_activation) {
 			m_first_loop_after_window_activation = false;
@@ -2690,15 +2684,11 @@ void Game::updateCameraDirection(CameraOrientation *cam, float dtime)
 		}
 
 	} else {
-
-#ifndef ANDROID
 		// Mac OSX gets upset if this is set every frame
-		if (!device->getCursorControl()->isVisible())
-			device->getCursorControl()->setVisible(true);
-#endif
+		if (cur_control && !cur_control->isVisible())
+			cur_control->setVisible(true);
 
 		m_first_loop_after_window_activation = true;
-
 	}
 }
 
@@ -3075,6 +3065,9 @@ void Game::handleClientEvent_HudChange(ClientEvent *event, CameraOrientation *ca
 		CASE_SET(HUD_STAT_TEXT2, text2, sdata);
 
 		CASE_SET(HUD_STAT_STYLE, style, data);
+
+		case HudElementStat_END:
+			break;
 	}
 
 #undef CASE_SET
@@ -3088,10 +3081,6 @@ void Game::handleClientEvent_SetSky(ClientEvent *event, CameraOrientation *cam)
 	// Whether clouds are visible in front of a custom skybox.
 	sky->setCloudsEnabled(event->set_sky->clouds);
 
-	if (skybox) {
-		skybox->remove();
-		skybox = NULL;
-	}
 	// Clear the old textures out in case we switch rendering type.
 	sky->clearSkyboxTextures();
 	// Handle according to type
@@ -3150,6 +3139,8 @@ void Game::handleClientEvent_SetSky(ClientEvent *event, CameraOrientation *cam)
 		sky->setFogStart(rangelim(event->set_sky->fog_start, 0.0f, 0.99f));
 	else
 		sky->setFogStart(rangelim(g_settings->getFloat("fog_start"), 0.0f, 0.99f));
+
+	sky->setFogColor(event->set_sky->fog_color);
 
 	delete event->set_sky;
 }
@@ -3388,11 +3379,17 @@ void Game::processPlayerInteraction(f32 dtime, bool show_hud)
 
 	PointedThing pointed = updatePointedThing(shootline,
 			selected_def.liquids_pointable,
+			selected_def.pointabilities,
 			!runData.btn_down_for_dig,
 			camera_offset);
 
 	if (pointed != runData.pointed_old)
 		infostream << "Pointing at " << pointed.dump() << std::endl;
+
+#ifdef HAVE_TOUCHSCREENGUI
+	if (g_touchscreengui)
+		g_touchscreengui->applyContextControls(selected_def.touch_interaction.getMode(pointed));
+#endif
 
 	// Note that updating the selection mesh every frame is not particularly efficient,
 	// but the halo rendering code is already inefficient so there's no point in optimizing it here
@@ -3494,6 +3491,7 @@ void Game::processPlayerInteraction(f32 dtime, bool show_hud)
 PointedThing Game::updatePointedThing(
 	const core::line3d<f32> &shootline,
 	bool liquids_pointable,
+	const std::optional<Pointabilities> &pointabilities,
 	bool look_for_object,
 	const v3s16 &camera_offset)
 {
@@ -3510,7 +3508,7 @@ PointedThing Game::updatePointedThing(
 	runData.selected_object = NULL;
 	hud->pointing_at_object = false;
 
-	RaycastState s(shootline, look_for_object, liquids_pointable);
+	RaycastState s(shootline, look_for_object, liquids_pointable, pointabilities);
 	PointedThing result;
 	env.continueRaycast(&s, &result);
 	if (result.type == POINTEDTHING_OBJECT) {
@@ -3752,7 +3750,36 @@ bool Game::nodePlacement(const ItemDefinition &selected_def,
 		v3s16 dir = nodepos - neighborpos;
 
 		if (abs(dir.Y) > MYMAX(abs(dir.X), abs(dir.Z))) {
-			predicted_node.setParam2(dir.Y < 0 ? 1 : 0);
+			// If you change this code, also change builtin/game/item.lua
+			u8 predicted_param2 = dir.Y < 0 ? 1 : 0;
+			if (selected_def.wallmounted_rotate_vertical) {
+				bool rotate90 = false;
+				v3f fnodepos = v3f(neighborpos.X, neighborpos.Y, neighborpos.Z);
+				v3f ppos = client->getEnv().getLocalPlayer()->getPosition() / BS;
+				v3f pdir = fnodepos - ppos;
+				switch (predicted_f.drawtype) {
+					case NDT_TORCHLIKE: {
+						rotate90 = !((pdir.X < 0 && pdir.Z > 0) ||
+								(pdir.X > 0 && pdir.Z < 0));
+						if (dir.Y > 0) {
+							rotate90 = !rotate90;
+						}
+						break;
+					};
+					case NDT_SIGNLIKE: {
+						rotate90 = abs(pdir.X) < abs(pdir.Z);
+						break;
+					}
+					default: {
+						rotate90 = abs(pdir.X) > abs(pdir.Z);
+						break;
+					}
+				}
+				if (rotate90) {
+					predicted_param2 += 6;
+				}
+			}
+			predicted_node.setParam2(predicted_param2);
 		} else if (abs(dir.X) > abs(dir.Z)) {
 			predicted_node.setParam2(dir.X < 0 ? 3 : 2);
 		} else {
@@ -4062,7 +4089,7 @@ void Game::updateFrame(ProfilerGraph *graph, RunStats *stats, f32 dtime,
 		draw_control->wanted_range = MYMIN(draw_control->wanted_range, sky->getFogDistance());
 	}
 	if (draw_control->range_all && sky->getFogDistance() < 0) {
-		runData.fog_range = 100000 * BS;
+		runData.fog_range = FOG_RANGE_ALL;
 	} else {
 		runData.fog_range = draw_control->wanted_range * BS;
 	}
@@ -4223,7 +4250,7 @@ void Game::updateFrame(ProfilerGraph *graph, RunStats *stats, f32 dtime,
 	/*
 		==================== Drawing begins ====================
 	*/
-	if (RenderingEngine::shouldRender())
+	if (device->isWindowVisible())
 		drawScene(graph, stats);
 	/*
 		==================== End scene ====================
@@ -4304,7 +4331,7 @@ void Game::updateShadows()
 
 void Game::drawScene(ProfilerGraph *graph, RunStats *stats)
 {
-	const video::SColor bg_color = this->sky->getBgColor();
+	const video::SColor fog_color = this->sky->getFogColor();
 	const video::SColor sky_color = this->sky->getSkyColor();
 
 	/*
@@ -4312,21 +4339,21 @@ void Game::drawScene(ProfilerGraph *graph, RunStats *stats)
 	*/
 	if (this->m_cache_enable_fog) {
 		this->driver->setFog(
-				bg_color,
+				fog_color,
 				video::EFT_FOG_LINEAR,
 				this->runData.fog_range * this->sky->getFogStart(),
 				this->runData.fog_range * 1.0f,
-				0.01f,
+				0.f, // unused
 				false, // pixel fog
 				true // range fog
 		);
 	} else {
 		this->driver->setFog(
-				bg_color,
+				fog_color,
 				video::EFT_FOG_LINEAR,
-				100000 * BS,
-				110000 * BS,
-				0.01f,
+				FOG_RANGE_ALL,
+				FOG_RANGE_ALL + 100 * BS,
+				0.f, // unused
 				false, // pixel fog
 				false // range fog
 		);
@@ -4350,7 +4377,7 @@ void Game::drawScene(ProfilerGraph *graph, RunStats *stats)
 		draw_crosshair = false;
 #endif
 	this->m_rendering_engine->draw_scene(sky_color, this->m_game_ui->m_flags.show_hud,
-			this->m_game_ui->m_flags.show_minimap, draw_wield_tool, draw_crosshair);
+			draw_wield_tool, draw_crosshair);
 
 	/*
 		Profiler graph
@@ -4500,8 +4527,8 @@ void Game::showPauseMenu()
 	static const std::string control_text = strgettext("Controls:\n"
 		"No menu open:\n"
 		"- slide finger: look around\n"
-		"- tap: place/use\n"
-		"- long tap: dig/punch/use\n"
+		"- tap: place/punch/use (default)\n"
+		"- long tap: dig/use (default)\n"
 		"Menu/inventory open:\n"
 		"- double tap (outside):\n"
 		" --> close\n"

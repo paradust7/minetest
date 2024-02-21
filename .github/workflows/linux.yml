@@ -37,7 +37,7 @@ jobs:
   gcc_12:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Install deps
         run: |
           source ./util/ci/common.sh
@@ -52,13 +52,16 @@ jobs:
 
       - name: Test
         run: |
-          ./bin/minetest --run-unittests
+          mkdir nowrite
+          chmod a-w nowrite
+          cd nowrite
+          ../bin/minetest --run-unittests
 
   # Current clang version
   clang_14:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Install deps
         run: |
           source ./util/ci/common.sh

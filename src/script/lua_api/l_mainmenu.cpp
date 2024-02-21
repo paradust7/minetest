@@ -32,7 +32,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "convert_json.h"
 #include "content/content.h"
 #include "content/subgames.h"
-#include "serverlist.h"
 #include "mapgen/mapgen.h"
 #include "settings.h"
 #include "client/client.h"
@@ -964,7 +963,12 @@ int ModApiMainMenu::l_get_active_driver(lua_State *L)
 
 int ModApiMainMenu::l_get_active_renderer(lua_State *L)
 {
-	lua_pushstring(L, wide_to_utf8(RenderingEngine::get_video_driver()->getName()).c_str());
+#if IRRLICHT_VERSION_MT_REVISION >= 15
+	lua_pushstring(L, RenderingEngine::get_video_driver()->getName());
+#else
+	auto tmp = wide_to_utf8(RenderingEngine::get_video_driver()->getName());
+	lua_pushstring(L, tmp.c_str());
+#endif
 	return 1;
 }
 

@@ -239,8 +239,6 @@ public:
 	float getSendRecommendedInterval()
 	{ return m_recommended_send_interval; }
 
-	void kickAllPlayers(AccessDeniedCode reason,
-		const std::string &str_reason, bool reconnect);
 	// Save players
 	void saveLoadedPlayers(bool force = false);
 	void savePlayer(RemotePlayer *player);
@@ -315,7 +313,8 @@ public:
 
 	virtual void getSelectedActiveObjects(
 		const core::line3d<f32> &shootline_on_map,
-		std::vector<PointedThing> &objects
+		std::vector<PointedThing> &objects,
+		const std::optional<Pointabilities> &pointabilities
 	);
 
 	/*

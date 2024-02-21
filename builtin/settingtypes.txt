@@ -401,7 +401,8 @@ anisotropic_filter (Anisotropic filtering) bool false
 #
 #    * None - No antialiasing (default)
 #
-#    * FSAA - Hardware-provided full-screen antialiasing (incompatible with shaders)
+#    * FSAA - Hardware-provided full-screen antialiasing
+#             (incompatible with Post Processing and Undersampling)
 #             A.K.A multi-sample antialiasing (MSAA)
 #             Smoothens out block edges but does not affect the insides of textures.
 #             A restart is required to change this option.
@@ -440,7 +441,6 @@ enable_raytraced_culling (Enable Raytraced Culling) bool true
 
 #    Shaders allow advanced visual effects and may increase performance on some video
 #    cards.
-#    This only works with the OpenGL video backend.
 #
 #    Requires: shaders_support
 enable_shaders (Shaders) bool true
@@ -557,12 +557,17 @@ shadow_sky_body_orbit_tilt (Sky Body Orbit Tilt) float 0.0 -60.0 60.0
 
 [**Post Processing]
 
+#    Enables the post processing pipeline.
+#
+#    Requires: shaders
+enable_post_processing (Enable Post Processing) bool true
+
 #    Enables Hable's 'Uncharted 2' filmic tone mapping.
 #    Simulates the tone curve of photographic film and how this approximates the
 #    appearance of high dynamic range images. Mid-range contrast is slightly
 #    enhanced, highlights and shadows are gradually compressed.
 #
-#    Requires: shaders
+#    Requires: shaders, enable_post_processing
 tone_mapping (Filmic tone mapping) bool false
 
 #    Enable automatic exposure correction
@@ -570,14 +575,14 @@ tone_mapping (Filmic tone mapping) bool false
 #    automatically adjust to the brightness of the scene,
 #    simulating the behavior of human eye.
 #
-#    Requires: shaders
+#    Requires: shaders, enable_post_processing
 enable_auto_exposure (Enable Automatic Exposure) bool false
 
 #    Set the exposure compensation in EV units.
 #    Value of 0.0 (default) means no exposure compensation.
 #    Range: from -1 to 1.0
 #
-#    Requires: shaders, enable_auto_exposure
+#    Requires: shaders, enable_post_processing, enable_auto_exposure
 exposure_compensation (Exposure compensation) float 0.0 -1.0 1.0
 
 #    Apply dithering to reduce color banding artifacts.
@@ -588,7 +593,7 @@ exposure_compensation (Exposure compensation) float 0.0 -1.0 1.0
 #    With OpenGL ES, dithering only works if the shader supports high
 #    floating-point precision and it may have a higher performance impact.
 #
-#    Requires: shaders
+#    Requires: shaders, enable_post_processing
 debanding (Enable Debanding) bool true
 
 [**Bloom]
@@ -596,7 +601,7 @@ debanding (Enable Debanding) bool true
 #    Set to true to enable bloom effect.
 #    Bright colors will bleed over the neighboring objects.
 #
-#    Requires: shaders
+#    Requires: shaders, enable_post_processing
 enable_bloom (Enable Bloom) bool false
 
 #    Set to true to render debugging breakdown of the bloom effect.
@@ -604,32 +609,32 @@ enable_bloom (Enable Bloom) bool false
 #    top-left - processed base image, top-right - final image
 #    bottom-left - raw base image, bottom-right - bloom texture.
 #
-#    Requires: shaders, enable_bloom
+#    Requires: shaders, enable_post_processing, enable_bloom
 enable_bloom_debug (Enable Bloom Debug) bool false
 
 #    Defines how much bloom is applied to the rendered image
 #    Smaller values make bloom more subtle
 #    Range: from 0.01 to 1.0, default: 0.05
 #
-#    Requires: shaders, enable_bloom
+#    Requires: shaders, enable_post_processing, enable_bloom
 bloom_intensity (Bloom Intensity) float 0.05 0.01 1.0
 
 #    Defines the magnitude of bloom overexposure.
 #    Range: from 0.1 to 10.0, default: 1.0
 #
-#    Requires: shaders, enable_bloom
+#    Requires: shaders, enable_post_processing, enable_bloom
 bloom_strength_factor (Bloom Strength Factor) float 1.0 0.1 10.0
 
 #    Logical value that controls how far the bloom effect spreads
 #    from the bright objects.
 #    Range: from 0.1 to 8, default: 1
 #
-#    Requires: shaders, enable_bloom
+#    Requires: shaders, enable_post_processing, enable_bloom
 bloom_radius (Bloom Radius) float 1 0.1 8
 
 #    Set to true to enable volumetric lighting effect (a.k.a. "Godrays").
 #
-#    Requires: shaders, enable_bloom
+#    Requires: shaders, enable_post_processing, enable_bloom
 enable_volumetric_lighting (Volumetric lighting) bool false
 
 [*Audio]
@@ -649,7 +654,7 @@ mute_sound (Mute sound) bool false
 
 [*User Interfaces]
 
-#    Set the language. Leave empty to use the system language.
+#    Set the language. By default, the system language is used.
 #    A restart is required after changing this.
 language (Language) enum   ,be,bg,ca,cs,da,de,el,en,eo,es,et,eu,fi,fr,gd,gl,hu,id,it,ja,jbo,kk,ko,lt,lv,ms,nb,nl,nn,pl,pt,pt_BR,ro,ru,sk,sl,sr_Cyrl,sr_Latn,sv,sw,tr,uk,vi,zh_CN,zh_TW
 
@@ -1069,7 +1074,8 @@ mgv5_np_dungeons (Dungeon noise) noise_params_3d 0.9, 0.5, (500, 500, 500), 0, 2
 #    The 'snowbiomes' flag enables the new 5 biome system.
 #    When the 'snowbiomes' flag is enabled jungles are automatically enabled and
 #    the 'jungles' flag is ignored.
-mgv6_spflags (Mapgen V6 specific flags) flags jungles,biomeblend,mudflow,snowbiomes,noflat,trees jungles,biomeblend,mudflow,snowbiomes,flat,trees,nojungles,nobiomeblend,nomudflow,nosnowbiomes,noflat,notrees
+#    The 'temples' flag disables generation of desert temples. Normal dungeons will appear instead.
+mgv6_spflags (Mapgen V6 specific flags) flags jungles,biomeblend,mudflow,snowbiomes,noflat,trees,temples jungles,biomeblend,mudflow,snowbiomes,flat,trees,temples,nojungles,nobiomeblend,nomudflow,nosnowbiomes,noflat,notrees,notemples
 
 #    Deserts occur when np_biome exceeds this value.
 #    When the 'snowbiomes' flag is enabled, this is ignored.
@@ -1798,8 +1804,8 @@ shader_path (Shader path) path
 #    The rendering back-end.
 #    Note: A restart is required after changing this!
 #    OpenGL is the default for desktop, and OGLES2 for Android.
-#    Shaders are supported by OpenGL and OGLES2 (experimental).
-video_driver (Video driver) enum  ,opengl,ogles1,ogles2
+#    Shaders are supported by everything but OGLES1.
+video_driver (Video driver) enum  ,opengl,opengl3,ogles1,ogles2
 
 #    Distance in nodes at which transparency depth sorting is enabled
 #    Use this to limit the performance impact of transparency depth sorting
@@ -1826,11 +1832,6 @@ mesh_generation_interval (Mapblock mesh generation delay) int 0 0 50
 #    Number of threads to use for mesh generation.
 #    Value of 0 (default) will let Minetest autodetect the number of available threads.
 mesh_generation_threads (Mapblock mesh generation threads) int 0 0 8
-
-#    Size of the MapBlock cache of the mesh generator. Increasing this will
-#    increase the cache hit %, reducing the data being copied from the main
-#    thread, thus reducing jitter.
-meshgen_block_cache_size (Mapblock mesh generator's MapBlock cache size in MB) int 20 0 1000
 
 #    True = 256
 #    False = 128
