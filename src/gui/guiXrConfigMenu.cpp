@@ -17,7 +17,7 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
-#include "GUIXRConfigMenu.h"
+#include "guiXrConfigMenu.h"
 #include "debug.h"
 #include "guiButton.h"
 #include "guiScrollBar.h"
