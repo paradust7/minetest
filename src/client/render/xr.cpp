@@ -198,7 +198,9 @@ public:
 		scene::ICameraSceneNode* cameraNode = context.client->getCamera()->getCameraNode();
 		const auto& info = view->info;
 
-		core::vector3df adjPos = info.Position * BS;
+		// Apply virtual IPD adjustment
+		float vipd = g_settings->getFloat("xr_vipd");
+		core::vector3df adjPos = (info.PositionBase + (info.Position - info.PositionBase) * vipd) * BS;
 		cam->baseTransform.transformVect(adjPos);
 
 		core::quaternion adjRot = info.Orientation * cam->baseRotation;

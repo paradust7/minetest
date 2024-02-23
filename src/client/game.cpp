@@ -50,6 +50,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "gui/guiKeyChangeMenu.h"
 #include "gui/guiPasswordChange.h"
 #include "gui/guiVolumeChange.h"
+#include "gui/guiXrConfigMenu.h"
 #include "gui/mainmenumanager.h"
 #include "gui/profilergraph.h"
 #include "mapblock.h"
@@ -154,6 +155,11 @@ struct LocalFormspecHandler : public TextDest
 
 			if (fields.find("btn_key_config") != fields.end()) {
 				g_gamecallback->keyConfig();
+				return;
+			}
+
+			if (fields.find("btn_xr_config") != fields.end()) {
+				g_gamecallback->xrConfig();
 				return;
 			}
 
@@ -1893,6 +1899,12 @@ inline bool Game::handleCallbacks()
 		(new GUIKeyChangeMenu(guienv, guiroot, -1,
 				      &g_menumgr, texture_src))->drop();
 		g_gamecallback->keyconfig_requested = false;
+	}
+
+	if (g_gamecallback->xrconfig_requested) {
+		(new GUIXRConfigMenu(guienv, guiroot, -1,
+				      &g_menumgr, texture_src))->drop();
+		g_gamecallback->xrconfig_requested = false;
 	}
 
 	if (g_gamecallback->keyconfig_changed) {
@@ -4562,6 +4574,8 @@ void Game::showPauseMenu()
 #endif
 	os		<< "button_exit[4," << (ypos++) << ";3,0.5;btn_key_config;"
 		<< strgettext("Controls")  << "]";
+	os		<< "button_exit[4," << (ypos++) << ";3,0.5;btn_xr_config;"
+		<< strgettext("XR Config")  << "]";
 #endif
 	os		<< "button_exit[4," << (ypos++) << ";3,0.5;btn_exit_menu;"
 		<< strgettext("Exit to Menu") << "]";

@@ -31,6 +31,7 @@ class IGameCallback
 public:
 	virtual void exitToOS() = 0;
 	virtual void keyConfig() = 0;
+	virtual void xrConfig() = 0;
 	virtual void disconnect() = 0;
 	virtual void changePassword() = 0;
 	virtual void changeVolume() = 0;
@@ -133,6 +134,11 @@ public:
 		keyconfig_requested = true;
 	}
 
+	virtual void xrConfig()
+	{
+		xrconfig_requested = true;
+	}
+
 	virtual void signalKeyConfigChange()
 	{
 		keyconfig_changed = true;
@@ -143,6 +149,7 @@ public:
 	bool changepassword_requested = false;
 	bool changevolume_requested = false;
 	bool keyconfig_requested = false;
+	bool xrconfig_requested = false;
 	bool shutdown_requested = false;
 
 	bool keyconfig_changed = false;
