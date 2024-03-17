@@ -55,50 +55,85 @@ void GUIXRConfigMenu::regenerateGui(v2u32 screensize)
 		Calculate new sizes and positions
 	*/
 	const float s = m_gui_scale;
+	s32 UnscaledWidth = 480;
+	s32 UnscaledHeight = 600;
 	DesiredRect = core::rect<s32>(
-		screensize.X / 2 - 380 * s / 2,
-		screensize.Y / 2 - 200 * s / 2,
-		screensize.X / 2 + 380 * s / 2,
-		screensize.Y / 2 + 200 * s / 2
+		screensize.X / 2 - UnscaledWidth * s / 2,
+		screensize.Y / 2 - UnscaledHeight * s / 2,
+		screensize.X / 2 + UnscaledWidth * s / 2,
+		screensize.Y / 2 + UnscaledHeight * s / 2
 	);
 	recalculateAbsolutePosition(false);
 
 	v2s32 size = DesiredRect.getSize();
-	int vipd = (int)(g_settings->getFloat("xr_vipd") * 100);
-	vipd = std::clamp(vipd, 50, 200);
+	core::rect<s32> window(0, 0, size.X, size.Y);
 
+	// Shrink a rect by horizontal and vertical padding
+	auto centerIn = [&](const core::rect<s32>& outer, float hpadding, float vpadding) {
+		s32 width = std::max(0, (s32)(outer.getWidth()*(1 - hpadding)));
+		s32 height = std::max(0, (s32)(outer.getHeight()*(1 - vpadding)));
+		auto center = outer.getCenter();
+		return core::rect<s32>(
+			center.X - width / 2,
+			center.Y - height / 2,
+			center.X + width / 2,
+			center.Y + height / 2);
+	};
+	// Split rect horizontally into left and right sides (left ratio between 0 and 1).
+	auto splitHoriz = [&](const core::rect<s32>& outer, float left) {
+		s32 leftWidth = (s32)std::round(outer.getWidth() * left);
+		s32 rightWidth = outer.getWidth() - leftWidth;
+		return std::make_tuple(
+			core::rect<s32>(
+				outer.UpperLeftCorner.X,
+				outer.UpperLeftCorner.Y,
+				outer.UpperLeftCorner.X + leftWidth,
+				outer.LowerRightCorner.Y),
+			core::rect<s32>(
+				outer.UpperLeftCorner.X + leftWidth,
+				outer.UpperLeftCorner.Y,
+				outer.LowerRightCorner.X,
+				outer.LowerRightCorner.Y)
+		);
+	};
+	// Split vertically into `count` equal parts
+	auto splitVert = [&](const core::rect<s32>& outer, int count) {
+		std::vector<core::rect<s32> > rects;
+		s32 totalHeight = outer.getHeight();
+		for (int i = 0; i < count; i++) {
+			rects.emplace_back(
+				outer.UpperLeftCorner.X,
+				outer.UpperLeftCorner.Y + (i * totalHeight) / count,
+				outer.LowerRightCorner.X,
+				outer.UpperLeftCorner.Y + ((i + 1) * totalHeight) / count);
+		}
+		return rects;
+	};
+
+	auto lines = splitVert(window, 16);
 	/*
 		Add stuff
 	*/
+	// Virtual IPD Text and Slider
 	{
-		core::rect<s32> rect(0, 0, 300 * s, 20 * s);
-		rect = rect + v2s32(size.X / 2 - 150 * s, size.Y / 2 - 70 * s);
-
+		int vipd = (int)(g_settings->getFloat("xr_vipd") * 100);
+		vipd = std::clamp(vipd, 50, 200);
+		auto [textRect, sliderRect] = splitHoriz(lines[0], 0.5);
+		textRect = centerIn(textRect, 0.1, 0.1);
+		sliderRect = centerIn(sliderRect, 0.1, 0.1);
 		StaticText::add(Environment, fwgettext("Virtual IPD Scale: %d%%", vipd),
-				rect, false, true, this, ID_xrConfigVipdText);
-	}
-	{
-		core::rect<s32> rect(0, 0, 100 * s, 30 * s);
-		rect = rect + v2s32(size.X / 2 - 100 * s / 2, size.Y / 2 + 55 * s);
-		GUIButton::addButton(Environment, rect, m_tsrc, this, ID_xrConfigExitButton,
-				wstrgettext("Exit").c_str());
-	}
-	{
-		core::rect<s32> rect(0, 0, 300 * s, 20 * s);
-		rect = rect + v2s32(size.X / 2 - 150 * s, size.Y / 2);
+				textRect, false, true, this, ID_xrConfigVipdText);
 		auto e = make_irr<GUIScrollBar>(Environment, this,
-				ID_xrConfigVipdSlider, rect, true, false, m_tsrc);
+				ID_xrConfigVipdSlider, sliderRect, true, false, m_tsrc);
 		e->setMax(150);
 		e->setPos(vipd - 50);
 	}
-/*
 	{
-		core::rect<s32> rect(0, 0, 300 * s, 20 * s);
-		rect = rect + v2s32(size.X / 2 - 150 * s, size.Y / 2 - 35 * s);
-		Environment->addCheckBox(g_settings->getBool("mute_sound"), rect, this,
-				ID_soundMuteButton, wstrgettext("Muted").c_str());
+		core::rect<s32> rect = lines[15];
+		rect = centerIn(rect, 0.8, 0.1);
+		GUIButton::addButton(Environment, rect, m_tsrc, this, ID_xrConfigExitButton,
+				wstrgettext("Exit").c_str());
 	}
-*/
 }
 
 void GUIXRConfigMenu::drawMenu()

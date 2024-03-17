@@ -27,6 +27,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "CImage.h"
 
 #include <memory>
+#include <iostream>
 
 // Move state to xr controller class
 extern bool isMenuActive();
@@ -116,6 +117,58 @@ private:
 	CameraState* state;
 };
 
+//! Adjustable attachment pose
+class AttachmentPose {
+public:
+	AttachmentPose() {}
+
+	bool isLocked() const
+	{
+		return IsLocked;
+	}
+
+	void lock()
+	{
+		LockPose = getCurrent();
+		IsLocked = true;
+	}
+
+	void unlock()
+	{
+		if (!IsLocked)
+			return;
+		BaseParent = CurrentParent;
+		BaseAttach = LockPose;
+		IsLocked = false;
+	}
+
+	void setParent(const core::pose& parent)
+	{
+		CurrentParent = parent;
+	}
+
+	core::pose getCurrent() const
+	{
+		if (IsLocked)
+			return LockPose;
+		// WHY IS THIS SO COMPLICATED
+		// There's probably a simpler formula, but it eludes me.
+		core::vector3df dHP = CurrentParent.Position - BaseParent.Position;
+		core::quaternion dHO = BaseParent.Rotation * CurrentParent.Rotation.inverse();
+			return core::pose(
+				dHP + BaseParent.Position + dHO * (BaseAttach.Position - BaseParent.Position),
+				dHO.inverse() * BaseAttach.Rotation);
+	}
+
+private:
+	bool IsLocked = false;
+	core::pose BaseParent;
+	core::pose BaseAttach;
+	core::pose CurrentParent;
+	core::pose LockPose;
+};
+
+
 class XrForEachView : public RenderStep {
 public:
 	XrForEachView(ViewState *viewState, CameraState *camState, RenderStep* renderView, RenderStep* renderHud)
@@ -151,6 +204,33 @@ public:
 		if (!device->beginFrame(config))
 			return;
 
+		core::XrInputState inputState;
+		device->xrGetInputState(&inputState);
+
+		// Enable wielded tool
+		static AttachmentPose attachment[2];
+		Camera* camera = context.client->getCamera();
+		for (int i = 0; i < 2; i++) {
+			if (!inputState.Hand[i].Grip.Valid)
+				continue;
+			std::cout << "GOT HAND DATA " << i << std::endl;
+			core::pose handPos = inputState.Hand[i].Grip.Pose;
+			attachment[i].setParent(handPos);
+			core::pose toolPose = attachment[i].getCurrent();
+
+			if (!attachment[i].isLocked() && inputState.Hand[i].Attack.Pressed) {
+				attachment[i].lock();
+			} else if (attachment[i].isLocked() && !inputState.Hand[i].Attack.Pressed) {
+				attachment[i].unlock();
+			}
+
+			core::vector3df toolPosition = toolPose.Position * BS;
+			cam->baseTransform.transformVect(toolPosition);
+			core::quaternion toolRotation = toolPose.Rotation.inverse(); //inputState.Hand[i].Grip.Orientation;
+			toolRotation = toolRotation * cam->baseRotation;
+			camera->enableSceneHand((i == 0) ? true : false, toolPosition, toolRotation);
+		}
+
 		auto oldScreenSize = driver->getScreenSize();
 		auto oldViewPort = driver->getViewPort();
 		v2u32 old_target_size = context.target_size;
@@ -173,6 +253,7 @@ public:
 		driver->setRenderTarget(nullptr, video::ECBF_NONE);
 		driver->OnResize(oldScreenSize);
 		driver->setViewPort(oldViewPort);
+		camera->disableSceneHands();
 	}
 private:
 	ViewState* view;

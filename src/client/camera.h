@@ -170,12 +170,20 @@ public:
 	void setDigging(s32 button);
 
 	// Replace the wielded item mesh
-	void wield(const ItemStack &item);
+	void wield(const ItemStack &item, const ItemStack &hand);
 
 	// Draw the wielded tool.
 	// This has to happen *after* the main scene is drawn.
 	// Warning: This clears the Z buffer.
 	void drawWieldedTool(irr::core::matrix4* translation=NULL);
+
+	// Draw the wielded arm/tool as an object in the scene (for XR)
+	void enableSceneHand(
+		bool left,
+		const irr::core::vector3df& position,
+		const irr::core::quaternion& orientation);
+
+	void disableSceneHands();
 
 	// Toggle the current camera mode
 	void toggleCameraMode() {
@@ -221,6 +229,13 @@ private:
 
 	scene::ISceneManager *m_wieldmgr = nullptr;
 	WieldMeshSceneNode *m_wieldnode = nullptr;
+
+	// Left/right hand rendered in smgr for XR
+	struct SceneWieldHand {
+		WieldMeshSceneNode *m_item = nullptr;
+		WieldMeshSceneNode *m_hand = nullptr;
+	};
+	SceneWieldHand m_scene_hand[2];
 
 	// draw control
 	MapDrawControl& m_draw_control;
@@ -279,6 +294,7 @@ private:
 	// Animation when changing wielded item
 	f32 m_wield_change_timer = 0.125f;
 	ItemStack m_wield_item_next;
+	ItemStack m_wield_hand_next;
 
 	CameraMode m_camera_mode = CAMERA_MODE_FIRST;
 

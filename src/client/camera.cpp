@@ -66,6 +66,20 @@ Camera::Camera(MapDrawControl &draw_control, Client *client, RenderingEngine *re
 	m_wieldnode->setItem(ItemStack(), m_client);
 	m_wieldnode->drop(); // m_wieldmgr grabbed it
 
+	// Used for rendering in the scene in XR
+	for (int i = 0; i < 2; i++) {
+		auto& shand = m_scene_hand[i];
+		shand.m_item = new WieldMeshSceneNode(smgr, -1, false);
+		shand.m_item->setItem(ItemStack(), m_client);
+		shand.m_item->drop(); // smgr grabbed it
+		shand.m_item->setVisible(false);
+
+		shand.m_hand = new WieldMeshSceneNode(smgr, -1, false);
+		shand.m_hand->setItem(ItemStack(), m_client);
+		shand.m_hand->drop(); // smgr grabbed it
+		shand.m_hand->setVisible(false);
+	}
+
 	/* TODO: Add a callback function so these can be updated when a setting
 	 *       changes.  At this point in time it doesn't matter (e.g. /set
 	 *       is documented to change server settings only)
@@ -157,6 +171,15 @@ void Camera::step(f32 dtime)
 	if (m_wield_change_timer >= 0 && was_under_zero) {
 		m_wieldnode->setItem(m_wield_item_next, m_client);
 		m_wieldnode->setNodeLightColor(m_player_light_color);
+
+		// Right-hand
+		m_scene_hand[1].m_item->setItem(m_wield_item_next, m_client);
+		m_scene_hand[1].m_item->setNodeLightColor(m_player_light_color);
+		m_scene_hand[1].m_hand->setItem(m_wield_hand_next, m_client);
+		m_scene_hand[1].m_hand->setNodeLightColor(m_player_light_color);
+
+		m_scene_hand[0].m_hand->setItem(m_wield_hand_next, m_client);
+		m_scene_hand[0].m_hand->setNodeLightColor(m_player_light_color);
 	}
 
 	if (m_view_bobbing_state != 0)
@@ -623,11 +646,12 @@ void Camera::setDigging(s32 button)
 		m_digging_button = button;
 }
 
-void Camera::wield(const ItemStack &item)
+void Camera::wield(const ItemStack &item, const ItemStack &hand)
 {
 	if (item.name != m_wield_item_next.name ||
 			item.metadata != m_wield_item_next.metadata) {
 		m_wield_item_next = item;
+		m_wield_hand_next = hand;
 		if (m_wield_change_timer > 0)
 			m_wield_change_timer = -m_wield_change_timer;
 		else if (m_wield_change_timer == 0)
@@ -660,6 +684,48 @@ void Camera::drawWieldedTool(irr::core::matrix4* translation)
 		cam->setTarget(focusPoint);
 	}
 	m_wieldmgr->drawAll();
+}
+
+void Camera::enableSceneHand(
+	bool left,
+	const irr::core::vector3df& position,
+	const irr::core::quaternion& orientation)
+{
+	auto& shand = m_scene_hand[left ? 0 : 1];
+
+	// Position the item
+	{
+	shand.m_item->setVisible(true);
+	shand.m_item->setPosition(position);
+	v3f rotation;
+	orientation.toEuler(rotation);
+	rotation *= core::RADTODEG;
+	shand.m_item->setRotation(rotation);
+	shand.m_item->setScale(v3f(0.03, 0.03, 0.03));
+	shand.m_item->setColor(video::SColor(0xFFFFFFFF));
+	shand.m_item->setNodeLightColor(video::SColor(0xFFFFFFFF));
+	}
+
+	// Position the hand
+	{
+	shand.m_hand->setVisible(true);
+	shand.m_hand->setPosition(position);
+	v3f rotation;
+	orientation.toEuler(rotation);
+	rotation *= core::RADTODEG;
+	shand.m_hand->setRotation(rotation);
+	shand.m_hand->setScale(v3f(0.03, 0.03, 0.03));
+	shand.m_hand->setColor(video::SColor(0xFFFFFFFF));
+	shand.m_hand->setNodeLightColor(video::SColor(0xFFFFFFFF));
+	}
+}
+
+void Camera::disableSceneHands()
+{
+	m_scene_hand[0].m_item->setVisible(false);
+	m_scene_hand[0].m_hand->setVisible(false);
+	m_scene_hand[1].m_item->setVisible(false);
+	m_scene_hand[1].m_hand->setVisible(false);
 }
 
 void Camera::drawNametags()
