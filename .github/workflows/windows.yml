@@ -119,7 +119,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: msvc-${{ matrix.config.arch }}-${{ matrix.type }}
-          path: .\CMakeFiles\
+          path: .\vcpkg\installed\x86-windows\share\
           if-no-files-found: error
 
       - name: Build Minetest
