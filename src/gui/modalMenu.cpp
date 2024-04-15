@@ -27,10 +27,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "gettext.h"
 #include "porting.h"
 #include "settings.h"
-
-#ifdef HAVE_TOUCHSCREENGUI
 #include "touchscreengui.h"
-#endif
 
 GUIModalMenu::GUIModalMenu(gui::IGUIEnvironment* env, gui::IGUIElement* parent,
 	s32 id, IMenuManager *menumgr, bool remap_dbl_click) :
@@ -44,11 +41,12 @@ GUIModalMenu::GUIModalMenu(gui::IGUIEnvironment* env, gui::IGUIElement* parent,
 {
 	m_gui_scale = std::max(g_settings->getFloat("gui_scaling"), 0.5f);
 	const float screen_dpi_scale = RenderingEngine::getDisplayDensity();
-#ifdef HAVE_TOUCHSCREENGUI
-	m_gui_scale *= 1.1f - 0.3f * screen_dpi_scale + 0.2f * screen_dpi_scale * screen_dpi_scale;
-#else
-	m_gui_scale *= screen_dpi_scale;
-#endif
+
+	if (g_settings->getBool("enable_touch")) {
+		m_gui_scale *= 1.1f - 0.3f * screen_dpi_scale + 0.2f * screen_dpi_scale * screen_dpi_scale;
+	} else {
+		m_gui_scale *= screen_dpi_scale;
+	}
 
 	setVisible(true);
 	m_menumgr->createdMenu(this);
@@ -102,10 +100,8 @@ void GUIModalMenu::quitMenu()
 	Environment->removeFocus(this);
 	m_menumgr->deletingMenu(this);
 	this->remove();
-#ifdef HAVE_TOUCHSCREENGUI
 	if (g_touchscreengui)
 		g_touchscreengui->show();
-#endif
 }
 
 static bool isChild(gui::IGUIElement *tocheck, gui::IGUIElement *parent)
@@ -243,7 +239,8 @@ bool GUIModalMenu::preprocessEvent(const SEvent &event)
 #ifdef __ANDROID__
 	// display software keyboard when clicking edit boxes
 	if (event.EventType == EET_MOUSE_INPUT_EVENT &&
-			event.MouseInput.Event == EMIE_LMOUSE_PRESSED_DOWN) {
+			event.MouseInput.Event == EMIE_LMOUSE_PRESSED_DOWN &&
+			!porting::hasPhysicalKeyboardAndroid()) {
 		gui::IGUIElement *hovered =
 			Environment->getRootGUIElement()->getElementFromPoint(
 				core::position2d<s32>(event.MouseInput.X, event.MouseInput.Y));

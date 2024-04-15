@@ -4,20 +4,11 @@
 install_linux_deps() {
 	local pkgs=(
 		cmake gettext postgresql
-		libpng-dev libjpeg-dev libxi-dev libgl1-mesa-dev
+		libpng-dev libjpeg-dev libgl1-mesa-dev libsdl2-dev
 		libsqlite3-dev libhiredis-dev libogg-dev libgmp-dev libvorbis-dev
 		libopenal-dev libpq-dev libleveldb-dev libcurl4-openssl-dev libzstd-dev
-		libopenxr-dev libsdl2-dev
+		libopenxr-dev
 	)
-
-	if [[ "$1" == "--no-irr" ]]; then
-		shift
-	else
-		local ver=$(cat misc/irrlichtmt_tag.txt)
-		mkdir -p lib/irrlichtmt
-		git clone https://github.com/paradust7/irrlicht lib/irrlichtmt --depth 5 -b xr
-		git -C lib/irrlichtmt reset --hard "$ver"
-	fi
 
 	sudo apt-get update
 	sudo apt-get install -y --no-install-recommends "${pkgs[@]}" "$@"

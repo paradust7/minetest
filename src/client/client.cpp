@@ -32,7 +32,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "client/gameui.h"
 #include "client/renderingengine.h"
 #include "client/sound.h"
-#include "client/tile.h"
+#include "client/texturepaths.h"
 #include "client/mesh_generator_thread.h"
 #include "client/particles.h"
 #include "client/localplayer.h"
@@ -799,7 +799,7 @@ bool Client::loadMedia(const std::string &data, const std::string &filename,
 		video::IVideoDriver *vdrv = m_rendering_engine->get_video_driver();
 
 		io::IReadFile *rfile = irrfs->createMemoryReadFile(
-				data.c_str(), data.size(), "_tempreadfile");
+				data.c_str(), data.size(), filename.c_str());
 
 		FATAL_ERROR_IF(!rfile, "Could not create irrlicht memory file.");
 
@@ -1795,6 +1795,11 @@ float Client::mediaReceiveProgress()
 	return 1.0; // downloader only exists when not yet done
 }
 
+void Client::drawLoadScreen(const std::wstring &text, float dtime, int percent) {
+	m_rendering_engine->run();
+	m_rendering_engine->draw_load_screen(text, guienv, m_tsrc, dtime, percent);
+}
+
 struct TextureUpdateArgs {
 	gui::IGUIEnvironment *guienv;
 	u64 last_time_ms;
@@ -1806,7 +1811,7 @@ struct TextureUpdateArgs {
 void Client::showUpdateProgressTexture(void *args, u32 progress, u32 max_progress)
 {
 		TextureUpdateArgs* targs = (TextureUpdateArgs*) args;
-		u16 cur_percent = ceil(progress / (double) max_progress * 100.);
+		u16 cur_percent = std::ceil(progress / max_progress * 100.f);
 
 		// update the loading menu -- if necessary
 		bool do_draw = false;

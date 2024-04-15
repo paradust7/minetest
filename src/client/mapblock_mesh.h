@@ -20,6 +20,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #pragma once
 
 #include "irrlichttypes_extrabloated.h"
+#include "util/numeric.h"
 #include "client/tile.h"
 #include "voxel.h"
 #include <array>
@@ -27,7 +28,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <unordered_map>
 
 class Client;
+class NodeDefManager;
 class IShaderSource;
+class ITextureSource;
 
 /*
 	Mesh making stuff
@@ -43,13 +46,12 @@ struct MeshMakeData
 	v3s16 m_blockpos = v3s16(-1337,-1337,-1337);
 	v3s16 m_crack_pos_relative = v3s16(-1337,-1337,-1337);
 	bool m_smooth_lighting = false;
-	MeshGrid m_mesh_grid;
 	u16 side_length;
 
-	Client *m_client;
+	const NodeDefManager *nodedef;
 	bool m_use_shaders;
 
-	MeshMakeData(Client *client, bool use_shaders);
+	MeshMakeData(const NodeDefManager *ndef, u16 side_length, bool use_shaders);
 
 	/*
 		Copy block data manually (to allow optimizations by the caller)
@@ -179,7 +181,7 @@ class MapBlockMesh
 {
 public:
 	// Builds the mesh given
-	MapBlockMesh(MeshMakeData *data, v3s16 camera_offset);
+	MapBlockMesh(Client *client, MeshMakeData *data, v3s16 camera_offset);
 	~MapBlockMesh();
 
 	// Main animation function, parameters:
@@ -250,7 +252,6 @@ private:
 	v3f m_bounding_sphere_center;
 
 	bool m_enable_shaders;
-	bool m_enable_vbo;
 
 	// Must animate() be called before rendering?
 	bool m_has_animation;

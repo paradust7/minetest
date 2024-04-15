@@ -99,17 +99,31 @@ local function test_clear_meta(_, pos)
 end
 unittests.register("test_clear_meta", test_clear_meta, {map=true})
 
-local on_punch_called
-minetest.register_on_punchnode(function()
+local on_punch_called, on_place_called
+core.register_on_placenode(function()
+	on_place_called = true
+end)
+core.register_on_punchnode(function()
 	on_punch_called = true
 end)
-unittests.register("test_punch_node", function(_, pos)
-	minetest.place_node(pos, {name="basenodes:dirt"})
+local function test_node_callbacks(_, pos)
+	on_place_called = false
 	on_punch_called = false
-	minetest.punch_node(pos)
-	minetest.remove_node(pos)
-	-- currently failing: assert(on_punch_called)
-end, {map=true})
+
+	core.place_node(pos, {name="basenodes:dirt"})
+	assert(on_place_called, "on_place not called")
+	core.punch_node(pos)
+	assert(on_punch_called, "on_punch not called")
+	core.remove_node(pos)
+end
+unittests.register("test_node_callbacks", test_node_callbacks, {map=true})
+
+local function test_hashing()
+	local input = "hello\000world"
+	assert(core.sha1(input) == "f85b420f1e43ebf88649dfcab302b898d889606c")
+	assert(core.sha256(input) == "b206899bc103669c8e7b36de29d73f95b46795b508aa87d612b2ce84bfb29df2")
+end
+unittests.register("test_hashing", test_hashing)
 
 local function test_compress()
 	-- This text should be compressible, to make sure the results are... normal

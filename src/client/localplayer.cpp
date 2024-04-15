@@ -29,6 +29,49 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "content_cao.h"
 
 /*
+	PlayerSettings
+*/
+
+const static std::string PlayerSettings_names[] = {
+	"free_move", "pitch_move", "fast_move", "continuous_forward", "always_fly_fast",
+	"aux1_descends", "noclip", "autojump"
+};
+
+void PlayerSettings::readGlobalSettings()
+{
+	free_move = g_settings->getBool("free_move");
+	pitch_move = g_settings->getBool("pitch_move");
+	fast_move = g_settings->getBool("fast_move");
+	continuous_forward = g_settings->getBool("continuous_forward");
+	always_fly_fast = g_settings->getBool("always_fly_fast");
+	aux1_descends = g_settings->getBool("aux1_descends");
+	noclip = g_settings->getBool("noclip");
+	autojump = g_settings->getBool("autojump");
+}
+
+
+void PlayerSettings::registerSettingsCallback()
+{
+	for (auto &name : PlayerSettings_names) {
+		g_settings->registerChangedCallback(name,
+			&PlayerSettings::settingsChangedCallback, this);
+	}
+}
+
+void PlayerSettings::deregisterSettingsCallback()
+{
+	for (auto &name : PlayerSettings_names) {
+		g_settings->deregisterChangedCallback(name,
+			&PlayerSettings::settingsChangedCallback, this);
+	}
+}
+
+void PlayerSettings::settingsChangedCallback(const std::string &name, void *data)
+{
+	((PlayerSettings *)data)->readGlobalSettings();
+}
+
+/*
 	LocalPlayer
 */
 
@@ -36,6 +79,13 @@ LocalPlayer::LocalPlayer(Client *client, const char *name):
 	Player(name, client->idef()),
 	m_client(client)
 {
+	m_player_settings.readGlobalSettings();
+	m_player_settings.registerSettingsCallback();
+}
+
+LocalPlayer::~LocalPlayer()
+{
+	m_player_settings.deregisterSettingsCallback();
 }
 
 static aabb3f getNodeBoundingBox(const std::vector<aabb3f> &nodeboxes)
@@ -600,7 +650,8 @@ void LocalPlayer::applyControl(float dtime, Environment *env)
 		}
 	}
 
-	speedH = v3f(sin(control.movement_direction), 0.0f, cos(control.movement_direction));
+	speedH = v3f(std::sin(control.movement_direction), 0.0f,
+			std::cos(control.movement_direction));
 
 	if (m_autojump) {
 		// release autojump after a given time

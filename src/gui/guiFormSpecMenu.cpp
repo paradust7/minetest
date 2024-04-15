@@ -39,7 +39,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <IAnimatedMeshSceneNode.h>
 #include "client/renderingengine.h"
 #include "log.h"
-#include "client/tile.h" // ITextureSource
 #include "client/hud.h" // drawItemStack
 #include "filesys.h"
 #include "gettime.h"
@@ -316,13 +315,11 @@ void GUIFormSpecMenu::parseSize(parserData* data, const std::string &element)
 		data->invsize.Y = MYMAX(0, stof(parts[1]));
 
 		lockSize(false);
-#ifndef HAVE_TOUCHSCREENGUI
-		if (parts.size() == 3) {
+		if (!g_settings->getBool("enable_touch") && parts.size() == 3) {
 			if (parts[2] == "true") {
 				lockSize(true,v2u32(800,600));
 			}
 		}
-#endif
 		data->explicit_size = true;
 		return;
 	}
@@ -979,14 +976,18 @@ void GUIFormSpecMenu::parseItemImage(parserData* data, const std::string &elemen
 void GUIFormSpecMenu::parseButton(parserData* data, const std::string &element,
 		const std::string &type)
 {
+	int expected_parts = (type == "button_url" || type == "button_url_exit") ? 5 : 4;
 	std::vector<std::string> parts;
-	if (!precheckElement("button", element, 4, 4, parts))
+	if (!precheckElement("button", element, expected_parts, expected_parts, parts))
 		return;
 
 	std::vector<std::string> v_pos = split(parts[0],',');
 	std::vector<std::string> v_geom = split(parts[1],',');
 	std::string name = parts[2];
 	std::string label = parts[3];
+	std::string url;
+	if (type == "button_url" || type == "button_url_exit")
+		url = parts[4];
 
 	MY_CHECKPOS("button",0);
 	MY_CHECKGEOM("button",1);
@@ -1021,8 +1022,10 @@ void GUIFormSpecMenu::parseButton(parserData* data, const std::string &element,
 		258 + m_fields.size()
 	);
 	spec.ftype = f_Button;
-	if(type == "button_exit")
+	if (type == "button_exit" || type == "button_url_exit")
 		spec.is_exit = true;
+	if (type == "button_url" || type == "button_url_exit")
+		spec.url = url;
 
 	GUIButton *e = GUIButton::addButton(Environment, rect, m_tsrc,
 			data->current_parent, spec.fid, spec.flabel.c_str());
@@ -2900,7 +2903,7 @@ void GUIFormSpecMenu::parseElement(parserData* data, const std::string &element)
 		return;
 	}
 
-	if (type == "button" || type == "button_exit") {
+	if (type == "button" || type == "button_exit" || type == "button_url" || type == "button_url_exit") {
 		parseButton(data, description, type);
 		return;
 	}
@@ -3284,14 +3287,15 @@ void GUIFormSpecMenu::regenerateGui(v2u32 screensize)
 
 			s32 min_screen_dim = std::min(padded_screensize.X, padded_screensize.Y);
 
-#ifdef HAVE_TOUCHSCREENGUI
-			// In Android, the preferred imgsize should be larger to accommodate the
-			// smaller screensize.
-			double prefer_imgsize = min_screen_dim / 10 * gui_scaling;
-#else
-			// Desktop computers have more space, so try to fit 15 coordinates.
-			double prefer_imgsize = min_screen_dim / 15 * gui_scaling;
-#endif
+			double prefer_imgsize;
+			if (g_settings->getBool("enable_touch")) {
+				// The preferred imgsize should be larger to accommodate the
+				// smaller screensize.
+				prefer_imgsize = min_screen_dim / 10 * gui_scaling;
+			} else {
+				// Desktop computers have more space, so try to fit 15 coordinates.
+				prefer_imgsize = min_screen_dim / 15 * gui_scaling;
+			}
 			// Try to use the preferred imgsize, but if that's bigger than the maximum
 			// size, use the maximum size.
 			use_imgsize = std::min(prefer_imgsize,
@@ -4970,6 +4974,17 @@ bool GUIFormSpecMenu::OnEvent(const SEvent& event)
 						m_sound_manager->playSound(0, SoundSpec(s.sound, 1.0f));
 
 					s.send = true;
+
+					if (!s.url.empty()) {
+						if (m_client) {
+							// in game
+							g_gamecallback->showOpenURLDialog(s.url);
+						} else {
+							// main menu
+							porting::open_url(s.url);
+						}
+					}
+
 					if (s.is_exit) {
 						if (m_allowclose) {
 							acceptInput(quit_mode_accept);

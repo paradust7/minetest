@@ -109,9 +109,10 @@ if(BUILD_CLIENT AND ENABLE_SOUND)
 	endif()
 endif()
 
-option(ENABLE_TOUCH "Enable Touchscreen support" FALSE)
+option(ENABLE_TOUCH "Enable touchscreen by default" FALSE)
 if(ENABLE_TOUCH)
-	add_definitions(-DHAVE_TOUCHSCREENGUI)
+	message(STATUS "Touchscreen support enabled by default.")
+	add_definitions(-DENABLE_TOUCH)
 endif()
 
 if(BUILD_CLIENT)
@@ -306,10 +307,6 @@ else()
 	endif()
 
 	if (ANDROID)
-		include_directories(${ANDROID_NDK}/sources/android/native_app_glue)
-		add_library(native_app_glue OBJECT ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c)
-		set(PLATFORM_LIBS ${PLATFORM_LIBS} native_app_glue)
-
 		set(PLATFORM_LIBS ${PLATFORM_LIBS} android log)
 	endif()
 endif()
@@ -367,6 +364,7 @@ set(common_SRCS
 	${server_SRCS}
 	${content_SRCS}
 	chat.cpp
+	clientdynamicinfo.cpp
 	collision.cpp
 	content_mapnode.cpp
 	content_nodemeta.cpp
@@ -415,6 +413,7 @@ set(common_SRCS
 	serialization.cpp
 	server.cpp
 	serverenvironment.cpp
+	servermap.cpp
 	settings.cpp
 	staticobject.cpp
 	terminal_chat_console.cpp
@@ -515,6 +514,9 @@ include_directories(SYSTEM
 	${GMP_INCLUDE_DIR}
 	${JSON_INCLUDE_DIR}
 	${LUA_BIT_INCLUDE_DIR}
+	# on Android, Minetest depends on SDL2 directly
+	# on other platforms, only IrrlichtMt depends on SDL2
+	"$<$<PLATFORM_ID:Android>:${SDL2_INCLUDE_DIRS}>"
 )
 
 if(USE_GETTEXT)
@@ -559,6 +561,9 @@ if(BUILD_CLIENT)
 		${LUA_BIT_LIBRARY}
 		${FREETYPE_LIBRARY}
 		${PLATFORM_LIBS}
+		# on Android, Minetest depends on SDL2 directly
+		# on other platforms, only IrrlichtMt depends on SDL2
+		"$<$<PLATFORM_ID:Android>:${SDL2_LIBRARIES}>"
 	)
 	if(NOT USE_LUAJIT)
 		set_target_properties(${PROJECT_NAME} PROPERTIES
@@ -695,11 +700,13 @@ include(CheckCSourceCompiles)
 
 set(CMAKE_REQUIRED_INCLUDES ${LUA_INCLUDE_DIR})
 if(USE_LUAJIT)
-	set(CMAKE_REQUIRED_LIBRARIES ${LUA_LIBRARY})
+	# libm usually required if statically linking
+	set(CMAKE_REQUIRED_LIBRARIES ${LUA_LIBRARY} m)
 	# LuaJIT provides exactly zero ways to determine how recent it is (the version
 	# is unchanged since 2017), however it happens that string buffers were added
 	# after the changes which we care about so that works as an indicator.
 	# (https://github.com/LuaJIT/LuaJIT/commit/4c6b669 March 2021)
+	# Note: This is no longer true as of August 2023, but we're keeping the old check.
 	unset(HAVE_RECENT_LJ CACHE)
 	check_symbol_exists(luaopen_string_buffer "lualib.h" HAVE_RECENT_LJ)
 	if(NOT HAVE_RECENT_LJ)
@@ -879,10 +886,6 @@ if(WIN32)
 		if(BUILD_CLIENT AND USE_GETTEXT AND GETTEXT_DLL)
 			install(FILES ${GETTEXT_DLL} DESTINATION ${BINDIR})
 		endif()
-	endif()
-
-	if(BUILD_CLIENT AND IRRLICHT_DLL)
-		install(FILES ${IRRLICHT_DLL} DESTINATION ${BINDIR})
 	endif()
 endif()
 

@@ -39,6 +39,11 @@ void set_default_settings()
 	// Client
 	settings->setDefault("address", "");
 	settings->setDefault("enable_sound", "true");
+#if ENABLE_TOUCH
+	settings->setDefault("enable_touch", "true");
+#else
+	settings->setDefault("enable_touch", "false");
+#endif
 	settings->setDefault("sound_volume", "0.8");
 	settings->setDefault("sound_volume_unfocused", "0.3");
 	settings->setDefault("mute_sound", "false");
@@ -46,7 +51,6 @@ void set_default_settings()
 	settings->setDefault("enable_mesh_cache", "false");
 	settings->setDefault("mesh_generation_interval", "0");
 	settings->setDefault("mesh_generation_threads", "0");
-	settings->setDefault("enable_vbo", "true");
 	settings->setDefault("free_move", "false");
 	settings->setDefault("pitch_move", "false");
 	settings->setDefault("fast_move", "false");
@@ -94,7 +98,7 @@ void set_default_settings()
 	settings->setDefault("keymap_cmd_local", ".");
 	settings->setDefault("keymap_minimap", "KEY_KEY_V");
 	settings->setDefault("keymap_console", "KEY_F10");
-#if HAVE_TOUCHSCREENGUI
+#if ENABLE_TOUCH
 	// See https://github.com/minetest/minetest/issues/12792
 	settings->setDefault("keymap_rangeselect", "KEY_KEY_R");
 #else
@@ -196,7 +200,11 @@ void set_default_settings()
 	settings->setDefault("screen_h", "600");
 	settings->setDefault("window_maximized", "false");
 	settings->setDefault("autosave_screensize", "true");
+#ifdef ENABLE_TOUCH
+	settings->setDefault("fullscreen", "true");
+#else
 	settings->setDefault("fullscreen", "false");
+#endif
 	settings->setDefault("vsync", "false");
 	settings->setDefault("fov", "72");
 	settings->setDefault("leaves_style", "fancy");
@@ -297,12 +305,13 @@ void set_default_settings()
 	settings->setDefault("invert_hotbar_mouse_wheel", "false");
 	settings->setDefault("mouse_sensitivity", "0.2");
 	settings->setDefault("repeat_place_time", "0.25");
+	settings->setDefault("repeat_dig_time", "0.15");
 	settings->setDefault("safe_dig_and_place", "false");
 	settings->setDefault("random_input", "false");
 	settings->setDefault("aux1_descends", "false");
 	settings->setDefault("doubletap_jump", "false");
 	settings->setDefault("always_fly_fast", "true");
-#ifdef HAVE_TOUCHSCREENGUI
+#ifdef ENABLE_TOUCH
 	settings->setDefault("autojump", "true");
 #else
 	settings->setDefault("autojump", "false");
@@ -351,11 +360,10 @@ void set_default_settings()
 	settings->setDefault("contentdb_flag_blacklist", "nonfree, desktop_default");
 #endif
 
-	settings->setDefault("update_information_url", "https://www.minetest.net/release_info.json");
 #if ENABLE_UPDATE_CHECKER
-	settings->setDefault("update_last_checked", "");
+	settings->setDefault("update_information_url", "https://www.minetest.net/release_info.json");
 #else
-	settings->setDefault("update_last_checked", "disabled");
+	settings->setDefault("update_information_url", "");
 #endif
 
 	// Server
@@ -481,12 +489,14 @@ void set_default_settings()
 	settings->setDefault("keymap_sneak", "KEY_SHIFT");
 #endif
 
-#ifdef HAVE_TOUCHSCREENGUI
-	settings->setDefault("touchscreen_threshold", "20");
 	settings->setDefault("touchscreen_sensitivity", "0.2");
+	settings->setDefault("touchscreen_threshold", "20");
+	settings->setDefault("touch_long_tap_delay", "400");
 	settings->setDefault("touch_use_crosshair", "false");
 	settings->setDefault("fixed_virtual_joystick", "false");
 	settings->setDefault("virtual_joystick_triggers_aux1", "false");
+	settings->setDefault("touch_punch_gesture", "short_tap");
+#ifdef ENABLE_TOUCH
 	settings->setDefault("clickable_chat_weblinks", "false");
 #else
 	settings->setDefault("clickable_chat_weblinks", "true");
@@ -495,7 +505,6 @@ void set_default_settings()
 #ifdef __ANDROID__
 	settings->setDefault("screen_w", "0");
 	settings->setDefault("screen_h", "0");
-	settings->setDefault("fullscreen", "true");
 	settings->setDefault("performance_tradeoffs", "true");
 	settings->setDefault("max_simultaneous_block_sends_per_client", "10");
 	settings->setDefault("emergequeue_limit_diskonly", "16");

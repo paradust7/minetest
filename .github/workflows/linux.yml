@@ -8,10 +8,11 @@ on:
       - 'lib/**.cpp'
       - 'src/**.[ch]'
       - 'src/**.cpp'
+      - 'irr/**.[ch]'
+      - 'irr/**.cpp'
       - '**/CMakeLists.txt'
       - 'cmake/Modules/**'
       - 'util/ci/**'
-      - 'misc/irrlichtmt_tag.txt'
       - 'Dockerfile'
       - '.dockerignore'
       - '.github/workflows/linux.yml'
@@ -24,7 +25,6 @@ on:
       - '**/CMakeLists.txt'
       - 'cmake/Modules/**'
       - 'util/ci/**'
-      - 'misc/irrlichtmt_tag.txt'
       - 'Dockerfile'
       - '.dockerignore'
       - '.github/workflows/linux.yml'
@@ -76,7 +76,7 @@ jobs:
       - name: Install deps
         run: |
           source ./util/ci/common.sh
-          install_linux_deps clang-14 gdb
+          install_linux_deps clang-14 lldb
 
       - name: Build
         run: |

@@ -77,7 +77,7 @@ MapblockMeshGenerator::MapblockMeshGenerator(MeshMakeData *input, MeshCollector 
 		scene::IMeshManipulator *mm):
 	data(input),
 	collector(output),
-	nodedef(data->m_client->ndef()),
+	nodedef(data->nodedef),
 	meshmanip(mm),
 	blockpos_nodes(data->m_blockpos * MAP_BLOCKSIZE),
 	enable_mesh_cache(g_settings->getBool("enable_mesh_cache") &&
@@ -617,14 +617,14 @@ void MapblockMeshGenerator::calculateCornerLevels()
 		cur_liquid.corner_levels[k][i] = getCornerLevel(i, k);
 }
 
-f32 MapblockMeshGenerator::getCornerLevel(int i, int k)
+f32 MapblockMeshGenerator::getCornerLevel(int i, int k) const
 {
 	float sum = 0;
 	int count = 0;
 	int air_count = 0;
 	for (int dk = 0; dk < 2; dk++)
 	for (int di = 0; di < 2; di++) {
-		LiquidData::NeighborData &neighbor_data = cur_liquid.neighbors[k + dk][i + di];
+		const LiquidData::NeighborData &neighbor_data = cur_liquid.neighbors[k + dk][i + di];
 		content_t content = neighbor_data.content;
 
 		// If top is liquid, draw starting from top of node
@@ -1534,8 +1534,10 @@ void MapblockMeshGenerator::drawNodeboxNode()
 	bool param2_is_rotation =
 			cur_node.f->param_type_2 == CPT2_COLORED_FACEDIR ||
 			cur_node.f->param_type_2 == CPT2_COLORED_WALLMOUNTED ||
+			cur_node.f->param_type_2 == CPT2_COLORED_4DIR ||
 			cur_node.f->param_type_2 == CPT2_FACEDIR ||
-			cur_node.f->param_type_2 == CPT2_WALLMOUNTED;
+			cur_node.f->param_type_2 == CPT2_WALLMOUNTED ||
+			cur_node.f->param_type_2 == CPT2_4DIR;
 
 	bool param2_is_level =
 			cur_node.f->param_type_2 == CPT2_LEVELED;

@@ -8,10 +8,11 @@ on:
       - 'lib/**.cpp'
       - 'src/**.[ch]'
       - 'src/**.cpp'
+      - 'irr/**.[ch]'
+      - 'irr/**.cpp'
       - '**/CMakeLists.txt'
       - 'cmake/Modules/**'
       - 'util/buildbot/**'
-      - 'misc/irrlichtmt_tag.txt'
       - 'misc/*.manifest'
       - '.github/workflows/windows.yml'
   pull_request:
@@ -23,7 +24,6 @@ on:
       - '**/CMakeLists.txt'
       - 'cmake/Modules/**'
       - 'util/buildbot/**'
-      - 'misc/irrlichtmt_tag.txt'
       - 'misc/*.manifest'
       - '.github/workflows/windows.yml'
 
@@ -34,7 +34,7 @@ jobs:
     env:
       VCPKG_VERSION: 8eb57355a4ffb410a2e94c07b4dca2dffbee8e50
       # 2023.10.19
-      vcpkg_packages: zlib zstd curl[winssl] openal-soft libvorbis libogg libjpeg-turbo sqlite3 freetype luajit gmp jsoncpp opengl-registry sdl2 openxr-loader
+      vcpkg_packages: zlib zstd curl[winssl] openal-soft libvorbis libogg libjpeg-turbo sqlite3 freetype luajit gmp jsoncpp sdl2 openxr-loader
     strategy:
       fail-fast: false
       matrix:
@@ -57,11 +57,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Checkout IrrlichtMt
-        run: |
-          $ref = @(Get-Content misc\irrlichtmt_tag.txt)
-          git clone https://github.com/paradust7/irrlicht lib\irrlichtmt --depth 5 -b xr
-          git -C lib\irrlichtmt reset --hard $ref[0]
+      # Workaround for regression, see https://github.com/minetest/minetest/pull/14536
+      - name: Pin CMake to 3.28
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "~3.28.0"
 
       - name: Restore from cache and run vcpkg
         uses: lukka/run-vcpkg@v7

@@ -26,6 +26,7 @@ set (UNITTEST_SRCS
 	${CMAKE_CURRENT_SOURCE_DIR}/test_objdef.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/test_profiler.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/test_random.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/test_sao.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/test_schematic.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/test_serialization.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/test_serveractiveobjectmgr.cpp
@@ -42,9 +43,12 @@ set (UNITTEST_SRCS
 	PARENT_SCOPE)
 
 set (UNITTEST_CLIENT_SRCS
+	${CMAKE_CURRENT_SOURCE_DIR}/mesh_compare.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/test_clientactiveobjectmgr.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/test_content_mapblock.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/test_eventmanager.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/test_gameui.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/test_mesh_compare.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/test_keycode.cpp
 	PARENT_SCOPE)
 
