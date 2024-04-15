@@ -309,7 +309,7 @@ public:
 	CMatrix4<T> &buildProjectionMatrixPerspectiveFovRH(f32 fieldOfViewRadians, f32 aspectRatio, f32 zNear, f32 zFar, bool zClipFromZero = true);
 
 	//! Builds a left-handed perspective projection matrix based on a field of view
-	CMatrix4<T> &buildProjectionMatrixPerspectiveFovLH(f32 fieldOfViewRadians, f32 aspectRatio, f32 zNear, f32 zFar, bool zClipFromZero = true);
+	CMatrix4<T> &buildProjectionMatrixPerspectiveFovLH(f32 fovUp, f32 fovDown, f32 fovRight, f32 fovLeft, f32 zNear, f32 zFar, bool zClipFromZero=true);
 
 	//! Builds a left-handed perspective projection matrix based on a field of view, with far plane at infinity
 	CMatrix4<T> &buildProjectionMatrixPerspectiveFovInfinityLH(f32 fieldOfViewRadians, f32 aspectRatio, f32 zNear, f32 epsilon = 0);
@@ -1536,25 +1536,33 @@ inline CMatrix4<T> &CMatrix4<T>::buildProjectionMatrixPerspectiveFovRH(
 // Builds a left-handed perspective projection matrix based on a field of view
 template <class T>
 inline CMatrix4<T> &CMatrix4<T>::buildProjectionMatrixPerspectiveFovLH(
-		f32 fieldOfViewRadians, f32 aspectRatio, f32 zNear, f32 zFar, bool zClipFromZero)
+		f32 fovUp, f32 fovDown, f32 fovRight, f32 fovLeft, f32 zNear, f32 zFar, bool zClipFromZero)
 {
-	const f64 h = reciprocal(tan(fieldOfViewRadians * 0.5));
-	_IRR_DEBUG_BREAK_IF(aspectRatio == 0.f); // divide by zero
-	const T w = static_cast<T>(h / aspectRatio);
+	const f64 tanUp = tan(fovUp);
+	const f64 tanDown = tan(fovDown);
+	const f64 tanLeft = tan(fovLeft);
+	const f64 tanRight = tan(fovRight);
 
-	_IRR_DEBUG_BREAK_IF(zNear == zFar); // divide by zero
-	M[0] = w;
+	//const f64 h = reciprocal(tan(fieldOfViewRadians*0.5));
+	//const T w = static_cast<T>(h / aspectRatio);
+
+	// h == 1/tanUp or -1/tanDown
+	// w == 1/tanRight or -1/tanLeft
+	// tanAngleWidth = tanRight - tanLeft
+
+	_IRR_DEBUG_BREAK_IF(zNear == zFar); //divide by zero
+	M[0] = 2 / (tanRight - tanLeft);
 	M[1] = 0;
 	M[2] = 0;
 	M[3] = 0;
 
 	M[4] = 0;
-	M[5] = (T)h;
+	M[5] = 2 / (tanUp - tanDown);
 	M[6] = 0;
 	M[7] = 0;
 
-	M[8] = 0;
-	M[9] = 0;
+	M[8] = -(tanRight + tanLeft) / (tanRight - tanLeft);
+	M[9] = -(tanUp + tanDown) / (tanUp - tanDown);
 	// M[10]
 	M[11] = 1;
 

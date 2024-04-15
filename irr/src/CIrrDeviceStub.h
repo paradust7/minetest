@@ -153,6 +153,17 @@ public:
 	//! Resize the render window.
 	void setWindowSize(const irr::core::dimension2d<u32> &size) override {}
 
+	bool hasXR() const override { return false; }
+	void recenterXR() override {}
+	void xrGetInputState(core::XrInputState* state) override
+	{
+		memset(state, 0, sizeof(*state));
+	}
+	void startXR() override {}
+	bool beginFrame(const core::XrFrameConfig&) override { return false; }
+	bool nextView(core::XrViewInfo* info) override { return false; }
+	void stopXR() override {}
+
 protected:
 	void createGUIAndScene();
 

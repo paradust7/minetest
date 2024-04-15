@@ -92,6 +92,7 @@ public:
 	//! Gets the field of view of the camera.
 	//! \return Field of view of the camera
 	f32 getFOV() const override;
+	void getFOV(f32* fovUp, f32* fovDown, f32* fovRight, f32* fovLeft) const override;
 
 	//! Sets the value of the near clipping plane. (default: 1.0f)
 	void setNearValue(f32 zn) override;
@@ -104,6 +105,7 @@ public:
 
 	//! Sets the field of view (Default: PI / 3.5f)
 	void setFOV(f32 fovy) override;
+	void setFOV(f32 fovUp, f32 fovDown, f32 fovRight, f32 fovLeft) override;
 
 	//! PreRender event
 	void OnRegisterSceneNode() override;
@@ -149,8 +151,19 @@ protected:
 	core::vector3df Target;
 	core::vector3df UpVector;
 
-	f32 Fovy;   // Field of view, in radians.
-	f32 Aspect; // Aspect ratio.
+	// Field of view, in radians
+	// Every angle is between -Pi/2 and Pi/2 exclusive
+	//
+	// For symmetric FoV, FovRight and FovUp will be positive,
+	// and FovLeft = -FovRight, and FovDown = -FovUp.
+	//
+	// If FovLeft > FovRight, the view is flipped horizontally.
+	// If FovDown > FovUp, the view is flipped vertically.
+	f32 FovUp;
+	f32 FovDown;
+	f32 FovRight;
+	f32 FovLeft;
+
 	f32 ZNear;  // value of the near view-plane.
 	f32 ZFar;   // Z-value of the far view-plane.
 

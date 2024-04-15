@@ -83,6 +83,9 @@ enum ECOLOR_FORMAT
 	//! 32 bit format using 24 bits for depth and 8 bits for stencil.
 	ECF_D24S8,
 
+	//! 32 bit format using 32 bits for the depth (as a float)
+	ECF_D32F,
+
 	//! Unknown color format:
 	ECF_UNKNOWN
 };

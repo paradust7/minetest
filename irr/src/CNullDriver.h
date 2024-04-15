@@ -21,6 +21,7 @@
 
 namespace irr
 {
+	class COpenXRSwapchain;
 namespace io
 {
 class IWriteFile;
@@ -284,7 +285,10 @@ public:
 		return false;
 	}
 
+	ITexture* useDeviceDependentTexture(const io::path& name, E_DRIVER_TYPE driverType, void *textureId, ECOLOR_FORMAT colorFormat, u32 width, u32 height) override;
+
 protected:
+	friend class irr::COpenXRSwapchain;
 	struct SHWBufferLink
 	{
 		SHWBufferLink(const scene::IMeshBuffer *_MeshBuffer) :

@@ -118,6 +118,7 @@ public:
 	//! Gets the field of view of the camera.
 	/** \return The field of view of the camera in radians. */
 	virtual f32 getFOV() const = 0;
+	virtual void getFOV(f32* fovUp, f32* fovDown, f32* fovRight, f32* fovLeft) const = 0;
 
 	//! Sets the value of the near clipping plane. (default: 1.0f)
 	/** \param zn: New z near value. */
@@ -134,6 +135,7 @@ public:
 	//! Sets the field of view (Default: PI / 2.5f)
 	/** \param fovy: New field of view in radians. */
 	virtual void setFOV(f32 fovy) = 0;
+	virtual void setFOV(f32 fovUp, f32 fovDown, f32 fovRight, f32 fovLeft) = 0;
 
 	//! Get the view frustum.
 	/** \return The current view frustum. */

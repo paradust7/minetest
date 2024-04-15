@@ -1201,6 +1201,10 @@ public:
 
 	//! Used by some SceneNodes to check if a material should be rendered in the transparent render pass
 	virtual bool needsTransparentRenderPass(const irr::video::SMaterial &material) const = 0;
+
+	// Not actually public, needed by OpenXR driver
+	// TODO: Find another way to communicate this
+	virtual ITexture* useDeviceDependentTexture(const io::path& name, E_DRIVER_TYPE driverType, void *textureId, ECOLOR_FORMAT colorFormat, u32 width, u32 height) = 0;
 };
 
 } // end namespace video

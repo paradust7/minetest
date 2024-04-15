@@ -339,6 +339,8 @@ public:
 
 	COpenGLCacheHandler *getCacheHandler() const;
 
+	ITexture* useDeviceDependentTexture(const io::path& name, E_DRIVER_TYPE driverType, void *textureId, ECOLOR_FORMAT colorFormat, u32 width, u32 height) override;
+
 private:
 	bool updateVertexHardwareBuffer(SHWBufferLink_opengl *HWBuffer);
 	bool updateIndexHardwareBuffer(SHWBufferLink_opengl *HWBuffer);

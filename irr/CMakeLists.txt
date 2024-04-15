@@ -4,7 +4,12 @@ project(Irrlicht LANGUAGES CXX)
 
 message(STATUS "*** Building IrrlichtMt ***")
 
+if(MSVC)
+set(CMAKE_CXX_STANDARD 20)
+else()
 set(CMAKE_CXX_STANDARD 17)
+endif()
+
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(NOT CMAKE_BUILD_TYPE)

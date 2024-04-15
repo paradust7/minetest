@@ -553,6 +553,11 @@ ITexture *CNullDriver::createDeviceDependentTextureCubemap(const io::path &name,
 	return new SDummyTexture(name, ETT_CUBEMAP);
 }
 
+ITexture* CNullDriver::useDeviceDependentTexture(const io::path& name, E_DRIVER_TYPE driverType, void *textureId, ECOLOR_FORMAT colorFormat, u32 width, u32 height)
+{
+	return nullptr;
+}
+
 bool CNullDriver::setRenderTargetEx(IRenderTarget *target, u16 clearFlag, SColor clearColor, f32 clearDepth, u8 clearStencil)
 {
 	return false;

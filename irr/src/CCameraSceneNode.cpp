@@ -25,15 +25,18 @@ CCameraSceneNode::CCameraSceneNode(ISceneNode *parent, ISceneManager *mgr, s32 i
 #endif
 
 	// set default projection
-	Fovy = core::PI / 2.5f; // Field of view, in radians.
-	Aspect = 4.0f / 3.0f;   // Aspect ratio.
+	f32 aspect = 4.0f / 3.0f; // Aspect ratio.
 
 	const video::IVideoDriver *const d = mgr ? mgr->getVideoDriver() : 0;
 	if (d) {
 		if (d->getCurrentRenderTargetSize().Height)
-			Aspect = (f32)d->getCurrentRenderTargetSize().Width /
+			aspect = (f32)d->getCurrentRenderTargetSize().Width /
 					 (f32)d->getCurrentRenderTargetSize().Height;
 	}
+	FovUp = core::PI / 5.0f;
+	FovDown = -FovUp;
+	FovRight = atan(tan(FovUp) * aspect);
+	FovLeft = -FovRight;
 
 	ViewArea.setFarNearDistance(ZFar - ZNear);
 	recalculateProjectionMatrix();
@@ -160,12 +163,22 @@ f32 CCameraSceneNode::getFarValue() const
 
 f32 CCameraSceneNode::getAspectRatio() const
 {
-	return Aspect;
+	f32 h = fabsf(tan(FovUp) - tan(FovDown));
+	f32 w = fabsf(tan(FovRight) - tan(FovLeft));
+	return w/h;
 }
 
 f32 CCameraSceneNode::getFOV() const
 {
-	return Fovy;
+	return fabsf(FovUp - FovDown);
+}
+
+void CCameraSceneNode::getFOV(f32* fovUp, f32* fovDown, f32* fovRight, f32* fovLeft) const
+{
+	*fovUp = FovUp;
+	*fovDown = FovDown;
+	*fovRight = FovRight;
+	*fovLeft = FovLeft;
 }
 
 void CCameraSceneNode::setNearValue(f32 f)
@@ -184,19 +197,35 @@ void CCameraSceneNode::setFarValue(f32 f)
 
 void CCameraSceneNode::setAspectRatio(f32 f)
 {
-	Aspect = f;
+	// Assumes symmetric FoV
+	FovRight = atan(f * tan(FovUp));
+	FovLeft = -FovRight;
 	recalculateProjectionMatrix();
 }
 
 void CCameraSceneNode::setFOV(f32 f)
 {
-	Fovy = f;
+	// Assumes symmetric FoV with same aspect ratio
+	f32 aspectRatio = getAspectRatio();
+	FovUp = f/2;
+	FovDown = -f/2;
+	FovRight = atan(aspectRatio * tan(FovUp));
+	FovLeft = -FovRight;
+	recalculateProjectionMatrix();
+}
+
+void CCameraSceneNode::setFOV(f32 fovUp, f32 fovDown, f32 fovRight, f32 fovLeft)
+{
+	FovUp = fovUp;
+	FovDown = fovDown;
+	FovRight = fovRight;
+	FovLeft = fovLeft;
 	recalculateProjectionMatrix();
 }
 
 void CCameraSceneNode::recalculateProjectionMatrix()
 {
-	ViewArea.getTransform(video::ETS_PROJECTION).buildProjectionMatrixPerspectiveFovLH(Fovy, Aspect, ZNear, ZFar, false);
+	ViewArea.getTransform(video::ETS_PROJECTION).buildProjectionMatrixPerspectiveFovLH(FovUp, FovDown, FovRight, FovLeft, ZNear, ZFar, false);
 	IsOrthogonal = false;
 }
 
@@ -296,8 +325,10 @@ ISceneNode *CCameraSceneNode::clone(ISceneNode *newParent, ISceneManager *newMan
 
 	nb->Target = Target;
 	nb->UpVector = UpVector;
-	nb->Fovy = Fovy;
-	nb->Aspect = Aspect;
+	nb->FovUp = FovUp;
+	nb->FovDown = FovDown;
+	nb->FovRight = FovRight;
+	nb->FovLeft = FovLeft;
 	nb->ZNear = ZNear;
 	nb->ZFar = ZFar;
 	nb->ViewArea = ViewArea;
