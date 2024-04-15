@@ -34,8 +34,7 @@
 #endif
 
 #ifdef XR_USE_GRAPHICS_API_OPENGL
-#	include <GL/gl.h>
-#	include <GL/glext.h>
+#	include <vendor/gl.h>
 #endif
 
 #include <openxr/openxr.h>
