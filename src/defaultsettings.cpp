@@ -76,6 +76,7 @@ void set_default_settings()
 	settings->setDefault("xr_hud", "right");
 	settings->setDefault("xr_vipd", "1.0");
 
+
 	// Keymap
 	settings->setDefault("remote_port", "30000");
 	settings->setDefault("keymap_forward", "KEY_KEY_W");
