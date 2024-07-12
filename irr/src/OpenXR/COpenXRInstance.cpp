@@ -8,6 +8,9 @@
 #include <cassert>
 #include <memory>
 
+#ifndef XR_API_VERSION_1_0
+#define XR_API_VERSION_1_0 XR_MAKE_VERSION(1, 0, XR_VERSION_PATCH(XR_CURRENT_API_VERSION))
+#endif
 
 using std::unique_ptr;
 
@@ -134,7 +137,7 @@ bool COpenXRInstance::createInstance()
 		nullptr,
 		0,
 		{
-			"Minetest", 1, "", 0, XR_CURRENT_API_VERSION,
+			"Minetest", 1, "", 0, XR_API_VERSION_1_0,
 		},
 		0,
 		NULL,
