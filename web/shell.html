@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Luanti - Open Source Voxel Game Engine</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #header {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            text-align: center;
+            z-index: 100;
+        }
+
+        h1 {
+            font-size: 2em;
+            font-weight: 600;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        #game-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #canvas {
+            display: block;
+            max-width: 100%;
+            max-height: 100%;
+            background: #000;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        #loading-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            transition: opacity 0.5s ease;
+        }
+
+        #loading-screen.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(255, 255, 255, 0.2);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        #loading-status {
+            font-size: 1.2em;
+            margin: 10px 0;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+
+        #loading-progress {
+            width: 300px;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        #loading-progress-bar {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s ease;
+        }
+
+        #controls-info {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px 25px;
+            border-radius: 10px;
+            font-size: 0.9em;
+            text-align: center;
+            z-index: 10;
+            max-width: 90%;
+        }
+
+        #controls-info.hidden {
+            display: none;
+        }
+
+        .control-hint {
+            margin: 5px 0;
+        }
+
+        #error-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(220, 38, 38, 0.95);
+            padding: 30px;
+            border-radius: 10px;
+            max-width: 500px;
+            text-align: center;
+            display: none;
+            z-index: 200;
+        }
+
+        #error-message.show {
+            display: block;
+        }
+
+        .button {
+            display: inline-block;
+            margin-top: 15px;
+            padding: 10px 20px;
+            background: #fff;
+            color: #dc2626;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            font-size: 1em;
+        }
+
+        .button:hover {
+            background: #f3f4f6;
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 1.5em;
+            }
+            #controls-info {
+                font-size: 0.8em;
+                padding: 10px 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <h1>🎮 Luanti - Web Edition</h1>
+    </div>
+
+    <div id="game-container">
+        <canvas id="canvas" tabindex="1"></canvas>
+        
+        <div id="loading-screen">
+            <div class="loading-spinner"></div>
+            <div id="loading-status">Initializing Luanti...</div>
+            <div id="loading-progress">
+                <div id="loading-progress-bar"></div>
+            </div>
+        </div>
+
+        <div id="controls-info" class="hidden">
+            <div class="control-hint"><strong>Movement:</strong> W/A/S/D or Arrow Keys</div>
+            <div class="control-hint"><strong>Jump:</strong> Space</div>
+            <div class="control-hint"><strong>Mouse:</strong> Look Around (Click to capture)</div>
+            <div class="control-hint"><strong>Inventory:</strong> I</div>
+            <div class="control-hint"><strong>ESC:</strong> Menu / Release Mouse</div>
+        </div>
+    </div>
+
+    <div id="error-message">
+        <h2>❌ Error Loading Luanti</h2>
+        <p id="error-text"></p>
+        <button class="button" onclick="location.reload()">Reload Page</button>
+    </div>
+
+    <script>
+        // Canvas and UI elements
+        var canvas = document.getElementById('canvas');
+        var loadingScreen = document.getElementById('loading-screen');
+        var loadingStatus = document.getElementById('loading-status');
+        var loadingProgressBar = document.getElementById('loading-progress-bar');
+        var controlsInfo = document.getElementById('controls-info');
+        var errorMessage = document.getElementById('error-message');
+        var errorText = document.getElementById('error-text');
+
+        // Emscripten Module configuration
+        var Module = {
+            canvas: canvas,
+            printErr: function(text) {
+                console.error('stderr:', text);
+            },
+            print: function(text) {
+                console.log('stdout:', text);
+            },
+            setStatus: function(text) {
+                if (!text) {
+                    loadingScreen.classList.add('hidden');
+                    controlsInfo.classList.remove('hidden');
+                    return;
+                }
+                console.log('Status:', text);
+                loadingStatus.textContent = text;
+                
+                // Parse progress if available
+                var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
+                if (m) {
+                    var current = parseInt(m[2]);
+                    var total = parseInt(m[4]);
+                    loadingProgressBar.style.width = (current / total * 100) + '%';
+                } else {
+                    loadingProgressBar.style.width = '100%';
+                }
+            },
+            totalDependencies: 0,
+            monitorRunDependencies: function(left) {
+                this.totalDependencies = Math.max(this.totalDependencies, left);
+                Module.setStatus(left ? 'Loading dependencies: ' + (this.totalDependencies - left) + '/' + this.totalDependencies : 'All downloads complete.');
+            },
+            onRuntimeInitialized: function() {
+                console.log('Luanti runtime initialized');
+                Module.setStatus('Starting Luanti...');
+            },
+            onAbort: function(what) {
+                console.error('Aborted:', what);
+                errorText.textContent = 'The game crashed or failed to load. ' + (what || 'Unknown error');
+                errorMessage.classList.add('show');
+                loadingScreen.classList.add('hidden');
+            }
+        };
+
+        // Initial status
+        Module.setStatus('Downloading Luanti...');
+
+        // Handle fullscreen
+        canvas.addEventListener('dblclick', function() {
+            if (!document.fullscreenElement) {
+                canvas.requestFullscreen().catch(err => {
+                    console.log('Fullscreen request failed:', err);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        });
+
+        // Prevent right-click menu on canvas
+        canvas.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+        });
+
+        // Auto-resize canvas
+        function resizeCanvas() {
+            var container = document.getElementById('game-container');
+            var maxWidth = container.clientWidth;
+            var maxHeight = container.clientHeight - 40; // Account for header
+            
+            // Maintain 16:9 aspect ratio
+            var aspectRatio = 16 / 9;
+            var width = maxWidth;
+            var height = maxWidth / aspectRatio;
+            
+            if (height > maxHeight) {
+                height = maxHeight;
+                width = maxHeight * aspectRatio;
+            }
+            
+            canvas.width = Math.floor(width * window.devicePixelRatio);
+            canvas.height = Math.floor(height * window.devicePixelRatio);
+            canvas.style.width = width + 'px';
+            canvas.style.height = height + 'px';
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Handle visibility changes
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                console.log('Page hidden, pausing...');
+            } else {
+                console.log('Page visible, resuming...');
+            }
+        });
+    </script>
+
+    <!-- Emscripten-generated JavaScript will be inserted here -->
+    {{{ SCRIPT }}}
+</body>
+</html>
+

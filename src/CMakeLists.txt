@@ -576,9 +576,10 @@ include_directories(SYSTEM
 	${GMP_INCLUDE_DIR}
 	${JSON_INCLUDE_DIR}
 	${LUA_BIT_INCLUDE_DIR}
-	# on Android, Luanti depends on SDL2 directly
+	# on Android and Emscripten, Luanti depends on SDL2 directly
 	# on other platforms, only IrrlichtMt depends on SDL2
 	"$<$<PLATFORM_ID:Android>:${SDL2_INCLUDE_DIRS}>"
+	"$<$<BOOL:${EMSCRIPTEN}>:${SDL2_INCLUDE_DIRS}>"
 )
 
 if(USE_GETTEXT)

@@ -98,6 +98,36 @@ if(ANDROID)
 	include(AndroidLibs)
 endif()
 
+# Load default options for Emscripten (Web)
+if(EMSCRIPTEN)
+	message(STATUS "Configuring for Emscripten/WebAssembly build")
+	
+	# Emscripten-specific settings
+	set(BUILD_SERVER FALSE CACHE BOOL "Build server" FORCE)
+	set(BUILD_UNITTESTS FALSE CACHE BOOL "Build unittests" FORCE)
+	set(BUILD_BENCHMARKS FALSE CACHE BOOL "Build benchmarks" FORCE)
+	
+	# Disable features not supported or needed on web
+	set(ENABLE_GETTEXT FALSE CACHE BOOL "Use GetText" FORCE)
+	set(ENABLE_REDIS FALSE CACHE BOOL "Enable Redis backend" FORCE)
+	set(ENABLE_POSTGRESQL FALSE CACHE BOOL "Enable PostgreSQL backend" FORCE)
+	set(ENABLE_LEVELDB FALSE CACHE BOOL "Enable LevelDB backend" FORCE)
+	set(ENABLE_PROMETHEUS FALSE CACHE BOOL "Enable Prometheus" FORCE)
+	set(ENABLE_SPATIAL FALSE CACHE BOOL "Enable SpatialIndex" FORCE)
+	
+	# LuaJIT is not supported on Emscripten, use vanilla Lua
+	set(ENABLE_LUAJIT FALSE CACHE BOOL "Use LuaJIT" FORCE)
+	
+	# Must run in place for web
+	set(RUN_IN_PLACE TRUE CACHE BOOL "Run in place" FORCE)
+	
+	# Disable LTO for Emscripten (WASM has its own optimization)
+	set(ENABLE_LTO FALSE CACHE BOOL "Use Link Time Optimization" FORCE)
+	
+	message(STATUS "Web build: LuaJIT disabled, using vanilla Lua")
+	message(STATUS "Web build: Server and database backends disabled")
+endif()
+
 
 if(TRUE)
 	message(STATUS "Using imported IrrlichtMt at subdirectory 'irr'")
@@ -142,7 +172,14 @@ endif()
 
 # Installation
 
-if(WIN32)
+if(EMSCRIPTEN)
+	# Web build paths - everything is relative in virtual filesystem
+	set(SHAREDIR ".")
+	set(BINDIR ".")
+	set(DOCDIR "doc")
+	set(EXAMPLE_CONF_DIR ".")
+	set(LOCALEDIR "locale")
+elseif(WIN32)
 	set(SHAREDIR ".")
 	set(BINDIR "bin")
 	set(DOCDIR "doc")
