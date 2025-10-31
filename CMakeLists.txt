@@ -99,7 +99,7 @@ if(ANDROID)
 endif()
 
 # Load default options for Emscripten (Web)
-if(EMSCRIPTEN)
+if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 	message(STATUS "Configuring for Emscripten/WebAssembly build")
 	
 	# Emscripten-specific settings
@@ -172,7 +172,7 @@ endif()
 
 # Installation
 
-if(EMSCRIPTEN)
+if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 	# Web build paths - everything is relative in virtual filesystem
 	set(SHAREDIR ".")
 	set(BINDIR ".")
