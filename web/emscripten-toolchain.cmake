@@ -106,7 +106,8 @@ set(EMSCRIPTEN_COMMON_FLAGS
     
     # Optimization
     "-sASSERTIONS=0"
-    "-sALLOW_UNIMPLEMENTED_SYSCALLS=0"
+    "-sALLOW_UNIMPLEMENTED_SYSCALLS=1"
+    "-sERROR_ON_UNDEFINED_SYMBOLS=0"
 )
 
 # These flags should ONLY be applied to the final executable, not CMake tests
@@ -131,7 +132,11 @@ set(EMSCRIPTEN_FINAL_EXE_FLAGS
 
 # Apply common flags for all links (including CMake tests)
 string(REPLACE ";" " " EMSCRIPTEN_COMMON_FLAGS_STR "${EMSCRIPTEN_COMMON_FLAGS}")
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${EMSCRIPTEN_COMMON_FLAGS_STR}")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${EMSCRIPTEN_COMMON_FLAGS_STR} -L/emsdk/upstream/emscripten/cache/sysroot/lib")
+
+# Emscripten port flags MUST be present during compilation for headers to work properly
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1")
 
 # Store final exe flags for later use (we'll apply them to the main target only)
 string(REPLACE ";" " " EMSCRIPTEN_FINAL_EXE_FLAGS_STR "${EMSCRIPTEN_FINAL_EXE_FLAGS}")
