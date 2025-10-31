@@ -104,10 +104,15 @@ set(EMSCRIPTEN_COMMON_FLAGS
     # Networking
     "-sFETCH=1"
     
-    # Optimization
-    "-sASSERTIONS=0"
+    # Maximum Debug and Error Reporting
+    "-sASSERTIONS=2"  # Maximum assertion level
+    "-sSTACK_OVERFLOW_CHECK=2"  # Maximum stack overflow checking
     "-sALLOW_UNIMPLEMENTED_SYSCALLS=1"
     "-sERROR_ON_UNDEFINED_SYMBOLS=0"
+    "-sSAFE_HEAP=1"  # Enable heap safety checks
+    "-sGL_DEBUG=1"  # Enable GL debugging
+    "-sGL_ASSERTIONS=1"  # Enable GL assertions
+    "-sGL_TRACK_ERRORS=1"  # Track GL errors
 )
 
 # These flags should ONLY be applied to the final executable, not CMake tests
@@ -132,11 +137,13 @@ set(EMSCRIPTEN_FINAL_EXE_FLAGS
 
 # Apply common flags for all links (including CMake tests)
 string(REPLACE ";" " " EMSCRIPTEN_COMMON_FLAGS_STR "${EMSCRIPTEN_COMMON_FLAGS}")
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${EMSCRIPTEN_COMMON_FLAGS_STR} -L/emsdk/upstream/emscripten/cache/sysroot/lib")
+# Add exception catching for proper error messages and stack traces
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${EMSCRIPTEN_COMMON_FLAGS_STR} -L/emsdk/upstream/emscripten/cache/sysroot/lib -sDISABLE_EXCEPTION_CATCHING=0 -sNO_EXIT_RUNTIME=0")
 
 # Emscripten port flags MUST be present during compilation for headers to work properly
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1")
+# Add -g for debug symbols and stack traces
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1")
 
 # Store final exe flags for later use (we'll apply them to the main target only)
 string(REPLACE ";" " " EMSCRIPTEN_FINAL_EXE_FLAGS_STR "${EMSCRIPTEN_FINAL_EXE_FLAGS}")

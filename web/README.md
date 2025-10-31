@@ -13,54 +13,45 @@ The web build allows Luanti to run directly in modern web browsers without insta
 
 ## Directory Contents
 
-- `Dockerfile` - Multi-stage Docker build for web version
-- `build.sh` - Shell script for building locally with Emscripten
-- `emscripten-toolchain.cmake` - CMake toolchain configuration
+- `Dockerfile` - Docker image with Emscripten + custom zstd compilation
+- `Dockerfile.serve` - nginx server for serving the web build
+- `build-with-docker.sh` - Automated Docker build script (recommended)
+- `serve-with-docker.sh` - Serve the build with proper WASM headers
+- `emscripten-toolchain.cmake` - CMake toolchain configuration for Emscripten
+- `nginx.conf` - nginx configuration with CORS headers for WASM
 - `shell.html` - HTML template for the game interface
-- `pre.js` - JavaScript pre-initialization code
-- `post.js` - JavaScript post-initialization code
+- `pre.js` - JavaScript pre-initialization code (feature detection, logging)
+- `post.js` - JavaScript post-initialization helpers (currently unused)
 - `README.md` - This file
+- `DEPENDENCIES.md` - Detailed dependency handling documentation
 
 ## Quick Start
 
-### Option 1: Docker Build (Recommended)
-
-Build and run using Docker:
+**Everything uses Docker** - no need to install Emscripten locally!
 
 ```bash
-# From project root
-docker build -f web/Dockerfile -t luanti-web .
+# 1. Build the web version (from project root)
+./web/build-with-docker.sh
 
-# Run local web server
-docker run -p 8080:80 luanti-web
+# 2. Serve with proper WASM headers
+./web/serve-with-docker.sh
 
-# Open browser to http://localhost:8080
+# 3. Open browser to http://localhost:8080
 ```
 
-### Option 2: Local Build
+That's it! The Docker image is built automatically on first run.
 
-Requirements:
-- Emscripten SDK installed and activated
-- CMake 3.12+
-- Ninja build system (recommended)
+### What These Scripts Do
 
-```bash
-# Install Emscripten SDK (first time only)
-git clone https://github.com/emscripten-core/emsdk.git
-cd emsdk
-./emsdk install latest
-./emsdk activate latest
-source ./emsdk_env.sh
+**`build-with-docker.sh`**:
+- Builds `luanti-web-builder` Docker image (includes Emscripten 4.0.18 + zstd)
+- Compiles Luanti to WebAssembly
+- Outputs to `build-web/output/`: `index.html`, `luanti.js`, `luanti.wasm`, `luanti.data`
 
-# Build Luanti
-cd /path/to/luanti
-./web/build.sh
-
-# Output files will be in build-web/output/
-# Serve with any web server, e.g.:
-cd build-web/output
-python3 -m http.server 8080
-```
+**`serve-with-docker.sh`**:
+- Builds `luanti-web-server` Docker image (nginx)
+- Serves files with proper CORS headers for SharedArrayBuffer/WASM
+- No caching during development (always serves fresh files)
 
 ## Browser Requirements
 
@@ -116,29 +107,93 @@ The following directories are preloaded into the virtual filesystem:
 
 ## Development
 
+### Debug vs Production Builds
+
+The build mode is controlled in `web/emscripten-toolchain.cmake`.
+
+#### 🐛 **Debug Build** (Current Default)
+
+**Output Size:**
+- WASM: ~104 MB (with full debug symbols)
+- JavaScript: ~573 KB
+
+**Features:**
+- Full C++ symbols in stack traces
+- Detailed error messages and assertions
+- Heap safety checking (`-sSAFE_HEAP=1`)
+- Stack overflow detection (`-sSTACK_OVERFLOW_CHECK=2`)
+- WebGL error tracking
+- Exception catching enabled
+
+**Configuration in `emscripten-toolchain.cmake`:**
+```cmake
+# Compile flags - KEEP the -g flag
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -sUSE_SDL=2 ...")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -sUSE_SDL=2 ...")
+
+# Debug settings in EMSCRIPTEN_COMMON_FLAGS
+"-sASSERTIONS=2"              # Maximum assertions
+"-sSTACK_OVERFLOW_CHECK=2"    # Full stack checking
+"-sSAFE_HEAP=1"               # Heap safety (slower but catches bugs)
+"-sGL_DEBUG=1"                # GL debugging
+"-sGL_ASSERTIONS=1"           # GL assertions
+"-sGL_TRACK_ERRORS=1"         # Track GL errors
+
+# In CMAKE_EXE_LINKER_FLAGS
+"-sDISABLE_EXCEPTION_CATCHING=0"  # Enable C++ exceptions
+```
+
+#### 🚀 **Production Build**
+
+**Output Size:**
+- WASM: ~7-8 MB (optimized)
+- JavaScript: ~340 KB
+
+**Changes needed in `emscripten-toolchain.cmake`:**
+```cmake
+# 1. Remove -g flag from compile flags
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -sUSE_SDL=2 ...")    # No -g
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -sUSE_SDL=2 ...") # No -g
+
+# 2. Change debug settings to production
+"-sASSERTIONS=0"              # Disable assertions
+"-sSTACK_OVERFLOW_CHECK=0"    # Disable (or use =1 for minimal)
+# Remove: -sSAFE_HEAP=1
+# Remove: -sGL_DEBUG=1
+# Remove: -sGL_ASSERTIONS=1  
+# Remove: -sGL_TRACK_ERRORS=1
+
+# 3. Disable exception catching (smaller + faster)
+"-sDISABLE_EXCEPTION_CATCHING=1"  # In linker flags
+```
+
 ### Rebuilding
 
-Clean rebuild:
+**Clean rebuild** (recommended after toolchain changes):
 ```bash
-./web/build.sh clean
+rm -rf build-web/
+./web/build-with-docker.sh
 ```
 
-### Debugging
-
-For debug builds, modify `emscripten-toolchain.cmake`:
-```cmake
-set(CMAKE_BUILD_TYPE Debug)
-set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -gsource-map")
+**Incremental rebuild:**
+```bash
+./web/build-with-docker.sh
 ```
-
-Then add `-sASSERTIONS=2` to link flags for runtime checks.
 
 ### Testing
 
-After building, test in a local browser:
-1. Serve the output directory with a web server
-2. Ensure proper CORS headers for SharedArrayBuffer (if using threading)
-3. Check browser console for errors
+1. Build and serve:
+```bash
+./web/build-with-docker.sh
+./web/serve-with-docker.sh
+```
+
+2. Open http://localhost:8080 in browser
+
+3. Check browser console (F12) for:
+   - Initialization messages
+   - Any error output
+   - Performance metrics
 
 ## Deployment
 

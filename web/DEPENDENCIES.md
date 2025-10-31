@@ -12,18 +12,28 @@ Emscripten includes a "ports" system that provides pre-compiled WebAssembly libr
 
 ## Dependency Mapping
 
-### ✅ Provided by Emscripten
+### ✅ Provided by Emscripten Ports
+
+These are downloaded and compiled by Emscripten automatically:
 
 | Linux Package | Emscripten Equivalent | How it's enabled |
 |---------------|----------------------|------------------|
-| libsdl2-dev | SDL2 port | `-sUSE_SDL=2` in toolchain |
-| zlib1g-dev | Built-in zlib | Automatic |
-| libpng-dev | Built-in libpng | Automatic |
-| libjpeg-dev | Port: libjpeg | Automatic via port |
-| libfreetype6-dev | Port: freetype | Automatic via port |
-| libsqlite3-dev | Built-in sqlite3 | Automatic |
-| libcurl4-*-dev | Port: libcurl | `-sFETCH=1` flag |
-| libzstd-dev | Port: zstd | Automatic via port |
+| libsdl2-dev | SDL2 port (v2.28.5) | `-sUSE_SDL=2` compile flag |
+| zlib1g-dev | Built-in zlib | `-sUSE_ZLIB=1` compile flag |
+| libpng-dev | Built-in libpng | `-sUSE_LIBPNG=1` compile flag |
+| libjpeg-dev | Built-in libjpeg | `-sUSE_LIBJPEG=1` compile flag |
+| libfreetype6-dev | Freetype port | `-sUSE_FREETYPE=1` compile flag |
+| libsqlite3-dev | Built-in sqlite3 | `-sUSE_SQLITE3=1` compile flag |
+
+### 🔧 Custom Compiled in Dockerfile
+
+These are **not** available as Emscripten ports and must be compiled manually:
+
+| Linux Package | Solution | Where it's built |
+|---------------|----------|------------------|
+| libzstd-dev | Compiled with emcc | `web/Dockerfile` (v1.5.6) |
+
+The Dockerfile compiles zstd from source and installs it to `/emsdk/upstream/emscripten/cache/sysroot/`.
 
 ### ✅ Bundled in Luanti Source
 
@@ -38,20 +48,21 @@ These are in the `lib/` directory:
 | sha256 | `lib/sha256/` | Hashing library |
 | Catch2 | `lib/catch2/` | Testing (disabled for web) |
 
-### ❌ Not Needed for Web
+### ❌ Disabled for Web Build
 
-These Linux dependencies are **not required** because web uses different APIs:
+These features are **disabled** because they're not suitable for browser environment:
 
-| Linux Package | Why Not Needed |
-|---------------|----------------|
-| libgl1-mesa-dev | Uses WebGL instead of OpenGL |
-| libx11-dev, libxrandr-dev | No X11 in browser |
-| libopenal-dev, libvorbis-dev, libogg-dev | Web Audio API via Emscripten |
-| libluajit-5.1-dev | Uses bundled vanilla Lua |
-| gettext | I18n disabled for web build |
-| libpq-dev (PostgreSQL) | Not supported on web |
-| libhiredis-dev (Redis) | Not supported on web |
-| libleveldb-dev | Not supported on web |
+| Linux Package | Why Disabled | CMake Flag |
+|---------------|--------------|------------|
+| libgl1-mesa-dev | Uses WebGL instead of OpenGL | `ENABLE_OPENGL=OFF` |
+| libx11-dev, libxrandr-dev | No X11 in browser | N/A (automatic) |
+| libopenal-dev, libvorbis-dev, libogg-dev | Sound disabled for now | `ENABLE_SOUND=OFF` |
+| libluajit-5.1-dev | LuaJIT not supported in WASM | `ENABLE_LUAJIT=OFF` |
+| libcurl4-*-dev | HTTP disabled for initial build | `ENABLE_CURL=OFF` |
+| gettext | I18n disabled for web build | `ENABLE_GETTEXT=OFF` |
+| libpq-dev (PostgreSQL) | Database backends not needed | `ENABLE_POSTGRESQL=OFF` |
+| libhiredis-dev (Redis) | Database backends not needed | `ENABLE_REDIS=OFF` |
+| libleveldb-dev | Database backends not needed | `ENABLE_LEVELDB=OFF` |
 
 ## What You Actually Need to Install
 

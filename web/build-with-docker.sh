@@ -87,8 +87,24 @@ docker run \
         echo ''
         echo '=== Preparing output ==='
         mkdir -p /src/build-web/output
-        cp bin/luanti.* /src/build-web/output/ 2>/dev/null || echo 'Warning: Some output files missing'
-        cp /src/web/shell.html /src/build-web/output/index.html
+        
+        # Copy Emscripten-generated files
+        if [ -f bin/luanti.html ]; then
+            cp bin/luanti.html /src/build-web/output/index.html
+            echo 'Copied luanti.html -> index.html'
+        fi
+        if [ -f bin/luanti.js ]; then
+            cp bin/luanti.js /src/build-web/output/
+            echo 'Copied luanti.js'
+        fi
+        if [ -f bin/luanti.wasm ]; then
+            cp bin/luanti.wasm /src/build-web/output/
+            echo 'Copied luanti.wasm'
+        fi
+        if [ -f bin/luanti.data ]; then
+            cp bin/luanti.data /src/build-web/output/
+            echo 'Copied luanti.data (preloaded assets)'
+        fi
         
         echo ''
         echo '=== Build Complete ==='

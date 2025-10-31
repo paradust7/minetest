@@ -230,12 +230,24 @@
         // Emscripten Module configuration
         var Module = {
             canvas: canvas,
+            arguments: [],  // Start with no arguments to avoid parsing issues
             printErr: function(text) {
                 console.error('stderr:', text);
+                errorText.textContent += text + '\n';
             },
             print: function(text) {
                 console.log('stdout:', text);
             },
+            preRun: [
+                function() {
+                    console.log('***** MODULE PRERUN EXECUTING *****');
+                }
+            ],
+            postRun: [
+                function() {
+                    console.log('***** MODULE POSTRUN EXECUTING *****');
+                }
+            ],
             setStatus: function(text) {
                 if (!text) {
                     loadingScreen.classList.add('hidden');
@@ -265,12 +277,48 @@
                 Module.setStatus('Starting Luanti...');
             },
             onAbort: function(what) {
-                console.error('Aborted:', what);
-                errorText.textContent = 'The game crashed or failed to load. ' + (what || 'Unknown error');
+                console.error('***** ABORT CALLED *****');
+                console.error('Abort reason:', what);
+                console.trace('Abort stack trace');
+                errorText.textContent = 'ABORT: ' + (what || 'Unknown error');
                 errorMessage.classList.add('show');
                 loadingScreen.classList.add('hidden');
             }
         };
+        
+        // Catch all uncaught errors
+        window.addEventListener('error', function(e) {
+            console.error('***** UNCAUGHT ERROR *****');
+            console.error('Message:', e.message);
+            console.error('Filename:', e.filename);
+            console.error('Line:', e.lineno, 'Col:', e.colno);
+            console.error('Error object:', e.error);
+            errorText.textContent = 'ERROR: ' + e.message;
+            errorMessage.classList.add('show');
+        });
+        
+        window.addEventListener('unhandledrejection', function(e) {
+            console.error('***** UNHANDLED PROMISE REJECTION *****');
+            console.error('Reason:', e.reason);
+            errorText.textContent = 'PROMISE REJECTED: ' + e.reason;
+            errorMessage.classList.add('show');
+        });
+
+        // Log that Module is configured
+        console.log('***** MODULE CONFIGURED *****');
+        console.log('Module.arguments:', Module.arguments);
+        
+        var moduleBackup = {
+            print: Module.print,
+            printErr: Module.printErr,
+            onAbort: Module.onAbort,
+            preRun: Module.preRun ? Module.preRun.length : 0,
+            postRun: Module.postRun ? Module.postRun.length : 0
+        };
+        console.log('Module configuration:', moduleBackup);
+        
+        // This variable will be replaced by Emscripten
+        {{{ SCRIPT }}}
 
         // Initial status
         Module.setStatus('Downloading Luanti...');

@@ -28,55 +28,8 @@ console.log('Luanti Web - Pre-initialization');
     }
 })();
 
-// Setup virtual filesystem structure
-Module.preRun = Module.preRun || [];
-Module.preRun.push(function() {
-    console.log('Setting up virtual filesystem...');
-    
-    // Create necessary directories
-    try {
-        FS.mkdir('/worlds');
-        FS.mkdir('/mods');
-        FS.mkdir('/clientmods');
-        console.log('Virtual filesystem ready');
-    } catch (e) {
-        console.warn('Error creating directories (may already exist):', e);
-    }
-    
-    // Setup default configuration if needed
-    try {
-        // Create a minimal default config
-        var defaultConfig = [
-            '# Luanti Web Configuration',
-            '# Auto-generated on first run',
-            '',
-            '# Graphics',
-            'screenW = 1024',
-            'screenH = 768',
-            'fullscreen = false',
-            '',
-            '# Performance',
-            'fps_max = 60',
-            'viewing_range = 100',
-            '',
-            '# Controls',
-            'enable_mouse_look = true',
-            'enable_touch = false',
-            ''
-        ].join('\n');
-        
-        FS.writeFile('/minetest.conf', defaultConfig);
-        console.log('Created default configuration');
-    } catch (e) {
-        console.warn('Error creating default config:', e);
-    }
-});
-
-// Setup post-run hooks
-Module.postRun = Module.postRun || [];
-Module.postRun.push(function() {
-    console.log('Luanti initialization complete');
-});
+// NOTE: FS operations moved to shell.html's Module.preRun
+// This file just does feature detection and logging
 
 // Performance monitoring
 var perfStats = {

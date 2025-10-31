@@ -715,6 +715,19 @@ if(BUILD_CLIENT)
 		)
 	endif()
 
+	# Emscripten-specific configuration
+	if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+		set_target_properties(${PROJECT_NAME} PROPERTIES
+			# Output .html so Emscripten processes the shell file
+			OUTPUT_NAME "luanti"
+			SUFFIX ".html"
+		)
+		# Apply final Emscripten linker flags (preload files, shell, etc.)
+		if(DEFINED LUANTI_WEB_LINKER_FLAGS)
+			target_link_options(${PROJECT_NAME} PRIVATE ${LUANTI_WEB_LINKER_FLAGS})
+		endif()
+	endif()
+
 	if(USE_GETTEXT)
 		target_link_libraries(
 			${PROJECT_NAME}
