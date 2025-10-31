@@ -104,16 +104,34 @@ set(EMSCRIPTEN_COMMON_FLAGS
     # Networking
     "-sFETCH=1"
     
-    # Maximum Debug and Error Reporting
-    "-sASSERTIONS=2"  # Maximum assertion level
-    "-sSTACK_OVERFLOW_CHECK=2"  # Maximum stack overflow checking
+    # Debug and Error Reporting (reduced verbosity for performance)
+    "-sASSERTIONS=1"  # Basic assertions (was 2)
+    "-sSTACK_OVERFLOW_CHECK=1"  # Basic stack checking (was 2)
     "-sALLOW_UNIMPLEMENTED_SYSCALLS=1"
     "-sERROR_ON_UNDEFINED_SYMBOLS=0"
-    "-sSAFE_HEAP=1"  # Enable heap safety checks
-    "-sGL_DEBUG=1"  # Enable GL debugging
-    "-sGL_ASSERTIONS=1"  # Enable GL assertions
-    "-sGL_TRACK_ERRORS=1"  # Track GL errors
+    # Disabled for performance/stability:
+    # "-sSAFE_HEAP=1"  # Too slow for real-time rendering
+    # "-sGL_DEBUG=1"  # Spams console
+    # "-sGL_TRACK_ERRORS=1"  # Spams console
+    "-sRUNTIME_LOGGING=0"  # Disable runtime keepalive spam
+    
+    # CRITICAL: ASYNCIFY allows synchronous main loops to yield to the browser
+    # Without this, the game loop blocks the JavaScript thread = frozen browser
+    "-sASYNCIFY=1"
+    "-sASYNCIFY_STACK_SIZE=65536"  # Increased for deeper call stacks
+    "-sASYNCIFY_ADVISE=1"  # Warn about functions needing asyncification
+    
+    # SDL2 Emscripten integration - use requestAnimationFrame for proper vsync
+    "-sOFFSCREENCANVAS_SUPPORT=0"  # Disable offscreen canvas (can cause issues)
+    
+    # CRITICAL: Tell SDL to use emscripten_set_main_loop_timing for proper FPS limiting
+    # This makes SDL respect vsync and use requestAnimationFrame
+    "-sDEFAULT_TO_CXX=1"  # C++ support for SDL
 )
+
+# Additional compile flags for SDL2
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DEMSCRIPTEN_SDL2_MAIN_LOOP")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DEMSCRIPTEN_SDL2_MAIN_LOOP")
 
 # These flags should ONLY be applied to the final executable, not CMake tests
 set(EMSCRIPTEN_FINAL_EXE_FLAGS
@@ -122,9 +140,10 @@ set(EMSCRIPTEN_FINAL_EXE_FLAGS
     "--preload-file=${CMAKE_SOURCE_DIR}/games@/games"
     "--preload-file=${CMAKE_SOURCE_DIR}/textures@/textures"
     "--preload-file=${CMAKE_SOURCE_DIR}/fonts@/fonts"
+    "--preload-file=${CMAKE_SOURCE_DIR}/client@/client"
     
     # JavaScript/WASM settings
-    "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap']"
+    "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','FS','ENV']"
     "-sEXPORTED_FUNCTIONS=['_main']"
     "-sMODULARIZE=1"
     "-sEXPORT_NAME='LuantiModule'"
@@ -140,14 +159,18 @@ string(REPLACE ";" " " EMSCRIPTEN_COMMON_FLAGS_STR "${EMSCRIPTEN_COMMON_FLAGS}")
 # Add exception catching for proper error messages and stack traces
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${EMSCRIPTEN_COMMON_FLAGS_STR} -L/emsdk/upstream/emscripten/cache/sysroot/lib -sDISABLE_EXCEPTION_CATCHING=0 -sNO_EXIT_RUNTIME=0")
 
+# Enable proper C++ exception handling (compile-time flag required!)
+set(EXCEPTION_FLAGS "-fexceptions")
+
 # Emscripten port flags MUST be present during compilation for headers to work properly
 # Add -g for debug symbols and stack traces
+# Add -fexceptions for proper C++ exception handling across WASM boundaries
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g ${EXCEPTION_FLAGS} -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1")
 
 # Store final exe flags for later use (we'll apply them to the main target only)
-string(REPLACE ";" " " EMSCRIPTEN_FINAL_EXE_FLAGS_STR "${EMSCRIPTEN_FINAL_EXE_FLAGS}")
-set(LUANTI_WEB_LINKER_FLAGS "${EMSCRIPTEN_FINAL_EXE_FLAGS_STR}" CACHE STRING "Final exe flags for Luanti web build")
+# Keep as a list (semicolon-separated) so CMake passes each flag separately
+set(LUANTI_WEB_LINKER_FLAGS ${EMSCRIPTEN_FINAL_EXE_FLAGS} CACHE STRING "Final exe flags for Luanti web build")
 
 # Emscripten has atomics built-in, no library needed
 set(HAVE_LINK_ATOMIC FALSE CACHE BOOL "Whether atomic library is needed" FORCE)

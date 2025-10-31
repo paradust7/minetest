@@ -44,8 +44,13 @@ public:
 
 	struct SHWBufferLink_opengl : public SHWBufferLink
 	{
-		SHWBufferLink_opengl(const scene::IVertexBuffer *vb) : SHWBufferLink(vb) {}
-		SHWBufferLink_opengl(const scene::IIndexBuffer *ib) : SHWBufferLink(ib) {}
+		// WebGL-safe: Initialize VBO with correct target for vertex data
+		SHWBufferLink_opengl(const scene::IVertexBuffer *vb) 
+			: SHWBufferLink(vb), Vbo(GL_ARRAY_BUFFER) {}
+		
+		// WebGL-safe: Initialize VBO with correct target for index data
+		SHWBufferLink_opengl(const scene::IIndexBuffer *ib) 
+			: SHWBufferLink(ib), Vbo(GL_ELEMENT_ARRAY_BUFFER) {}
 
 		OpenGLVBO Vbo;
 	};
@@ -364,7 +369,8 @@ private:
 
 	bool EnableErrorTest;
 
-	OpenGLVBO QuadIndexVBO;
+	// WebGL-safe: QuadIndexVBO is used for index data, must use GL_ELEMENT_ARRAY_BUFFER
+	OpenGLVBO QuadIndexVBO{GL_ELEMENT_ARRAY_BUFFER};
 	void initQuadsIndices(u32 max_vertex_count = 65536);
 
 	void debugCb(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar *message);
