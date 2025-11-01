@@ -8,6 +8,10 @@
 #include <cmath>
 #include <IFileSystem.h>
 #include <json/json.h>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 #include "client.h"
 #include "client/fontengine.h"
 #include "network/clientopcodes.h"
@@ -382,13 +386,30 @@ void Client::connect(const Address &address, const std::string &address_name)
 	}
 
 	m_address_name = address_name;
+	
+#ifdef __EMSCRIPTEN__
+	EM_ASM({ console.log('[client.cpp] About to createMTP()'); });
+#endif
+	
 	m_con.reset(con::createMTP(CONNECTION_TIMEOUT, address.isIPv6(), this));
+
+#ifdef __EMSCRIPTEN__
+	EM_ASM({ console.log('[client.cpp] createMTP() completed'); });
+#endif
 
 	infostream << "Connecting to server at ";
 	address.print(infostream);
 	infostream << std::endl;
 
+#ifdef __EMSCRIPTEN__
+	EM_ASM({ console.log('[client.cpp] About to call m_con->Connect()'); });
+#endif
+
 	m_con->Connect(address);
+
+#ifdef __EMSCRIPTEN__
+	EM_ASM({ console.log('[client.cpp] Connect() completed'); });
+#endif
 
 	initLocalMapSaving(address, m_address_name);
 }

@@ -1413,6 +1413,18 @@ ConnectionEventPtr Connection::waitEvent(u32 timeout_ms)
 		return m_event_queue.pop_front(timeout_ms);
 	} catch(ItemNotFoundException &ex) {
 		return ConnectionEvent::create(CONNEVENT_NONE);
+	} catch(std::exception &ex) {
+#ifdef __EMSCRIPTEN__
+		// Emscripten threading issue: catch any exception from pop_front
+		EM_ASM({ console.error('[impl.cpp] Exception in waitEvent: ' + UTF8ToString($0)); }, ex.what());
+#endif
+		return ConnectionEvent::create(CONNEVENT_NONE);
+	} catch(...) {
+#ifdef __EMSCRIPTEN__
+		// Emscripten threading issue: catch unknown exceptions
+		EM_ASM({ console.error('[impl.cpp] Unknown exception in waitEvent'); });
+#endif
+		return ConnectionEvent::create(CONNEVENT_NONE);
 	}
 }
 

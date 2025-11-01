@@ -30,11 +30,12 @@ set(ZLIB_INCLUDE_DIRS "${ZLIB_INCLUDE_DIR}")
 set(ZLIB_LIBRARY "z")
 set(ZLIB_LIBRARIES "${ZLIB_LIBRARY}")
 
-# PNG - Emscripten port
+# PNG - Emscripten port (handled by -sUSE_LIBPNG=1 at link time)
 set(PNG_FOUND TRUE)
 set(PNG_PNG_INCLUDE_DIR "${EMSCRIPTEN_ROOT_PATH}/system/include")
-set(PNG_LIBRARY "png")
-set(PNG_LIBRARIES "${PNG_LIBRARY}")
+# Use dummy value - actual linking handled by -sUSE_LIBPNG=1
+set(PNG_LIBRARY "EMSCRIPTEN_PORT_PNG")
+set(PNG_LIBRARIES "EMSCRIPTEN_PORT_PNG")
 
 # JPEG - Emscripten port
 set(JPEG_FOUND TRUE)
@@ -67,11 +68,19 @@ set(FREETYPE_INCLUDE_DIRS "${EMSCRIPTEN_ROOT_PATH}/system/include/freetype2")
 set(FREETYPE_LIBRARY "freetype")
 set(FREETYPE_LIBRARIES "${FREETYPE_LIBRARY}")
 
-# SQLite3 - built-in to Emscripten
+# SQLite3 - built-in to Emscripten (handled by -sUSE_SQLITE3=1 at link time)
 set(SQLITE3_FOUND TRUE)
 set(SQLITE3_INCLUDE_DIR "${EMSCRIPTEN_ROOT_PATH}/system/include")
+# Set to "sqlite3" for CMake, but Emscripten will handle it via port system
 set(SQLITE3_LIBRARY "sqlite3")
-set(SQLITE3_LIBRARIES "${SQLITE3_LIBRARY}")
+set(SQLITE3_LIBRARIES "sqlite3")
+
+# Zstd - manually compiled with pthread support (in /usr/local)
+set(ZSTD_FOUND TRUE)
+set(ZSTD_INCLUDE_DIR "/usr/local/include")
+set(ZSTD_INCLUDE_DIRS "${ZSTD_INCLUDE_DIR}")
+set(ZSTD_LIBRARY "/usr/local/lib/libzstd.a")
+set(ZSTD_LIBRARIES "${ZSTD_LIBRARY}")
 
 # Force static libraries (Emscripten doesn't support dynamic linking)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
@@ -104,6 +113,11 @@ set(EMSCRIPTEN_COMMON_FLAGS
     # Networking
     "-sFETCH=1"
     
+    # Socket emulation: Using custom JavaScript proxy (socket-proxy.js + socket-library.js)
+    # Stage 1: Localhost loopback for single-player
+    # Future: WebRTC DataChannels / WebTransport for multiplayer
+    # Note: NOT using PROXY_POSIX_SOCKETS - we implement our own socket layer
+    
     # Debug and Error Reporting (reduced verbosity for performance)
     "-sASSERTIONS=1"  # Basic assertions (was 2)
     "-sSTACK_OVERFLOW_CHECK=1"  # Basic stack checking (was 2)
@@ -121,8 +135,15 @@ set(EMSCRIPTEN_COMMON_FLAGS
     "-sASYNCIFY_STACK_SIZE=65536"  # Increased for deeper call stacks
     "-sASYNCIFY_ADVISE=1"  # Warn about functions needing asyncification
     
-    # SDL2 Emscripten integration - use requestAnimationFrame for proper vsync
-    "-sOFFSCREENCANVAS_SUPPORT=0"  # Disable offscreen canvas (can cause issues)
+    # Threading support (required for server thread + network threads)
+    # Enables Web Workers for true multithreading
+    "-pthread"
+    "-sPTHREAD_POOL_SIZE=16"  # Pre-create 16 worker threads (server + client network threads + emerge + overhead)
+    # Note: NOT using PROXY_TO_PTHREAD - main() runs on main thread for WebGL compatibility
+    # Server runs in one thread, network threads in others
+    
+    # SDL2 Emscripten integration
+    "-sOFFSCREENCANVAS_SUPPORT=0"  # Don't use OffscreenCanvas (not widely supported)
     
     # CRITICAL: Tell SDL to use emscripten_set_main_loop_timing for proper FPS limiting
     # This makes SDL respect vsync and use requestAnimationFrame
@@ -152,12 +173,16 @@ set(EMSCRIPTEN_FINAL_EXE_FLAGS
     # Shell and JS files
     "--shell-file=${CMAKE_SOURCE_DIR}/web/shell.html"
     "--pre-js=${CMAKE_SOURCE_DIR}/web/pre.js"
+    "--pre-js=${CMAKE_SOURCE_DIR}/web/socket-proxy-shared.js"
+    "--js-library=${CMAKE_SOURCE_DIR}/web/socket-library-v2.js"
 )
 
 # Apply common flags for all links (including CMake tests)
 string(REPLACE ";" " " EMSCRIPTEN_COMMON_FLAGS_STR "${EMSCRIPTEN_COMMON_FLAGS}")
 # Add exception catching for proper error messages and stack traces
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${EMSCRIPTEN_COMMON_FLAGS_STR} -L/emsdk/upstream/emscripten/cache/sysroot/lib -sDISABLE_EXCEPTION_CATCHING=0 -sNO_EXIT_RUNTIME=0")
+# Add -L/usr/local/lib for zstd library and dummy port libraries (created in Dockerfile)
+# Add port flags at link time so Emscripten builds pthread-enabled versions
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${EMSCRIPTEN_COMMON_FLAGS_STR} -L/usr/local/lib -sDISABLE_EXCEPTION_CATCHING=0 -sNO_EXIT_RUNTIME=0 -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1")
 
 # Enable proper C++ exception handling (compile-time flag required!)
 set(EXCEPTION_FLAGS "-fexceptions")
@@ -165,8 +190,10 @@ set(EXCEPTION_FLAGS "-fexceptions")
 # Emscripten port flags MUST be present during compilation for headers to work properly
 # Add -g for debug symbols and stack traces
 # Add -fexceptions for proper C++ exception handling across WASM boundaries
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g ${EXCEPTION_FLAGS} -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1")
+# Add -pthread for threading support (must match linker flags)
+# Add -I/usr/local/include for zstd headers
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -pthread -I/usr/local/include -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g ${EXCEPTION_FLAGS} -pthread -I/usr/local/include -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1")
 
 # Store final exe flags for later use (we'll apply them to the main target only)
 # Keep as a list (semicolon-separated) so CMake passes each flag separately

@@ -10,6 +10,10 @@
 #include "network/networkpacket.h"
 #include "util/serialize.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 namespace con
 {
 
@@ -507,8 +511,17 @@ void ConnectionSendThread::processNonReliableCommand(ConnectionCommandPtr &c_ptr
 
 void ConnectionSendThread::serve(Address bind_address)
 {
+#ifdef __EMSCRIPTEN__
+	EM_ASM({ console.log('[threads.cpp] serve() called'); });
+#endif
+	
 	LOG(dout_con << m_connection->getDesc()
 		<< "UDP serving at port " << bind_address.serializeString() << std::endl);
+	
+#ifdef __EMSCRIPTEN__
+	EM_ASM({ console.log('[threads.cpp] About to call Bind()'); });
+#endif
+	
 	try {
 		m_connection->m_udpSocket.Bind(bind_address);
 		m_connection->SetPeerID(PEER_ID_SERVER);
@@ -517,13 +530,30 @@ void ConnectionSendThread::serve(Address bind_address)
 		// Create event
 		m_connection->putEvent(ConnectionEvent::bindFailed());
 	}
+	
+#ifdef __EMSCRIPTEN__
+	EM_ASM({ console.log('[threads.cpp] serve() completed'); });
+#endif
 }
 
 void ConnectionSendThread::connect(Address address)
 {
+#ifdef __EMSCRIPTEN__
+	EM_ASM({ console.log('[threads.cpp] connect() called'); });
+#endif
+	
 	dout_con << m_connection->getDesc() << " connecting to ";
+	
+#ifdef __EMSCRIPTEN__
+	EM_ASM({ console.log('[threads.cpp] About to call address.print()'); });
+#endif
+	
 	address.print(dout_con);
 	dout_con << std::endl;
+
+#ifdef __EMSCRIPTEN__
+	EM_ASM({ console.log('[threads.cpp] About to createServerPeer()'); });
+#endif
 
 	UDPPeer *peer = m_connection->createServerPeer(address);
 
@@ -929,6 +959,14 @@ void *ConnectionReceiveThread::run()
 void ConnectionReceiveThread::receive(SharedBuffer<u8> &packetdata,
 		bool &packet_queued)
 {
+#ifdef __EMSCRIPTEN__
+	static int receive_call_count = 0;
+	if (receive_call_count < 5) {
+		EM_ASM({ console.log('[threads.cpp] receive() called, count=' + $0); }, receive_call_count);
+		receive_call_count++;
+	}
+#endif
+	
 	try {
 		// First, see if there any buffered packets we can process now
 		if (packet_queued) {
@@ -949,9 +987,23 @@ void ConnectionReceiveThread::receive(SharedBuffer<u8> &packetdata,
 		}
 
 		// Call Receive() to wait for incoming data
+#ifdef __EMSCRIPTEN__
+		static int udp_receive_call_count = 0;
+		if (udp_receive_call_count < 5) {
+			EM_ASM({ console.log('[threads.cpp] About to call m_udpSocket.Receive(), count=' + $0); }, udp_receive_call_count);
+			udp_receive_call_count++;
+		}
+#endif
 		Address sender;
 		s32 received_size = m_connection->m_udpSocket.Receive(sender,
 			*packetdata, packetdata.getSize());
+#ifdef __EMSCRIPTEN__
+		static int udp_receive_return_count = 0;
+		if (udp_receive_return_count < 5) {
+			EM_ASM({ console.log('[threads.cpp] m_udpSocket.Receive() returned: ' + $0); }, received_size);
+			udp_receive_return_count++;
+		}
+#endif
 		if (received_size < 0)
 			return;
 

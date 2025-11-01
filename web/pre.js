@@ -3,88 +3,182 @@
 
 console.log('Luanti Web - Pre-initialization');
 
-// Check for required browser features
-(function checkBrowserSupport() {
-    var errors = [];
+// Detect if we're in a worker thread (PROXY_TO_PTHREAD runs main() in worker)
+var isMainThread = typeof window !== 'undefined';
+var isWorker = typeof importScripts === 'function';
+
+// Initialize SharedArrayBuffer for socket proxy on MAIN THREAD ONLY
+// Workers will receive the buffer via postMessage when they are created
+if (isMainThread && typeof SharedArrayBuffer !== 'undefined') {
+    console.log('[pre.js] Creating shared socket buffer on main thread');
+    var SOCKET_SHARED_MEMORY_SIZE = 1024 * 1024; // 1MB
+    var _luantiSocketSharedBuffer = new SharedArrayBuffer(SOCKET_SHARED_MEMORY_SIZE);
+    var _luantiSocketSharedInt32 = new Int32Array(_luantiSocketSharedBuffer);
     
-    if (!window.WebAssembly) {
-        errors.push('WebAssembly is not supported');
+    // Initialize the buffer
+    var OFFSET_NEXT_FD = 0;
+    var OFFSET_LOCK = 1;
+    var OFFSET_SOCKET_DATA = 2;
+    var MAX_SOCKETS = 256;
+    var SOCKET_ENTRY_SIZE = 16;
+    
+    Atomics.store(_luantiSocketSharedInt32, OFFSET_NEXT_FD, 100);
+    Atomics.store(_luantiSocketSharedInt32, OFFSET_LOCK, 0);
+    
+    for (var i = 0; i < MAX_SOCKETS; i++) {
+        var offset = OFFSET_SOCKET_DATA + (i * SOCKET_ENTRY_SIZE);
+        Atomics.store(_luantiSocketSharedInt32, offset, -1);
     }
     
-    if (!window.WebGLRenderingContext) {
-        errors.push('WebGL is not supported');
+    // Store in a global location accessible to worker initialization
+    // We'll use 'self' which works in both window and worker contexts
+    self._luantiSocketSharedBuffer = _luantiSocketSharedBuffer;
+    self._luantiSocketSharedInt32 = _luantiSocketSharedInt32;
+    
+    // CRITICAL: Packet queues MUST be a single shared object accessible to all threads
+    // We create it here on the main thread and pass the REFERENCE to workers
+    // JavaScript objects are shared by reference when passed via postMessage with SharedArrayBuffer
+    self._luantiSocketPacketQueues = {}; // This will be THE ONLY packet queue object
+    
+    console.log('[pre.js] Shared socket buffer initialized and stored in self');
+    
+    // Hook Worker constructor to pass SharedArrayBuffer AND packet queues to workers
+    // This ensures workers have access to the SAME packet queue object
+    var OriginalWorker = self.Worker;
+    self.Worker = function(scriptURL, options) {
+        console.log('[pre.js] Creating worker, will inject SharedArrayBuffer and packet queues');
+        var worker = new OriginalWorker(scriptURL, options);
+        
+        // Immediately send the SharedArrayBuffer AND packet queues reference to the worker
+        // Note: Regular objects can't be transferred, but we can use a workaround
+        // by storing the packet queues in a way that's accessible via Atomics.notify/wait
+        worker.postMessage({
+            cmd: '_luantiSocketInit',  // Use underscore prefix to avoid conflicts
+            sharedBuffer: self._luantiSocketSharedBuffer,
+            // We can't actually send the packet queues object reference across threads
+            // Each thread will need its own copy, but we'll use the SharedArrayBuffer
+            // to coordinate packet delivery
+        });
+        
+        return worker;
+    };
+    // Copy static properties from original Worker constructor
+    for (var prop in OriginalWorker) {
+        if (OriginalWorker.hasOwnProperty(prop)) {
+            self.Worker[prop] = OriginalWorker[prop];
+        }
     }
     
-    // Check for WebGL 2.0
-    var canvas = document.createElement('canvas');
-    var gl = canvas.getContext('webgl2');
-    if (!gl) {
-        errors.push('WebGL 2.0 is not supported');
-    }
+    console.log('[pre.js] Worker constructor hooked to inject SharedArrayBuffer');
+}
+
+// Worker thread: Receive the SharedArrayBuffer from main thread
+if (isWorker) {
+    console.log('[pre.js] Worker thread setting up SharedArrayBuffer listener');
     
-    if (errors.length > 0) {
-        console.error('Browser compatibility errors:', errors);
-        alert('Your browser does not support the required features to run Luanti:\n\n' + errors.join('\n') + '\n\nPlease use a modern browser like Chrome, Firefox, or Edge.');
-    }
-})();
+    // Listen for our custom initialization message
+    // This will arrive before Emscripten's pthread initialization
+    self.addEventListener('message', function(e) {
+        if (e.data && e.data.cmd === '_luantiSocketInit' && e.data.sharedBuffer) {
+            console.log('[pre.js] Worker received SharedArrayBuffer via postMessage');
+            self._luantiSocketSharedBuffer = e.data.sharedBuffer;
+            self._luantiSocketSharedInt32 = new Int32Array(e.data.sharedBuffer);
+            self._luantiSocketPacketQueues = {};
+            console.log('[pre.js] SharedArrayBuffer initialized in worker');
+        }
+    });
+}
+
+// Only run browser checks on main thread
+if (isMainThread) {
+    // Check for required browser features
+    (function checkBrowserSupport() {
+        var errors = [];
+        
+        if (!window.WebAssembly) {
+            errors.push('WebAssembly is not supported');
+        }
+        
+        if (!window.WebGLRenderingContext) {
+            errors.push('WebGL is not supported');
+        }
+        
+        // Check for WebGL 2.0
+        var canvas = document.createElement('canvas');
+        var gl = canvas.getContext('webgl2');
+        if (!gl) {
+            errors.push('WebGL 2.0 is not supported');
+        }
+        
+        if (errors.length > 0) {
+            console.error('Browser compatibility errors:', errors);
+            alert('Your browser does not support the required features to run Luanti:\n\n' + errors.join('\n') + '\n\nPlease use a modern browser like Chrome, Firefox, or Edge.');
+        }
+    })();
+}
 
 // NOTE: FS operations moved to shell.html's Module.preRun
 // This file just does feature detection and logging
 
-// Performance monitoring
-var perfStats = {
-    startTime: Date.now(),
-    frameCount: 0,
-    lastFpsUpdate: Date.now()
-};
+// Main thread only: Performance monitoring, event handlers, etc.
+if (isMainThread) {
+    // Performance monitoring
+    var perfStats = {
+        startTime: Date.now(),
+        frameCount: 0,
+        lastFpsUpdate: Date.now()
+    };
 
-// Log performance stats periodically (optional, can be disabled)
-if (typeof Module.enablePerfStats !== 'undefined' && Module.enablePerfStats) {
-    setInterval(function() {
-        var now = Date.now();
-        var elapsed = (now - perfStats.lastFpsUpdate) / 1000;
-        var fps = perfStats.frameCount / elapsed;
-        
-        console.log('Performance: ' + fps.toFixed(1) + ' FPS');
-        
-        perfStats.frameCount = 0;
-        perfStats.lastFpsUpdate = now;
-    }, 5000);
-}
-
-// Handle beforeunload - save state if possible
-window.addEventListener('beforeunload', function(e) {
-    console.log('Page unloading, attempting to save state...');
-    // Emscripten's IDBFS can be used here to persist filesystem changes
-    // This would be implemented later for saved games
-});
-
-// Disable right-click context menu globally for game area
-document.addEventListener('DOMContentLoaded', function() {
-    var canvas = document.getElementById('canvas');
-    if (canvas) {
-        canvas.addEventListener('contextmenu', function(e) {
-            e.preventDefault();
-            return false;
-        });
+    // Log performance stats periodically (optional, can be disabled)
+    if (typeof Module !== 'undefined' && typeof Module.enablePerfStats !== 'undefined' && Module.enablePerfStats) {
+        setInterval(function() {
+            var now = Date.now();
+            var elapsed = (now - perfStats.lastFpsUpdate) / 1000;
+            var fps = perfStats.frameCount / elapsed;
+            
+            console.log('Performance: ' + fps.toFixed(1) + ' FPS');
+            
+            perfStats.frameCount = 0;
+            perfStats.lastFpsUpdate = now;
+        }, 5000);
     }
-});
 
-// Mobile/touch detection
-var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-if (isMobile) {
-    console.log('Mobile device detected');
-    Module.isMobile = true;
+    // Handle beforeunload - save state if possible
+    window.addEventListener('beforeunload', function(e) {
+        console.log('Page unloading, attempting to save state...');
+        // Emscripten's IDBFS can be used here to persist filesystem changes
+        // This would be implemented later for saved games
+    });
+
+    // Disable right-click context menu globally for game area
+    document.addEventListener('DOMContentLoaded', function() {
+        var canvas = document.getElementById('canvas');
+        if (canvas) {
+            canvas.addEventListener('contextmenu', function(e) {
+                e.preventDefault();
+                return false;
+            });
+        }
+    });
+
+    // Mobile/touch detection
+    var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    if (isMobile) {
+        console.log('Mobile device detected');
+        if (typeof Module !== 'undefined') {
+            Module.isMobile = true;
+        }
+    }
 }
 
-// Log browser info
+// Log browser info (safe in both main thread and workers - navigator is available in both)
 console.log('Browser:', navigator.userAgent);
 console.log('Platform:', navigator.platform);
 console.log('Language:', navigator.language);
 console.log('Cores:', navigator.hardwareConcurrency || 'unknown');
 
-// Memory info if available
-if (performance && performance.memory) {
+// Memory info if available (main thread only - performance.memory not available in workers)
+if (isMainThread && performance && performance.memory) {
     console.log('Memory:', {
         used: (performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2) + ' MB',
         total: (performance.memory.totalJSHeapSize / 1024 / 1024).toFixed(2) + ' MB',

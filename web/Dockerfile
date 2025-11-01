@@ -19,23 +19,33 @@ RUN apt-get update && \
         wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Build zstd for Emscripten (not available as a built-in port)
-# Download, compile, and install zstd
+# Build zstd for Emscripten with pthread support (not available as a built-in port)
+# Install to /usr/local so it persists even if Emscripten cache is cleared
 RUN wget -q https://github.com/facebook/zstd/releases/download/v1.5.6/zstd-1.5.6.tar.gz && \
     tar -xzf zstd-1.5.6.tar.gz && \
     cd zstd-1.5.6/lib && \
-    emmake make -j$(nproc) CC=emcc AR=emar CFLAGS="-O3" libzstd.a && \
-    mkdir -p /emsdk/upstream/emscripten/cache/sysroot/include && \
-    mkdir -p /emsdk/upstream/emscripten/cache/sysroot/lib && \
-    cp libzstd.a /emsdk/upstream/emscripten/cache/sysroot/lib/ && \
-    cp zstd.h zdict.h zstd_errors.h /emsdk/upstream/emscripten/cache/sysroot/include/ && \
+    emmake make -j$(nproc) CC=emcc AR=emar CFLAGS="-O3 -pthread" libzstd.a && \
+    mkdir -p /usr/local/include && \
+    mkdir -p /usr/local/lib && \
+    cp libzstd.a /usr/local/lib/ && \
+    cp zstd.h zdict.h zstd_errors.h /usr/local/include/ && \
     cd ../.. && \
     rm -rf zstd-1.5.6 zstd-1.5.6.tar.gz
 
 # Verify installation
 RUN ninja --version && echo "Ninja installed successfully" && \
-    ls -lh /emsdk/upstream/emscripten/cache/sysroot/lib/libzstd.a && \
-    echo "Zstd compiled and installed"
+    ls -lh /usr/local/lib/libzstd.a && \
+    ls -lh /usr/local/include/zstd.h && \
+    echo "Zstd compiled and installed to /usr/local"
+
+# Create dummy empty archive files for Emscripten ports
+# These satisfy the linker while -sUSE_* flags provide the real implementation
+RUN touch /tmp/empty.c && \
+    emcc -c /tmp/empty.c -o /tmp/empty.o && \
+    emar rcs /usr/local/lib/libEMSCRIPTEN_PORT.a /tmp/empty.o && \
+    emar rcs /usr/local/lib/libEMSCRIPTEN_PORT_PNG.a /tmp/empty.o && \
+    rm /tmp/empty.c /tmp/empty.o && \
+    echo "Created dummy port libraries"
 
 # Make cache directories writable for non-root users (needed for -u flag in docker run)
 RUN chmod -R 777 /emsdk/upstream/emscripten/cache
