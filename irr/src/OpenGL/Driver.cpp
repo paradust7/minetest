@@ -890,9 +890,26 @@ void COpenGL3DriverBase::draw2DImageBatch(const video::ITexture *texture,
 				tcoords.UpperLeftCorner.X, tcoords.LowerRightCorner.Y);
 	}
 
+#ifdef __EMSCRIPTEN__
+	// WebGL requires vertex data in a VBO when using indexed drawing
+	// Create a temporary VBO for the vertex data
+	GLuint tempVBO = 0;
+	GL.GenBuffers(1, &tempVBO);
+	GL.BindBuffer(GL_ARRAY_BUFFER, tempVBO);
+	GL.BufferData(GL_ARRAY_BUFFER, vtx.size() * sizeof(S3DVertex), vtx.data(), GL_STREAM_DRAW);
+	
+	GL.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, QuadIndexVBO.getName());
+	drawElements(GL_TRIANGLES, vt2DImage, nullptr, vtx.size(), 0, 6 * drawCount);
+	
+	GL.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	GL.BindBuffer(GL_ARRAY_BUFFER, 0);
+	GL.DeleteBuffers(1, &tempVBO);
+#else
+	// Native OpenGL supports client-side vertex arrays with indexed drawing
 	GL.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, QuadIndexVBO.getName());
 	drawElements(GL_TRIANGLES, vt2DImage, vtx.data(), vtx.size(), 0, 6 * drawCount);
 	GL.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+#endif
 
 	if (clipRect)
 		GL.Disable(GL_SCISSOR_TEST);
