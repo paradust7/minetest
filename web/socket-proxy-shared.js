@@ -288,9 +288,10 @@ function readPacket(destAddr, destPort, buffer, maxLen) {
             }
         }
         
-        if (availablePackets > 0) {
-            console.log('[SocketProxyShared] readPacket: Looking for ' + destAddr + ':' + destPort + ', found ' + availablePackets + ' packets: [' + packetInfo.join(', ') + ']');
-        }
+        // Debug: Uncomment to see packet matching behavior
+        // if (availablePackets > 0) {
+        //     console.log('[SocketProxyShared] readPacket: Looking for ' + destAddr + ':' + destPort + ', found ' + availablePackets + ' packets: [' + packetInfo.join(', ') + ']');
+        // }
         
         // Find a packet for this destination
         for (var i = 0; i < MAX_PACKETS; i++) {
@@ -329,10 +330,11 @@ function readPacket(destAddr, destPort, buffer, maxLen) {
             }
         }
         
-        // No matching packet found
-        if (availablePackets > 0) {
-            console.warn('[SocketProxyShared] readPacket: No match for ' + destAddr + ':' + destPort + ' among ' + availablePackets + ' packets');
-        }
+        // No matching packet found (this is normal - other threads will pick up their packets)
+        // Debug: Uncomment to see when packets don't match
+        // if (availablePackets > 0) {
+        //     console.warn('[SocketProxyShared] readPacket: No match for ' + destAddr + ':' + destPort + ' among ' + availablePackets + ' packets');
+        // }
         return null;
         
     } finally {
@@ -487,13 +489,14 @@ var SocketProxy = {
         var srcAddress = intToIp(srcIpInt);
         
         // Write packet to shared ring buffer
-        console.log('[SocketProxyShared] sendto: Writing packet from ' + srcAddress + ':' + srcPort + ' to ' + destAddress + ':' + destPort + ' (' + data.length + ' bytes)');
+        // Debug: Uncomment to log every packet send
+        // console.log('[SocketProxyShared] sendto: Writing packet from ' + srcAddress + ':' + srcPort + ' to ' + destAddress + ':' + destPort + ' (' + data.length + ' bytes)');
         if (!writePacket(destAddress, destPort, srcAddress, srcPort, data)) {
             console.error('[SocketProxyShared] Failed to write packet to ring buffer');
             return -1;
         }
         
-        console.log('[SocketProxyShared] sendto: Packet written successfully');
+        // console.log('[SocketProxyShared] sendto: Packet written successfully');
         return data.length;
     },
     
@@ -509,7 +512,9 @@ var SocketProxy = {
         
         var bound = Atomics.load(getSharedInt32(), offset + 4);
         if (!bound) {
-            console.error('[SocketProxyShared] recvfrom: Socket not bound');
+            // This is normal during connection - happens frequently while server is starting
+            // Debug: Uncomment to see unbound socket attempts
+            // console.error('[SocketProxyShared] recvfrom: Socket not bound');
             return null;
         }
         
@@ -520,9 +525,10 @@ var SocketProxy = {
         
         // Read packet from shared ring buffer
         var result = readPacket(localAddress, localPort, buffer, maxLen);
-        if (result) {
-            console.log('[SocketProxyShared] recvfrom fd=' + fd + ': Received packet on ' + localAddress + ':' + localPort + ' from ' + result.address + ':' + result.port + ' (' + result.length + ' bytes)');
-        }
+        // Debug: Uncomment to log every packet receive
+        // if (result) {
+        //     console.log('[SocketProxyShared] recvfrom fd=' + fd + ': Received packet on ' + localAddress + ':' + localPort + ' from ' + result.address + ':' + result.port + ' (' + result.length + ' bytes)');
+        // }
         return result;
     },
     

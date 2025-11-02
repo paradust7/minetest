@@ -679,7 +679,7 @@ void COpenGL3DriverBase::drawVertexPrimitiveList(const void *vertices, u32 verte
 
 	setRenderStates3DMode();
 
-	drawGeneric(vertices, indexList, primitiveCount, vType, pType, iType);
+	drawGeneric(vertices, vertexCount, indexList, primitiveCount, vType, pType, iType);
 }
 
 //! draws a vertex primitive list in 2d
@@ -704,7 +704,7 @@ void COpenGL3DriverBase::draw2DVertexPrimitiveList(const void *vertices, u32 ver
 		Material.MaterialType == EMT_TRANSPARENT_ALPHA_CHANNEL
 	);
 
-	drawGeneric(vertices, indexList, primitiveCount, vType, pType, iType);
+	drawGeneric(vertices, vertexCount, indexList, primitiveCount, vType, pType, iType);
 }
 
 void COpenGL3DriverBase::draw2DImage(const video::ITexture *texture, const core::position2d<s32> &destPos,
@@ -990,24 +990,161 @@ void COpenGL3DriverBase::drawQuad(const VertexType &vertexType, const S3DVertex 
 
 void COpenGL3DriverBase::drawArrays(GLenum primitiveType, const VertexType &vertexType, const void *vertices, int vertexCount)
 {
+#ifdef __EMSCRIPTEN__
+	// WebGL requires VBOs for vertex data
+	// Only create temporary VBO if vertices is not nullptr (client-side data)
+	// If vertices is nullptr, a VBO is already bound
+	if (vertices != nullptr) {
+		GLuint tempVBO = 0;
+		GL.GenBuffers(1, &tempVBO);
+		GL.BindBuffer(GL_ARRAY_BUFFER, tempVBO);
+		GL.BufferData(GL_ARRAY_BUFFER, vertexCount * vertexType.VertexSize, vertices, GL_STREAM_DRAW);
+		
+		beginDraw(vertexType, 0);
+		GL.DrawArrays(primitiveType, 0, vertexCount);
+		endDraw(vertexType);
+		
+		GL.BindBuffer(GL_ARRAY_BUFFER, 0);
+		GL.DeleteBuffers(1, &tempVBO);
+	} else {
+		// VBO already bound
+		beginDraw(vertexType, 0);
+		GL.DrawArrays(primitiveType, 0, vertexCount);
+		endDraw(vertexType);
+	}
+#else
 	beginDraw(vertexType, reinterpret_cast<uintptr_t>(vertices));
 	GL.DrawArrays(primitiveType, 0, vertexCount);
 	endDraw(vertexType);
+#endif
 }
 
 void COpenGL3DriverBase::drawElements(GLenum primitiveType, const VertexType &vertexType, const void *vertices, int vertexCount, const u16 *indices, int indexCount)
 {
+#ifdef __EMSCRIPTEN__
+	// WebGL requires vertex and index data in VBOs when using indexed drawing
+	// Only create temporary VBOs if data is client-side (pointers not nullptr)
+	// If nullptr, VBOs are already bound
+	if (vertices != nullptr || indices != nullptr) {
+		GLuint tempVertexVBO = 0;
+		GLuint tempIndexVBO = 0;
+		
+		if (vertices != nullptr) {
+			GL.GenBuffers(1, &tempVertexVBO);
+			GL.BindBuffer(GL_ARRAY_BUFFER, tempVertexVBO);
+			GL.BufferData(GL_ARRAY_BUFFER, vertexCount * vertexType.VertexSize, vertices, GL_STREAM_DRAW);
+		}
+		
+		if (indices != nullptr) {
+			GL.GenBuffers(1, &tempIndexVBO);
+			GL.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, tempIndexVBO);
+			GL.BufferData(GL_ELEMENT_ARRAY_BUFFER, indexCount * sizeof(u16), indices, GL_STREAM_DRAW);
+		}
+		
+		beginDraw(vertexType, 0);
+		GL.DrawRangeElements(primitiveType, 0, vertexCount - 1, indexCount, GL_UNSIGNED_SHORT, 0);
+		endDraw(vertexType);
+		
+		if (tempVertexVBO) {
+			GL.BindBuffer(GL_ARRAY_BUFFER, 0);
+			GL.DeleteBuffers(1, &tempVertexVBO);
+		}
+		if (tempIndexVBO) {
+			GL.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+			GL.DeleteBuffers(1, &tempIndexVBO);
+		}
+	} else {
+		// VBOs already bound
+		beginDraw(vertexType, 0);
+		GL.DrawRangeElements(primitiveType, 0, vertexCount - 1, indexCount, GL_UNSIGNED_SHORT, 0);
+		endDraw(vertexType);
+	}
+#else
 	beginDraw(vertexType, reinterpret_cast<uintptr_t>(vertices));
 	GL.DrawRangeElements(primitiveType, 0, vertexCount - 1, indexCount, GL_UNSIGNED_SHORT, indices);
 	endDraw(vertexType);
+#endif
 }
 
-void COpenGL3DriverBase::drawGeneric(const void *vertices, const void *indexList,
+void COpenGL3DriverBase::drawGeneric(const void *vertices, u32 vertexCount, const void *indexList,
 		u32 primitiveCount,
 		E_VERTEX_TYPE vType, scene::E_PRIMITIVE_TYPE pType, E_INDEX_TYPE iType)
 {
 	auto &vTypeDesc = getVertexTypeDescription(vType);
+	
+#ifdef __EMSCRIPTEN__
+	// WebGL requires vertex and index data in VBOs when using indexed drawing
+	// Only create temporary VBOs if data is client-side (pointers not nullptr)
+	// If nullptr, VBOs are already bound from hardware buffers
+	
+	GLuint tempVertexVBO = 0;
+	GLuint tempIndexVBO = 0;
+	
+	// Calculate index count for bounds checking and buffer sizing
+	u32 indexCount = 0;
+	bool usesIndices = false;
+	
+	switch (pType) {
+	case scene::EPT_POINTS:
+	case scene::EPT_POINT_SPRITES:
+		indexCount = primitiveCount;
+		usesIndices = false;
+		break;
+	case scene::EPT_LINE_STRIP:
+		indexCount = primitiveCount + 1;
+		usesIndices = true;
+		break;
+	case scene::EPT_LINE_LOOP:
+		indexCount = primitiveCount;
+		usesIndices = true;
+		break;
+	case scene::EPT_LINES:
+		indexCount = primitiveCount * 2;
+		usesIndices = true;
+		break;
+	case scene::EPT_TRIANGLE_STRIP:
+		indexCount = primitiveCount + 2;
+		usesIndices = true;
+		break;
+	case scene::EPT_TRIANGLE_FAN:
+		indexCount = primitiveCount + 2;
+		usesIndices = true;
+		break;
+	case scene::EPT_TRIANGLES:
+		indexCount = primitiveCount * 3;
+		usesIndices = true;
+		break;
+	default:
+		break;
+	}
+	
+	// Create temporary VBO for vertex data if needed
+	if (vertices != nullptr) {
+		GL.GenBuffers(1, &tempVertexVBO);
+		GL.BindBuffer(GL_ARRAY_BUFFER, tempVertexVBO);
+		GL.BufferData(GL_ARRAY_BUFFER, vertexCount * vTypeDesc.VertexSize, vertices, GL_STREAM_DRAW);
+		os::Printer::log("drawGeneric: Created temp vertex VBO (client-side data)", ELL_DEBUG);
+	} else {
+		os::Printer::log("drawGeneric: Using existing vertex VBO (hardware buffer)", ELL_DEBUG);
+	}
+	
+	beginDraw(vTypeDesc, 0); // 0 because data is in VBO (either temp or hardware)
+	
+	// Create temporary VBO for index data if needed
+	if (usesIndices && indexList != nullptr) {
+		GL.GenBuffers(1, &tempIndexVBO);
+		GL.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, tempIndexVBO);
+		
+		size_t indexSize = (iType == EIT_16BIT) ? sizeof(u16) : sizeof(u32);
+		GL.BufferData(GL_ELEMENT_ARRAY_BUFFER, indexCount * indexSize, indexList, GL_STREAM_DRAW);
+		os::Printer::log("drawGeneric: Created temp index VBO (client-side data)", ELL_DEBUG);
+	} else if (usesIndices) {
+		os::Printer::log("drawGeneric: Using existing index VBO (hardware buffer)", ELL_DEBUG);
+	}
+#else
 	beginDraw(vTypeDesc, reinterpret_cast<uintptr_t>(vertices));
+#endif
+	
 	GLenum indexSize = 0;
 
 	switch (iType) {
@@ -1025,28 +1162,64 @@ void COpenGL3DriverBase::drawGeneric(const void *vertices, const void *indexList
 		GL.DrawArrays(GL_POINTS, 0, primitiveCount);
 		break;
 	case scene::EPT_LINE_STRIP:
+#ifdef __EMSCRIPTEN__
+		GL.DrawElements(GL_LINE_STRIP, primitiveCount + 1, indexSize, 0);
+#else
 		GL.DrawElements(GL_LINE_STRIP, primitiveCount + 1, indexSize, indexList);
+#endif
 		break;
 	case scene::EPT_LINE_LOOP:
+#ifdef __EMSCRIPTEN__
+		GL.DrawElements(GL_LINE_LOOP, primitiveCount, indexSize, 0);
+#else
 		GL.DrawElements(GL_LINE_LOOP, primitiveCount, indexSize, indexList);
+#endif
 		break;
 	case scene::EPT_LINES:
+#ifdef __EMSCRIPTEN__
+		GL.DrawElements(GL_LINES, primitiveCount * 2, indexSize, 0);
+#else
 		GL.DrawElements(GL_LINES, primitiveCount * 2, indexSize, indexList);
+#endif
 		break;
 	case scene::EPT_TRIANGLE_STRIP:
+#ifdef __EMSCRIPTEN__
+		GL.DrawElements(GL_TRIANGLE_STRIP, primitiveCount + 2, indexSize, 0);
+#else
 		GL.DrawElements(GL_TRIANGLE_STRIP, primitiveCount + 2, indexSize, indexList);
+#endif
 		break;
 	case scene::EPT_TRIANGLE_FAN:
+#ifdef __EMSCRIPTEN__
+		GL.DrawElements(GL_TRIANGLE_FAN, primitiveCount + 2, indexSize, 0);
+#else
 		GL.DrawElements(GL_TRIANGLE_FAN, primitiveCount + 2, indexSize, indexList);
+#endif
 		break;
 	case scene::EPT_TRIANGLES:
+#ifdef __EMSCRIPTEN__
+		GL.DrawElements(GL_TRIANGLES, primitiveCount * 3, indexSize, 0);
+#else
 		GL.DrawElements(GL_TRIANGLES, primitiveCount * 3, indexSize, indexList);
+#endif
 		break;
 	default:
 		break;
 	}
 
 	endDraw(vTypeDesc);
+	
+#ifdef __EMSCRIPTEN__
+	// Clean up temporary VBOs if we created them
+	if (tempVertexVBO) {
+		GL.BindBuffer(GL_ARRAY_BUFFER, 0);
+		GL.DeleteBuffers(1, &tempVertexVBO);
+	}
+	if (tempIndexVBO) {
+		GL.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+		GL.DeleteBuffers(1, &tempIndexVBO);
+	}
+#endif
 }
 
 void COpenGL3DriverBase::beginDraw(const VertexType &vertexType, uintptr_t verticesBase)

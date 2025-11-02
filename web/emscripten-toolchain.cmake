@@ -125,9 +125,9 @@ set(EMSCRIPTEN_COMMON_FLAGS
     "-sERROR_ON_UNDEFINED_SYMBOLS=0"
     # Disabled for performance/stability:
     # "-sSAFE_HEAP=1"  # Too slow for real-time rendering
-    # "-sGL_DEBUG=1"  # Spams console
-    # "-sGL_TRACK_ERRORS=1"  # Spams console
-    "-sRUNTIME_LOGGING=0"  # Disable runtime keepalive spam
+    "-sGL_DEBUG=1"  # Enable to debug GL issues
+    "-sGL_TRACK_ERRORS=1"  # Track GL errors
+    "-sRUNTIME_DEBUG=0"  # Disable runtime keepalive spam
     
     # CRITICAL: ASYNCIFY allows synchronous main loops to yield to the browser
     # Without this, the game loop blocks the JavaScript thread = frozen browser

@@ -44,10 +44,12 @@
 	#define SLEEP_ACCURACY_US 200
 
 	#ifdef __EMSCRIPTEN__
-		// Emscripten: Use emscripten_sleep() which properly yields to browser with ASYNCIFY
+		// Emscripten: Don't use emscripten_sleep() in game loop - it blocks the event loop!
+		// The browser's requestAnimationFrame will handle frame timing automatically.
+		// emscripten_sleep() is only safe for one-time delays outside the main loop.
 		#include <emscripten.h>
-		#define sleep_ms(x) emscripten_sleep(x)
-		#define sleep_us(x) emscripten_sleep((x) / 1000.0)
+		#define sleep_ms(x) do { (void)(x); } while(0)  // No-op: browser handles timing
+		#define sleep_us(x) do { (void)(x); } while(0)  // No-op: browser handles timing
 	#else
 		#define sleep_ms(x) usleep((x)*1000)
 		#define sleep_us(x) usleep(x)
