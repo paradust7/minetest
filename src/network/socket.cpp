@@ -289,22 +289,36 @@ void UDPSocket::Send(const Address &destination, const void *data, int size)
 		return;
 	}
 
-	if (destination.getFamily() != m_addr_family)
+	EM_ASM({
+		console.log('[socket.cpp] Send() called: fd=' + $0 + ', size=' + $1 + ', dest_port=' + $2 + ', socket_family=' + $3 + ', dest_family=' + $4);
+	}, m_handle, size, destination.getPort(), m_addr_family, destination.getFamily());
+	
+	if (destination.getFamily() != m_addr_family) {
+		EM_ASM({
+			console.error('[socket.cpp] Address family mismatch! socket_family=' + $0 + ', dest_family=' + $1);
+		}, m_addr_family, destination.getFamily());
 		throw SendFailedException("Address family mismatch");
+	}
 
 	int sent;
 #ifdef __EMSCRIPTEN__
 	// Emscripten: Use JavaScript socket proxy for sendto
 	// Manually format IP address
+	// CRITICAL: Always use 127.0.0.1 for localhost (normalize IPv6 ::1 to IPv4)
+	// because our SocketProxy normalizes all addresses to 127.0.0.1
 	char dest_buf[64];
 	if (m_addr_family == AF_INET6) {
-		snprintf(dest_buf, sizeof(dest_buf), "::1");
+		// IPv6 socket, but normalize ::1 to 127.0.0.1 for SocketProxy
+		snprintf(dest_buf, sizeof(dest_buf), "127.0.0.1");
 	} else {
 		struct in_addr ipv4 = destination.getAddress();
 		unsigned char *bytes = (unsigned char*)&ipv4.s_addr;
 		snprintf(dest_buf, sizeof(dest_buf), "%u.%u.%u.%u", 
 			bytes[0], bytes[1], bytes[2], bytes[3]);
 	}
+	EM_ASM({
+		console.log('[socket.cpp] Calling em_socket_sendto: fd=' + $0 + ', dest=' + UTF8ToString($1) + ', port=' + $2);
+	}, m_handle, dest_buf, destination.getPort());
 	sent = em_socket_sendto(m_handle, data, size, dest_buf, destination.getPort());
 #else
 	if (m_addr_family == AF_INET6) {
@@ -353,17 +367,40 @@ int UDPSocket::Receive(Address &sender, void *data, int size)
 	
 	EM_ASM({ console.log('[socket.cpp] About to parse address'); });
 	
-	// Parse IP address string directly (avoid Resolve() which uses getaddrinfo)
-	// Expected format: "127.0.0.1" or "::1"
+	// Parse IP address string and create Address with matching family
+	// CRITICAL: The returned address MUST match the socket's address family
+	// or Send() will fail with "Address family mismatch"
 	unsigned int a, b, c, d;
 	if (sscanf(src_addr_buf, "%u.%u.%u.%u", &a, &b, &c, &d) == 4) {
-		// IPv4 address
-		EM_ASM({ console.log('[socket.cpp] Parsed IPv4 address'); });
-		sender = Address(a, b, c, d, src_port);
+		// Received IPv4 address string
+		if (m_addr_family == AF_INET6) {
+			// Socket is IPv6, so return IPv6-mapped IPv4 address
+			EM_ASM({ console.log('[socket.cpp] Parsed IPv4, converting to IPv6 for socket compatibility'); });
+			// Use IPv6 localhost for simplicity (both client and server use localhost)
+			IPv6AddressBytes bytes;
+			bytes.bytes[0] = 0; bytes.bytes[1] = 0; bytes.bytes[2] = 0; bytes.bytes[3] = 0;
+			bytes.bytes[4] = 0; bytes.bytes[5] = 0; bytes.bytes[6] = 0; bytes.bytes[7] = 0;
+			bytes.bytes[8] = 0; bytes.bytes[9] = 0; bytes.bytes[10] = 0; bytes.bytes[11] = 0;
+			bytes.bytes[12] = 0; bytes.bytes[13] = 0; bytes.bytes[14] = 0; bytes.bytes[15] = 1;
+			sender = Address(&bytes, src_port);
+		} else {
+			// Socket is IPv4, return IPv4 address
+			EM_ASM({ console.log('[socket.cpp] Parsed IPv4 address'); });
+			sender = Address(a, b, c, d, src_port);
+		}
 	} else {
-		// Assume localhost if parsing fails
+		// Assume localhost with matching family
 		EM_ASM({ console.log('[socket.cpp] Using localhost fallback'); });
-		sender = Address(127, 0, 0, 1, src_port);
+		if (m_addr_family == AF_INET6) {
+			IPv6AddressBytes bytes;
+			bytes.bytes[0] = 0; bytes.bytes[1] = 0; bytes.bytes[2] = 0; bytes.bytes[3] = 0;
+			bytes.bytes[4] = 0; bytes.bytes[5] = 0; bytes.bytes[6] = 0; bytes.bytes[7] = 0;
+			bytes.bytes[8] = 0; bytes.bytes[9] = 0; bytes.bytes[10] = 0; bytes.bytes[11] = 0;
+			bytes.bytes[12] = 0; bytes.bytes[13] = 0; bytes.bytes[14] = 0; bytes.bytes[15] = 1;
+			sender = Address(&bytes, src_port);
+		} else {
+			sender = Address(127, 0, 0, 1, src_port);
+		}
 	}
 	
 	EM_ASM({ console.log('[socket.cpp] Receive() completed successfully'); });

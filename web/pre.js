@@ -18,27 +18,41 @@ if (isMainThread && typeof SharedArrayBuffer !== 'undefined') {
     // Initialize the buffer
     var OFFSET_NEXT_FD = 0;
     var OFFSET_LOCK = 1;
-    var OFFSET_SOCKET_DATA = 2;
-    var MAX_SOCKETS = 256;
+    var OFFSET_PACKET_WRITE_IDX = 2;
+    var OFFSET_PACKET_READ_IDX = 3;
+    var OFFSET_PACKET_LOCK = 4;
+    var OFFSET_SOCKET_DATA = 5;
+    var MAX_SOCKETS = 32; // Reduced to make more room for packet buffer
     var SOCKET_ENTRY_SIZE = 16;
+    var PACKET_BUFFER_START = OFFSET_SOCKET_DATA + (MAX_SOCKETS * SOCKET_ENTRY_SIZE);
+    var PACKET_ENTRY_SIZE = 520;
+    var MAX_PACKETS = Math.floor((SOCKET_SHARED_MEMORY_SIZE / 4 - PACKET_BUFFER_START) / PACKET_ENTRY_SIZE); // Calculate from available space
     
+    console.log('[pre.js] Calculated MAX_PACKETS=' + MAX_PACKETS + ' from 1MB SharedArrayBuffer');
+    
+    // Initialize control variables
     Atomics.store(_luantiSocketSharedInt32, OFFSET_NEXT_FD, 100);
     Atomics.store(_luantiSocketSharedInt32, OFFSET_LOCK, 0);
+    Atomics.store(_luantiSocketSharedInt32, OFFSET_PACKET_WRITE_IDX, 0);
+    Atomics.store(_luantiSocketSharedInt32, OFFSET_PACKET_READ_IDX, 0);
+    Atomics.store(_luantiSocketSharedInt32, OFFSET_PACKET_LOCK, 0);
     
+    // Initialize socket entries
     for (var i = 0; i < MAX_SOCKETS; i++) {
         var offset = OFFSET_SOCKET_DATA + (i * SOCKET_ENTRY_SIZE);
         Atomics.store(_luantiSocketSharedInt32, offset, -1);
+    }
+    
+    // Initialize packet buffer entries
+    for (var i = 0; i < MAX_PACKETS; i++) {
+        var offset = PACKET_BUFFER_START + (i * PACKET_ENTRY_SIZE);
+        Atomics.store(_luantiSocketSharedInt32, offset, 0); // valid flag = 0 (empty)
     }
     
     // Store in a global location accessible to worker initialization
     // We'll use 'self' which works in both window and worker contexts
     self._luantiSocketSharedBuffer = _luantiSocketSharedBuffer;
     self._luantiSocketSharedInt32 = _luantiSocketSharedInt32;
-    
-    // CRITICAL: Packet queues MUST be a single shared object accessible to all threads
-    // We create it here on the main thread and pass the REFERENCE to workers
-    // JavaScript objects are shared by reference when passed via postMessage with SharedArrayBuffer
-    self._luantiSocketPacketQueues = {}; // This will be THE ONLY packet queue object
     
     console.log('[pre.js] Shared socket buffer initialized and stored in self');
     
@@ -83,7 +97,6 @@ if (isWorker) {
             console.log('[pre.js] Worker received SharedArrayBuffer via postMessage');
             self._luantiSocketSharedBuffer = e.data.sharedBuffer;
             self._luantiSocketSharedInt32 = new Int32Array(e.data.sharedBuffer);
-            self._luantiSocketPacketQueues = {};
             console.log('[pre.js] SharedArrayBuffer initialized in worker');
         }
     });
