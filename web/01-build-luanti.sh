@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Simple script to build Luanti for web using Docker
 # This follows the emscripten/emsdk pattern of mounting source directory
+#
+# Usage: ./01-build-luanti.sh [BUILD_TYPE]
+#   BUILD_TYPE: Release (default), Debug, MinSizeRel, or RelWithDebInfo
 
 set -e
 
@@ -8,7 +11,31 @@ set -e
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Parse build type parameter (default: Release)
+BUILD_TYPE="${1:-Release}"
+
+# Validate build type
+case "$BUILD_TYPE" in
+    Release|Debug|MinSizeRel|RelWithDebInfo)
+        # Valid build type
+        ;;
+    *)
+        echo -e "${RED}Error: Invalid build type '${BUILD_TYPE}'${NC}"
+        echo ""
+        echo "Valid build types:"
+        echo -e "  ${GREEN}Release${NC}        - Maximum performance (default)"
+        echo -e "  ${BLUE}MinSizeRel${NC}    - Minimum binary size"
+        echo -e "  ${BLUE}RelWithDebInfo${NC} - Optimized with debug symbols"
+        echo -e "  ${YELLOW}Debug${NC}          - No optimization, full debug info"
+        echo ""
+        echo "Usage: $0 [BUILD_TYPE]"
+        echo "Example: $0 MinSizeRel"
+        exit 1
+        ;;
+esac
 
 echo -e "${GREEN}=== Luanti Web Build with Docker ===${NC}"
 echo ""
@@ -19,6 +46,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 echo "Project root: $PROJECT_ROOT"
 echo "Build output: $PROJECT_ROOT/build-web"
+echo -e "Build type:   ${GREEN}${BUILD_TYPE}${NC}"
 echo ""
 
 # Check if Docker is available
@@ -38,7 +66,7 @@ if ! docker image inspect luanti-web-builder:latest >/dev/null 2>&1; then
 fi
 
 echo -e "${YELLOW}Building Luanti with Emscripten 4.0.18...${NC}"
-echo "This may take 20-60 minutes on first build."
+echo "This may take a while on first build."
 echo ""
 
 # Run the build in container
@@ -47,12 +75,14 @@ docker run \
     --rm \
     -v "${PROJECT_ROOT}:/src" \
     -u $(id -u):$(id -g) \
+    -e BUILD_TYPE="${BUILD_TYPE}" \
     luanti-web-builder:latest \
     bash -c "
         set -e
         echo '=== Build Environment ==='
         emcc --version | head -n1
         echo \"Ninja: \$(ninja --version)\"
+        echo \"Build type: \${BUILD_TYPE}\"
         echo ''
         
         # Clean previous build if it exists (to avoid cache issues)
@@ -67,7 +97,7 @@ docker run \
         
         echo '=== Configuring CMake ==='
         emcmake cmake /src \
-            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_BUILD_TYPE=\${BUILD_TYPE} \
             -DCMAKE_TOOLCHAIN_FILE=/src/web/emscripten-toolchain.cmake \
             -DBUILD_CLIENT=TRUE \
             -DBUILD_SERVER=FALSE \
@@ -113,10 +143,36 @@ docker run \
 
 if [ $? -eq 0 ]; then
     echo ""
-    echo -e "${GREEN}✓ Build successful!${NC}"
+    echo -e "${GREEN}✓ Build successful! (${BUILD_TYPE})${NC}"
     echo ""
     echo "Output files in: $PROJECT_ROOT/build-web/output"
     echo ""
+    
+    # Show build type specific info
+    case "$BUILD_TYPE" in
+        Release)
+            echo -e "${GREEN}Build type: Release${NC}"
+            echo "  Optimizations: -O3 + LTO"
+            echo "  Target: Maximum performance"
+            ;;
+        MinSizeRel)
+            echo -e "${BLUE}Build type: MinSizeRel${NC}"
+            echo "  Optimizations: -Oz + LTO"
+            echo "  Target: Minimum binary size"
+            ;;
+        RelWithDebInfo)
+            echo -e "${BLUE}Build type: RelWithDebInfo${NC}"
+            echo "  Optimizations: -O2 + LTO + debug symbols"
+            echo "  Target: Optimized with debugging"
+            ;;
+        Debug)
+            echo -e "${YELLOW}Build type: Debug${NC}"
+            echo "  Optimizations: None (-O0)"
+            echo "  Target: Full debugging support"
+            ;;
+    esac
+    echo ""
+    
     echo "To test locally, run:"
     echo "  cd $PROJECT_ROOT/build-web/output"
     echo "  python3 -m http.server 8080"
@@ -124,7 +180,7 @@ if [ $? -eq 0 ]; then
     echo "Then open: http://localhost:8080"
 else
     echo ""
-    echo -e "${RED}✗ Build failed${NC}"
+    echo -e "${RED}✗ Build failed (${BUILD_TYPE})${NC}"
     echo "Check the error messages above."
     exit 1
 fi

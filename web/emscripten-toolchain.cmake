@@ -188,12 +188,12 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${EMSCRIPTEN_COMMON_FLAGS_
 set(EXCEPTION_FLAGS "-fexceptions")
 
 # Emscripten port flags MUST be present during compilation for headers to work properly
-# Add -g for debug symbols and stack traces
 # Add -fexceptions for proper C++ exception handling across WASM boundaries
 # Add -pthread for threading support (must match linker flags)
 # Add -I/usr/local/include for zstd headers
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -pthread -I/usr/local/include -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g ${EXCEPTION_FLAGS} -pthread -I/usr/local/include -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1")
+# Note: Debug symbols (-g) are added per build type below
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread -I/usr/local/include -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${EXCEPTION_FLAGS} -pthread -I/usr/local/include -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1")
 
 # Store final exe flags for later use (we'll apply them to the main target only)
 # Keep as a list (semicolon-separated) so CMake passes each flag separately
@@ -202,9 +202,34 @@ set(LUANTI_WEB_LINKER_FLAGS ${EMSCRIPTEN_FINAL_EXE_FLAGS} CACHE STRING "Final ex
 # Emscripten has atomics built-in, no library needed
 set(HAVE_LINK_ATOMIC FALSE CACHE BOOL "Whether atomic library is needed" FORCE)
 
-# Compiler optimization flags
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "" FORCE)
+# Compiler optimization flags per build type
+# Release: Maximum performance with LTO
+# Note: -ffast-math removed due to infinity/NaN usage in codebase
+set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG -flto" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -flto" CACHE STRING "" FORCE)
+
+# Debug: No optimization, full debug symbols with source maps
+set(CMAKE_C_FLAGS_DEBUG "-O0 -g -gsource-map" CACHE STRING "" FORCE)
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -gsource-map" CACHE STRING "" FORCE)
+
+# MinSizeRel: Optimize for smallest binary size
+set(CMAKE_C_FLAGS_MINSIZEREL "-Oz -DNDEBUG -flto" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS_MINSIZEREL "-Oz -DNDEBUG -flto" CACHE STRING "" FORCE)
+
+# RelWithDebInfo: Balanced size/speed with debug info
+set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O2 -g -flto" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -flto" CACHE STRING "" FORCE)
+
+# Release linker flags: LTO and aggressive optimizations
+# Note: --closure removed due to compatibility issues with Luanti codebase
+set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-O3 -flto -sAGGRESSIVE_VARIABLE_ELIMINATION=1" CACHE STRING "" FORCE)
+
+# MinSizeRel linker flags: Maximum size reduction
+# Note: --closure removed due to compatibility issues
+set(CMAKE_EXE_LINKER_FLAGS_MINSIZEREL "-Oz -flto -sAGGRESSIVE_VARIABLE_ELIMINATION=1" CACHE STRING "" FORCE)
+
+# Debug linker flags: No optimization, preserve debug info
+set(CMAKE_EXE_LINKER_FLAGS_DEBUG "-O0 -g -gsource-map" CACHE STRING "" FORCE)
 
 # Disable features not supported on web (or complex to configure initially)
 set(ENABLE_LUAJIT OFF CACHE BOOL "Use LuaJIT" FORCE)
@@ -221,8 +246,19 @@ set(ENABLE_OPENGL OFF CACHE BOOL "Enable OpenGL" FORCE)
 set(ENABLE_OPENGL3 OFF CACHE BOOL "Enable OpenGL 3" FORCE)
 set(ENABLE_GLES2 ON CACHE BOOL "Enable OpenGL ES 2" FORCE)
 
-message(STATUS "Configuring for Emscripten/WebAssembly build")
+message(STATUS "=== Emscripten/WebAssembly Configuration ===")
 message(STATUS "  Initial memory: 256MB, Maximum: 2GB")
 message(STATUS "  WebGL 2.0 enabled")
 message(STATUS "  SDL2 enabled via Emscripten")
+message(STATUS "  Build type: ${CMAKE_BUILD_TYPE}")
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    message(STATUS "  Optimizations: -O3 + LTO")
+    message(STATUS "  Target: Maximum performance")
+elseif(CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
+    message(STATUS "  Optimizations: -Oz + LTO")
+    message(STATUS "  Target: Minimum binary size")
+elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    message(STATUS "  Optimizations: None (-O0 + debug symbols)")
+    message(STATUS "  Target: Debugging")
+endif()
 
