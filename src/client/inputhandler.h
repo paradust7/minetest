@@ -56,6 +56,17 @@ public:
 		return a;
 	}
 
+#ifdef __EMSCRIPTEN__
+	v2s32 getMouseMovement(bool reset) {
+		v2s32 delta = v2s32(relX, relY);
+		if (reset) {
+			relX = 0;
+			relY = 0;
+		}
+		return delta;
+	}
+#endif
+
 	void clearInput()
 	{
 		physicalKeyDown.clear();
@@ -132,6 +143,11 @@ private:
 	bool esc_down = false;
 
 	PointerType last_pointer_type = PointerType::Mouse;
+
+#ifdef __EMSCRIPTEN__
+	s32 relX = 0;
+	s32 relY = 0;
+#endif
 };
 
 class InputHandler
@@ -167,6 +183,10 @@ public:
 
 	virtual v2s32 getMousePos() = 0;
 	virtual void setMousePos(s32 x, s32 y) = 0;
+
+#ifdef __EMSCRIPTEN__
+	virtual v2s32 getMouseMovement(bool reset = true) = 0;
+#endif
 
 	virtual s32 getMouseWheel() = 0;
 
@@ -242,6 +262,13 @@ public:
 	}
 
 	virtual v2s32 getMousePos();
+
+#ifdef __EMSCRIPTEN__
+	virtual v2s32 getMouseMovement(bool reset) {
+		return m_receiver->getMouseMovement(reset);
+	}
+#endif
+
 	virtual void setMousePos(s32 x, s32 y);
 
 	virtual s32 getMouseWheel()
@@ -285,6 +312,9 @@ public:
 	virtual float getJoystickDirection() { return joystickDirection; }
 	virtual v2s32 getMousePos() { return mousepos; }
 	virtual void setMousePos(s32 x, s32 y) { mousepos = v2s32(x, y); }
+#ifdef __EMSCRIPTEN__
+	virtual v2s32 getMouseMovement(bool reset) { return v2s32(0, 0); }
+#endif
 
 	virtual s32 getMouseWheel() { return 0; }
 

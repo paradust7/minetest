@@ -87,7 +87,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
 
 # Platform-specific settings
 set(EMSCRIPTEN_PLATFORM TRUE)
-add_definitions(-DEMSCRIPTEN)
+set(EMSCRIPTEN TRUE)
 
 # Emscripten linker flags - split into common and final-exe-only flags
 # Common flags (safe for CMake tests)
@@ -205,8 +205,8 @@ set(HAVE_LINK_ATOMIC FALSE CACHE BOOL "Whether atomic library is needed" FORCE)
 # Compiler optimization flags per build type
 # Release: Maximum performance with LTO
 # Note: -ffast-math removed due to infinity/NaN usage in codebase
-set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG -flto" CACHE STRING "" FORCE)
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -flto" CACHE STRING "" FORCE)
+set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG -flto -msimd128" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -flto -msimd128" CACHE STRING "" FORCE)
 
 # Debug: No optimization, full debug symbols with source maps
 set(CMAKE_C_FLAGS_DEBUG "-O0 -g -gsource-map" CACHE STRING "" FORCE)
