@@ -75,6 +75,30 @@ set(SQLITE3_INCLUDE_DIR "${EMSCRIPTEN_ROOT_PATH}/system/include")
 set(SQLITE3_LIBRARY "sqlite3")
 set(SQLITE3_LIBRARIES "sqlite3")
 
+# OpenAL - Emscripten port (handled by -sUSE_OPENAL=1 at link time) <-- incorrect
+# Set as CACHE variables so find_package(OpenAL) will detect them
+#
+set(OPENAL_FOUND TRUE CACHE BOOL "OpenAL found")
+set(OPENAL_INCLUDE_DIR "${EMSCRIPTEN_ROOT_PATH}/system/include" CACHE PATH "OpenAL include directory")
+set(OPENAL_LIBRARY "openal" CACHE STRING "OpenAL library")
+set(OPENAL_LIBRARIES "${OPENAL_LIBRARY}" CACHE STRING "OpenAL libraries")
+
+# Ogg - Emscripten port (handled by -sUSE_OGG=1 at link time)
+# Set as CACHE variables so find_package(Vorbis) will detect them
+set(OGG_FOUND TRUE CACHE BOOL "Ogg found")
+set(OGG_INCLUDE_DIR "${EMSCRIPTEN_ROOT_PATH}/system/include" CACHE PATH "Ogg include directory")
+set(OGG_LIBRARY "ogg" CACHE STRING "Ogg library")
+set(OGG_LIBRARIES "${OGG_LIBRARY}" CACHE STRING "Ogg libraries")
+
+# Vorbis - Emscripten port (handled by -sUSE_VORBIS=1 at link time)
+# Set as CACHE variables so find_package(Vorbis) will detect them
+# Note: Emscripten's libvorbis.a includes vorbisfile - no separate library needed
+set(VORBIS_FOUND TRUE CACHE BOOL "Vorbis found")
+set(VORBIS_INCLUDE_DIR "${EMSCRIPTEN_ROOT_PATH}/system/include" CACHE PATH "Vorbis include directory")
+set(VORBIS_LIBRARY "vorbis" CACHE STRING "Vorbis library")
+set(VORBISFILE_LIBRARY "vorbis" CACHE STRING "Vorbisfile library (same as vorbis in Emscripten)")
+set(VORBIS_LIBRARIES "${VORBIS_LIBRARY}" CACHE STRING "Vorbis libraries")
+
 # Zstd - manually compiled with pthread support (in /usr/local)
 set(ZSTD_FOUND TRUE)
 set(ZSTD_INCLUDE_DIR "/usr/local/include")
@@ -182,7 +206,7 @@ string(REPLACE ";" " " EMSCRIPTEN_COMMON_FLAGS_STR "${EMSCRIPTEN_COMMON_FLAGS}")
 # Add exception catching for proper error messages and stack traces
 # Add -L/usr/local/lib for zstd library and dummy port libraries (created in Dockerfile)
 # Add port flags at link time so Emscripten builds pthread-enabled versions
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${EMSCRIPTEN_COMMON_FLAGS_STR} -L/usr/local/lib -sDISABLE_EXCEPTION_CATCHING=0 -sNO_EXIT_RUNTIME=0 -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${EMSCRIPTEN_COMMON_FLAGS_STR} -L/usr/local/lib -sDISABLE_EXCEPTION_CATCHING=0 -sNO_EXIT_RUNTIME=0 -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1 -sUSE_OGG=1 -sUSE_VORBIS=1")
 
 # Enable proper C++ exception handling (compile-time flag required!)
 set(EXCEPTION_FLAGS "-fexceptions")
@@ -238,7 +262,7 @@ set(ENABLE_REDIS OFF CACHE BOOL "Enable Redis backend" FORCE)
 set(ENABLE_POSTGRESQL OFF CACHE BOOL "Enable PostgreSQL backend" FORCE)
 set(ENABLE_LEVELDB OFF CACHE BOOL "Enable LevelDB backend" FORCE)
 set(ENABLE_PROMETHEUS OFF CACHE BOOL "Enable Prometheus metrics" FORCE)
-set(ENABLE_SOUND OFF CACHE BOOL "Enable sound" FORCE)
+set(ENABLE_SOUND ON CACHE BOOL "Enable sound" FORCE)
 set(ENABLE_CURL OFF CACHE BOOL "Enable cURL" FORCE)
 
 # Graphics: Use OpenGL ES 2 (WebGL) instead of desktop OpenGL

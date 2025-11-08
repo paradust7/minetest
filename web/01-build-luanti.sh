@@ -104,7 +104,7 @@ docker run \
             -DBUILD_UNITTESTS=FALSE \
             -DBUILD_BENCHMARKS=FALSE \
             -DENABLE_GETTEXT=FALSE \
-            -DENABLE_SOUND=FALSE \
+            -DENABLE_SOUND=TRUE \
             -DENABLE_CURL=FALSE \
             -DENABLE_FREETYPE=TRUE \
             -DRUN_IN_PLACE=TRUE \
