@@ -226,6 +226,47 @@ location / {
 }
 ```
 
+## Embedding as an iframe
+
+You can embed the Luanti web build in any page via an iframe. The `shell.html` and `luanti-init.js` are responsive and will render at the iframe's "native" size and track browser resizes automatically.
+
+Minimal example:
+
+```html
+<style>
+	html, body, #app { height: 100%; margin: 0; }
+	/* The container determines the playable area */
+	#play-area { position: fixed; inset: 0; } /* full viewport */
+	/* Make the iframe fill its container and avoid layout gaps */
+	iframe.luanti { width: 100%; height: 100%; border: 0; display: block; }
+</style>
+<div id="app">
+	<div id="play-area">
+		<iframe
+			class="luanti"
+			src="/build-web/output/index.html"
+			allow="fullscreen; gamepad; cross-origin-isolated"
+			referrerpolicy="no-referrer"
+		></iframe>
+	</div>
+	<!-- Optional: If you have a header/footer, replace #play-area with a flex layout and keep the iframe container flex:1 -->
+	<!--
+	<style>
+		body, #app { margin:0; height:100%; display:flex; flex-direction:column; }
+		header { height:48px; }
+		main { flex:1; min-height:0; }
+	</style>
+	<header>My Site Header</header>
+	<main><iframe class="luanti" ...></iframe></main>
+	-->
+</div>
+```
+
+Notes:
+- The iframe will automatically resize with the page. No host-side JavaScript is required if the container is sized with CSS.
+- Inside the iframe, the canvas resolution matches the iframe size and device pixel ratio for crisp rendering.
+- For non-fullscreen layouts, size the iframe’s container (e.g., via flexbox) and the game will adapt.
+
 ## Troubleshooting
 
 ### Build Fails

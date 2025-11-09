@@ -67,7 +67,10 @@ var Module = {
             if (loadingScreen && !loadingScreen.classList.contains('hidden')) {
                 console.log('Hiding loading screen from postRun');
                 loadingScreen.classList.add('hidden');
-                document.getElementById('controls-info').classList.remove('hidden');
+                var controlsInfoEl = document.getElementById('controls-info');
+                if (controlsInfoEl) {
+                    controlsInfoEl.classList.remove('hidden');
+                }
             }
         }
     ],
@@ -77,10 +80,20 @@ var Module = {
         var loadingProgressBar = document.getElementById('loading-progress-bar');
         var controlsInfo = document.getElementById('controls-info');
         
+        // If required UI elements are not present (clean shell), just log and return
+        if (!loadingScreen || !loadingStatus || !loadingProgressBar) {
+            if (typeof text !== 'undefined') {
+                console.log('Status:', text);
+            }
+            return;
+        }
+        
         if (!text) {
             console.log('***** HIDING LOADING SCREEN *****');
             loadingScreen.classList.add('hidden');
-            controlsInfo.classList.remove('hidden');
+            if (controlsInfo) {
+                controlsInfo.classList.remove('hidden');
+            }
             return;
         }
         console.log('Status:', text);
@@ -98,10 +111,12 @@ var Module = {
         
         // Auto-hide after 10 seconds if stuck (emergency fallback)
         setTimeout(function() {
-            if (!loadingScreen.classList.contains('hidden')) {
+            if (loadingScreen && !loadingScreen.classList.contains('hidden')) {
                 console.warn('Loading screen still visible after 10s, force hiding...');
                 loadingScreen.classList.add('hidden');
-                controlsInfo.classList.remove('hidden');
+                if (controlsInfo) {
+                    controlsInfo.classList.remove('hidden');
+                }
             }
         }, 10000);
     },
@@ -269,6 +284,74 @@ console.log('Module.arguments:', Module.arguments);
 
 // Initial status
 Module.setStatus('Downloading Luanti...');
+
+// Resize handling: keep canvas resolution in sync with its container (and DPR)
+(function() {
+	// Debounce to avoid rapid resizes thrashing GL context
+	var resizeScheduled = false;
+	function resizeCanvasToContainer() {
+		if (!Module || !Module.canvas) return;
+		var canvas = Module.canvas;
+		var container = document.getElementById('game-container') || canvas.parentElement || document.body;
+		var dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+		var displayWidth = Math.max(1, Math.floor(container.clientWidth));
+		var displayHeight = Math.max(1, Math.floor(container.clientHeight));
+		
+		// Set CSS size to match container
+		canvas.style.width = displayWidth + 'px';
+		canvas.style.height = displayHeight + 'px';
+		
+		// Set backing store size to container * DPR for crisp rendering
+		var targetWidth = Math.max(1, displayWidth * dpr);
+		var targetHeight = Math.max(1, displayHeight * dpr);
+		
+		if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+			if (typeof Module.setCanvasSize === 'function') {
+				Module.setCanvasSize(targetWidth, targetHeight, true);
+			} else {
+				canvas.width = targetWidth;
+				canvas.height = targetHeight;
+			}
+		}
+	}
+	
+	function scheduleResize() {
+		if (resizeScheduled) return;
+		resizeScheduled = true;
+		requestAnimationFrame(function() {
+			resizeScheduled = false;
+			try { resizeCanvasToContainer(); } catch (e) { console.warn('resizeCanvasToContainer failed:', e); }
+		});
+	}
+	
+	// Observe container size changes
+	try {
+		var container = document.getElementById('game-container') || (Module && Module.canvas ? Module.canvas.parentElement : null);
+		if (container && typeof ResizeObserver !== 'undefined') {
+			var ro = new ResizeObserver(scheduleResize);
+			ro.observe(container);
+		}
+	} catch (e) {
+		console.warn('ResizeObserver unavailable:', e);
+	}
+	
+	// Window and fullscreen events
+	window.addEventListener('resize', scheduleResize);
+	window.addEventListener('orientationchange', scheduleResize);
+	document.addEventListener('fullscreenchange', scheduleResize);
+	
+	// Initial sizing on load
+	scheduleResize();
+	
+	// Also size once more right after runtime init (when GL context is set up)
+	var originalOnRuntimeInitialized = Module.onRuntimeInitialized;
+	Module.onRuntimeInitialized = function() {
+		try { scheduleResize(); } catch (e) {}
+		if (typeof originalOnRuntimeInitialized === 'function') {
+			return originalOnRuntimeInitialized.apply(this, arguments);
+		}
+	};
+})();
 
 // Initialize Luanti after luanti.js loads
 window.initializeLuanti = function() {

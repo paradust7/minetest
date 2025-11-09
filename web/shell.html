@@ -53,8 +53,8 @@
 
         #canvas {
             display: block;
-            max-width: 100%;
-            max-height: 100%;
+			width: 100%;
+			height: 100%;
             background: #000;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
             image-rendering: pixelated;
@@ -187,10 +187,6 @@
     </style>
 </head>
 <body>
-    <div id="header">
-        <h1>🎮 Luanti - Web Edition</h1>
-    </div>
-
     <div id="game-container">
         <canvas id="canvas" tabindex="1"></canvas>
         
@@ -201,20 +197,6 @@
                 <div id="loading-progress-bar"></div>
             </div>
         </div>
-
-        <div id="controls-info" class="hidden">
-            <div class="control-hint"><strong>Movement:</strong> W/A/S/D or Arrow Keys</div>
-            <div class="control-hint"><strong>Jump:</strong> Space</div>
-            <div class="control-hint"><strong>Mouse:</strong> Look Around (Click to capture)</div>
-            <div class="control-hint"><strong>Inventory:</strong> I</div>
-            <div class="control-hint"><strong>ESC:</strong> Menu / Release Mouse</div>
-        </div>
-    </div>
-
-    <div id="error-message">
-        <h2>❌ Error Loading Luanti</h2>
-        <p id="error-text"></p>
-        <button class="button" onclick="location.reload()">Reload Page</button>
     </div>
 
     <!-- Luanti initialization script (loads before Emscripten) -->
