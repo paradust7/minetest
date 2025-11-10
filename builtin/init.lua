@@ -1,5 +1,5 @@
 --
--- This file contains built-in stuff in Minetest implemented in Lua.
+-- This file contains built-in stuff in Luanti implemented in Lua.
 --
 -- It is always loaded and executed after registration of the C API,
 -- before loading and running any mods.
@@ -26,7 +26,15 @@ do
 		core.print = nil -- don't pollute our namespace
 	end
 end
-math.randomseed(os.time())
+
+do
+	-- Note that PUC Lua just calls srand() which is already initialized by C++,
+	-- but we don't want to rely on this implementation detail.
+	local seed = 1048576 * (os.time() % 1048576)
+	seed = seed + core.get_us_time() % 1048576
+	math.randomseed(seed)
+end
+
 minetest = core
 
 -- Load other files
@@ -34,6 +42,7 @@ local scriptdir = core.get_builtin_path()
 local commonpath = scriptdir .. "common" .. DIR_DELIM
 local asyncpath = scriptdir .. "async" .. DIR_DELIM
 
+dofile(commonpath .. "math.lua")
 dofile(commonpath .. "vector.lua")
 dofile(commonpath .. "strict.lua")
 dofile(commonpath .. "serialize.lua")
@@ -69,6 +78,8 @@ elseif INIT == "client" then
 	dofile(scriptdir .. "client" .. DIR_DELIM .. "init.lua")
 elseif INIT == "emerge" then
 	dofile(scriptdir .. "emerge" .. DIR_DELIM .. "init.lua")
+elseif INIT == "pause_menu" then
+	dofile(scriptdir .. "pause_menu" .. DIR_DELIM .. "init.lua")
 else
 	error(("Unrecognized builtin initialization type %s!"):format(tostring(INIT)))
 end

@@ -1,43 +1,30 @@
-/*
-Minetest
-Copyright (C) 2010-2013 celeron55, Perttu Ahola <celeron55@gmail.com>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2010-2013 celeron55, Perttu Ahola <celeron55@gmail.com>
 
 #include <functional>
 #include "mainloop.h"
 #include "gui/mainmenumanager.h"
 #include "clouds.h"
-#include "gui/touchscreengui.h"
-#include "server.h"
+#include "gui/touchcontrols.h"
 #include "filesys.h"
 #include "gui/guiMainMenu.h"
 #include "game.h"
 #include "player.h"
 #include "chat.h"
 #include "gettext.h"
+#include "inputhandler.h"
 #include "profiler.h"
 #include "gui/guiEngine.h"
 #include "fontengine.h"
 #include "clientlauncher.h"
 #include "version.h"
 #include "renderingengine.h"
-#include "network/networkexceptions.h"
+#include "settings.h"
+#include "util/tracy_wrapper.h"
 #include <IGUISpriteBank.h>
 #include <ICameraSceneNode.h>
+#include <unordered_map>
 
 #if USE_SOUND
 	#include "sound/sound_openal.h"
@@ -48,11 +35,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 gui::IGUIEnvironment *guienv = nullptr;
 gui::IGUIStaticText *guiroot = nullptr;
 MainMenuManager g_menumgr;
-
-bool isMenuActive()
-{
-	return g_menumgr.menuCount() != 0;
-}
 
 // Passed to menus to allow disconnecting and exiting
 MainGameCallback *g_gamecallback = nullptr;
@@ -76,12 +58,21 @@ ClientLauncher::~ClientLauncher()
 {
 	delete input;
 
-	delete receiver;
+	g_settings->deregisterAllChangedCallbacks(this);
 
 	delete g_fontengine;
+	g_fontengine = nullptr;
 	delete g_gamecallback;
+	g_gamecallback = nullptr;
+
+	guiroot = nullptr;
+	guienv = nullptr;
+	assert(g_menumgr.menuCount() == 0);
 
 	delete m_rendering_engine;
+
+	// delete event receiver only after all Irrlicht stuff is gone
+	delete receiver;
 
 #if USE_SOUND
 	g_sound_manager_singleton.reset();
@@ -110,7 +101,6 @@ void ClientLauncher::run(std::function<void(bool)> resolve)
 	init_args(start_data, cmd_args);
 
 	if (!init_engine()) {
-		errorstream << "Could not initialize game engine." << std::endl;
 		resolve(false); return;
 	}
 
@@ -128,20 +118,21 @@ void ClientLauncher::run(std::function<void(bool)> resolve)
 
 	init_input();
 
-	m_rendering_engine->get_scene_manager()->getParameters()->
-		setAttribute(scene::ALLOW_ZWRITE_ON_TRANSPARENT, true);
-
 	guienv = m_rendering_engine->get_gui_env();
-	init_guienv(guienv);
+	config_guienv();
+	g_settings->registerChangedCallback("dpi_change_notifier", setting_changed_callback, this);
+	g_settings->registerChangedCallback("display_density_factor", setting_changed_callback, this);
+	g_settings->registerChangedCallback("gui_scaling", setting_changed_callback, this);
 
 	g_fontengine = new FontEngine(guienv);
-	FATAL_ERROR_IF(!g_fontengine, "Font engine creation failed.");
 
 	// Create the menu clouds
 	// This is only global so it can be used by RenderingEngine::draw_load_screen().
 	assert(!g_menucloudsmgr && !g_menuclouds);
+	std::unique_ptr<IWritableShaderSource> ssrc(createShaderSource());
+	ssrc->addShaderUniformSetterFactory(std::make_unique<FogShaderUniformSetterFactory>());
 	g_menucloudsmgr = m_rendering_engine->get_scene_manager()->createNewSceneManager();
-	g_menuclouds = new Clouds(g_menucloudsmgr, nullptr, -1, rand());
+	g_menuclouds = new Clouds(g_menucloudsmgr, ssrc.get(), -1, rand());
 	g_menuclouds->setHeight(100.0f);
 	g_menuclouds->update(v3f(0, 0, 0), video::SColor(255, 240, 240, 255));
 	scene::ICameraSceneNode* camera;
@@ -180,11 +171,7 @@ void ClientLauncher::run_loop(std::function<void(bool)> resolve) {
 		}
 
 		// Set the window caption
-#if IRRLICHT_VERSION_MT_REVISION >= 15
 		auto driver_name = m_rendering_engine->getVideoDriver()->getName();
-#else
-		auto driver_name = wide_to_utf8(m_rendering_engine->getVideoDriver()->getName());
-#endif
 		std::string caption = std::string(PROJECT_NAME_C) +
 			" " + g_version_hash +
 			" [" + gettext("Main Menu") + "]" +
@@ -236,9 +223,6 @@ void ClientLauncher::run_after_launch_game(std::function<void(bool)> resolve, bo
 				run_cleanup(resolve);
 				return;
 			}
-			if (g_settings->getBool("enable_touch")) {
-				g_touchscreengui = new TouchScreenGUI(m_rendering_engine->get_raw_device(), receiver);
-			}
 
 			the_game(
 				kill,
@@ -253,13 +237,11 @@ void ClientLauncher::run_after_launch_game(std::function<void(bool)> resolve, bo
 }
 
 void ClientLauncher::after_the_game(std::function<void(bool)> resolve) {
-	// EXTRANEOUS INDENT
-					// AFTER TRY
-					m_rendering_engine->get_scene_manager()->clear();
+		m_rendering_engine->get_scene_manager()->clear();
 
-		if (g_touchscreengui) {
-			delete g_touchscreengui;
-			g_touchscreengui = NULL;
+		if (g_touchcontrols) {
+			delete g_touchcontrols;
+			g_touchcontrols = NULL;
 		}
 
 		/* Save the settings when leaving the game.
@@ -284,6 +266,14 @@ void ClientLauncher::after_the_game(std::function<void(bool)> resolve) {
 }
 
 void ClientLauncher::run_cleanup(std::function<void(bool)> resolve) {
+
+	// If profiler was enabled print it one last time
+	if (g_settings->getFloat("profiler_print_interval") > 0) {
+		infostream << "Profiler:" << std::endl;
+		g_profiler->print(infostream);
+		g_profiler->clear();
+	}
+
 	assert(g_menucloudsmgr->getReferenceCount() == 1);
 	g_menucloudsmgr->drop();
 	g_menucloudsmgr = nullptr;
@@ -320,8 +310,12 @@ void ClientLauncher::init_args(GameStartData &start_data, const Settings &cmd_ar
 bool ClientLauncher::init_engine()
 {
 	receiver = new MyEventReceiver();
-	m_rendering_engine = new RenderingEngine(receiver);
-	return m_rendering_engine->get_raw_device() != nullptr;
+	try {
+		m_rendering_engine = new RenderingEngine(receiver);
+	} catch (std::exception &e) {
+		errorstream << e.what() << std::endl;
+	}
+	return !!m_rendering_engine;
 }
 
 void ClientLauncher::init_input()
@@ -331,27 +325,49 @@ void ClientLauncher::init_input()
 	else
 		input = new RealInputHandler(receiver);
 
-	if (g_settings->getBool("enable_joysticks")) {
-		irr::core::array<irr::SJoystickInfo> infos;
-		std::vector<irr::SJoystickInfo> joystick_infos;
-
-		// Make sure this is called maximum once per
-		// irrlicht device, otherwise it will give you
-		// multiple events for the same joystick.
-		if (m_rendering_engine->get_raw_device()->activateJoysticks(infos)) {
-			infostream << "Joystick support enabled" << std::endl;
-			joystick_infos.reserve(infos.size());
-			for (u32 i = 0; i < infos.size(); i++) {
-				joystick_infos.push_back(infos[i]);
-			}
-			input->joystick.onJoystickConnect(joystick_infos);
-		} else {
-			errorstream << "Could not activate joystick support." << std::endl;
-		}
-	}
+	if (g_settings->getBool("enable_joysticks"))
+		init_joysticks();
 }
 
-void ClientLauncher::init_guienv(gui::IGUIEnvironment *guienv)
+void ClientLauncher::init_joysticks()
+{
+	core::array<SJoystickInfo> infos;
+	std::vector<SJoystickInfo> joystick_infos;
+
+	// Make sure this is called maximum once per
+	// irrlicht device, otherwise it will give you
+	// multiple events for the same joystick.
+	if (!m_rendering_engine->get_raw_device()->activateJoysticks(infos)) {
+		errorstream << "Could not activate joystick support." << std::endl;
+		return;
+	}
+
+	infostream << "Joystick support enabled" << std::endl;
+	joystick_infos.reserve(infos.size());
+	for (u32 i = 0; i < infos.size(); i++) {
+		joystick_infos.push_back(infos[i]);
+	}
+	input->joystick.onJoystickConnect(joystick_infos);
+}
+
+void ClientLauncher::setting_changed_callback(const std::string &name, void *data)
+{
+	static_cast<ClientLauncher*>(data)->config_guienv();
+}
+
+static video::ITexture *loadTexture(video::IVideoDriver *driver, const char *path)
+{
+	// FIXME?: it would be cleaner to do this through a ITextureSource, but we don't have one
+	video::ITexture *texture = nullptr;
+	verbosestream << "Loading texture " << path << std::endl;
+	if (auto *image = driver->createImageFromFile(path); image) {
+		texture = driver->addTexture(fs::GetFilenameFromPath(path), image);
+		image->drop();
+	}
+	return texture;
+}
+
+void ClientLauncher::config_guienv()
 {
 	gui::IGUISkin *skin = guienv->getSkin();
 
@@ -367,26 +383,38 @@ void ClientLauncher::init_guienv(gui::IGUIEnvironment *guienv)
 
 	float density = rangelim(g_settings->getFloat("gui_scaling"), 0.5f, 20) *
 		RenderingEngine::getDisplayDensity();
+	skin->setScale(density);
 	skin->setSize(gui::EGDS_CHECK_BOX_WIDTH, (s32)(17.0f * density));
-	skin->setSize(gui::EGDS_SCROLLBAR_SIZE, (s32)(14.0f * density));
+	skin->setSize(gui::EGDS_SCROLLBAR_SIZE, (s32)(21.0f * density));
 	skin->setSize(gui::EGDS_WINDOW_BUTTON_WIDTH, (s32)(15.0f * density));
+
+	static u32 orig_sprite_id = skin->getIcon(gui::EGDI_CHECK_BOX_CHECKED);
+	static std::unordered_map<std::string, u32> sprite_ids;
+
 	if (density > 1.5f) {
-		std::string sprite_path = porting::path_share + "/textures/base/pack/";
-		if (density > 3.5f)
-			sprite_path.append("checkbox_64.png");
-		else if (density > 2.0f)
-			sprite_path.append("checkbox_32.png");
-		else
-			sprite_path.append("checkbox_16.png");
 		// Texture dimensions should be a power of 2
-		gui::IGUISpriteBank *sprites = skin->getSpriteBank();
-		video::IVideoDriver *driver = m_rendering_engine->get_video_driver();
-		video::ITexture *sprite_texture = driver->getTexture(sprite_path.c_str());
-		if (sprite_texture) {
-			s32 sprite_id = sprites->addTextureAsSprite(sprite_texture);
-			if (sprite_id != -1)
-				skin->setIcon(gui::EGDI_CHECK_BOX_CHECKED, sprite_id);
+		std::string path = porting::path_share + "/textures/base/pack/";
+		if (density > 3.5f)
+			path.append("checkbox_64.png");
+		else if (density > 2.0f)
+			path.append("checkbox_32.png");
+		else
+			path.append("checkbox_16.png");
+
+		auto cached_id = sprite_ids.find(path);
+		if (cached_id != sprite_ids.end()) {
+			skin->setIcon(gui::EGDI_CHECK_BOX_CHECKED, cached_id->second);
+		} else {
+			auto *driver = m_rendering_engine->get_video_driver();
+			auto *texture = loadTexture(driver, path.c_str());
+			s32 id = skin->getSpriteBank()->addTextureAsSprite(texture);
+			if (id != -1) {
+				skin->setIcon(gui::EGDI_CHECK_BOX_CHECKED, id);
+				sprite_ids.emplace(path, id);
+			}
 		}
+	} else {
+		skin->setIcon(gui::EGDI_CHECK_BOX_CHECKED, orig_sprite_id);
 	}
 }
 
@@ -561,7 +589,27 @@ void ClientLauncher::after_main_menu(std::function<void(bool)> resolve) {
 
 void ClientLauncher::main_menu(std::function<void()> resolve)
 {
+
+	kill   = porting::signal_handler_killstatus();
+
+	// Wait until app is in foreground because of #15883
+	infostream << "Waiting for app to be in foreground" << std::endl;
+	main_menu_wait_loop(resolve);
+}
+
+void ClientLauncher::main_menu_wait_loop(std::function<void()> resolve)
+{
+	auto device = m_rendering_engine->get_raw_device();
+	bool keep_going = m_rendering_engine->run() && !*kill;
+	if (keep_going && !device->isWindowVisible()) {
+		MainLoop::NextFrame([this, resolve]() { main_menu_wait_loop(resolve); });
+		return;
+	}
+
+	infostream << "Waited for app to be in foreground" << std::endl;
+
 	infostream << "Waiting for other menus" << std::endl;
+	framemarker = new FrameMarker("ClientLauncher::main_menu()-wait-frame");
 	main_menu_loop(resolve);
 }
 
@@ -572,19 +620,24 @@ void ClientLauncher::main_menu_loop(std::function<void()> resolve) {
 			main_menu_after_loop(resolve);
 			return;
 		}
+		framemarker->start();
 		video::IVideoDriver *driver = m_rendering_engine->get_video_driver();
 		driver->beginScene(true, true, video::SColor(255, 128, 128, 128));
 		m_rendering_engine->get_gui_env()->drawAll();
 		driver->endScene();
+		framemarker->end();
 		// On some computers framerate doesn't seem to be automatically limited
 		//sleep_ms(25);
 		MainLoop::NextFrame([this, resolve]() { main_menu_loop(resolve); });
 }
 
 void ClientLauncher::main_menu_after_loop(std::function<void()> resolve) {
+	delete framemarker;
+	framemarker = nullptr;
 	infostream << "Waited for other menus" << std::endl;
 
-	auto *cur_control = m_rendering_engine->get_raw_device()->getCursorControl();
+	auto device = m_rendering_engine->get_raw_device();
+	auto *cur_control = device->getCursorControl();
 	if (cur_control) {
 		// Cursor can be non-visible when coming from the game
 		cur_control->setVisible(true);

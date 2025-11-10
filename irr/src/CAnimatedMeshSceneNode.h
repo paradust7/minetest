@@ -4,16 +4,17 @@
 
 #pragma once
 
+#include "CBoneSceneNode.h"
 #include "IAnimatedMeshSceneNode.h"
 #include "IAnimatedMesh.h"
 
+#include "SkinnedMesh.h"
+#include "Transform.h"
+#include "irr_ptr.h"
 #include "matrix4.h"
 
-namespace irr
-{
 namespace scene
 {
-class IDummyTransformationSceneNode;
 
 class CAnimatedMeshSceneNode : public IAnimatedMeshSceneNode
 {
@@ -45,7 +46,7 @@ public:
 	//! sets the frames between the animation is looped.
 	//! the default is 0 - MaximalFrameCount of the mesh.
 	//! NOTE: setMesh will also change this value and set it to the full range of animations of the mesh
-	bool setFrameLoop(s32 begin, s32 end) override;
+	bool setFrameLoop(f32 begin, f32 end) override;
 
 	//! Sets looping mode which is on by default. If set to false,
 	//! animations will not be looped.
@@ -54,9 +55,11 @@ public:
 	//! returns the current loop mode
 	bool getLoopMode() const override;
 
-	//! Sets a callback interface which will be called if an animation
-	//! playback has ended. Set this to 0 to disable the callback again.
-	void setAnimationEndCallback(IAnimationEndCallBack *callback = 0) override;
+	void setOnAnimateCallback(
+			const std::function<void(f32 dtime)> &cb) override
+	{
+		OnAnimateCallback = cb;
+	}
 
 	//! sets the speed with which the animation is played
 	//! NOTE: setMesh will also change this value and set it to the default speed of the mesh
@@ -93,9 +96,9 @@ public:
 	//! Returns the current displayed frame number.
 	f32 getFrameNr() const override;
 	//! Returns the current start frame number.
-	s32 getStartFrame() const override;
+	f32 getStartFrame() const override;
 	//! Returns the current end frame number.
-	s32 getEndFrame() const override;
+	f32 getEndFrame() const override;
 
 	//! Sets if the scene node should not copy the materials of the mesh but use them in a read only style.
 	/* In this way it is possible to change the materials a mesh causing all mesh scene nodes
@@ -117,15 +120,16 @@ public:
 	//! updates the absolute position based on the relative and the parents position
 	void updateAbsolutePosition() override;
 
-	//! Set the joint update mode (0-unused, 1-get joints only, 2-set joints only, 3-move and set)
-	void setJointMode(E_JOINT_UPDATE_ON_RENDER mode) override;
-
-	//! Sets the transition time in seconds (note: This needs to enable joints, and setJointmode maybe set to 2)
+	//! Sets the transition time in seconds (note: This needs to enable joints)
 	//! you must call animateJoints(), or the mesh will not animate
 	void setTransitionTime(f32 Time) override;
 
+	void updateJointSceneNodes(const std::vector<SkinnedMesh::SJoint::VariantTransform> &transforms);
+
 	//! updates the joint positions of this mesh
-	void animateJoints(bool CalculateAbsolutePositions = true) override;
+	void animateJoints() override;
+
+	void addJoints();
 
 	//! render mesh ignoring its transformation. Used with ragdolls. (culling is unaffected)
 	void setRenderFromIdentity(bool On) override;
@@ -142,14 +146,15 @@ private:
 
 	void buildFrameNr(u32 timeMs);
 	void checkJoints();
+	void copyOldTransforms();
 	void beginTransition();
 
 	core::array<video::SMaterial> Materials;
-	core::aabbox3d<f32> Box;
+	core::aabbox3d<f32> Box{{0.0f, 0.0f, 0.0f}};
 	IAnimatedMesh *Mesh;
 
-	s32 StartFrame;
-	s32 EndFrame;
+	f32 StartFrame;
+	f32 EndFrame;
 	f32 FramesPerSecond;
 	f32 CurrentFrameNr;
 
@@ -158,20 +163,30 @@ private:
 	f32 Transiting;      // is mesh transiting (plus cache of TransitionTime)
 	f32 TransitingBlend; // 0-1, calculated on buildFrameNr
 
-	// 0-unused, 1-get joints only, 2-set joints only, 3-move and set
-	E_JOINT_UPDATE_ON_RENDER JointMode;
 	bool JointsUsed;
 
 	bool Looping;
 	bool ReadOnlyMaterials;
 	bool RenderFromIdentity;
 
-	IAnimationEndCallBack *LoopCallBack;
 	s32 PassCount;
+	std::function<void(f32)> OnAnimateCallback;
 
-	core::array<IBoneSceneNode *> JointChildSceneNodes;
-	core::array<core::matrix4> PretransitingSave;
+	struct PerJointData {
+		std::vector<irr_ptr<CBoneSceneNode>> SceneNodes;
+		std::vector<core::matrix4> GlobalMatrices;
+		std::vector<std::optional<core::Transform>> PreTransSaves;
+		void setN(u16 n) {
+			SceneNodes.clear();
+			SceneNodes.resize(n);
+			GlobalMatrices.clear();
+			GlobalMatrices.resize(n);
+			PreTransSaves.clear();
+			PreTransSaves.resize(n);
+		}
+	};
+
+	PerJointData PerJoint;
 };
 
 } // end namespace scene
-} // end namespace irr

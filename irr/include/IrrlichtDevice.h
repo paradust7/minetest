@@ -6,17 +6,18 @@
 
 #include "IReferenceCounted.h"
 #include "dimension2d.h"
-#include "IVideoDriver.h"
 #include "EDriverTypes.h"
 #include "EDeviceTypes.h"
 #include "IEventReceiver.h"
 #include "ICursorControl.h"
 #include "ITimer.h"
 #include "IOSOperator.h"
-#include "IrrCompileConfig.h"
+#include "irrArray.h"
+#include "position2d.h"
+#include "SColor.h" // video::ECOLOR_FORMAT
+#include <string>
+#include <variant>
 
-namespace irr
-{
 class ILogger;
 class IEventReceiver;
 
@@ -38,7 +39,9 @@ class ISceneManager;
 namespace video
 {
 class IContextManager;
-extern "C" IRRLICHT_API bool IRRCALLCONV isDriverSupported(E_DRIVER_TYPE driver);
+class IImage;
+class IVideoDriver;
+extern "C" bool isDriverSupported(E_DRIVER_TYPE driver);
 } // end namespace video
 
 //! The Irrlicht device. You can create it with createDevice() or createDeviceEx().
@@ -72,7 +75,7 @@ public:
 	also simply use your own message loop using GetMessage,
 	DispatchMessage and whatever and simply don't use this method.
 	But note that Irrlicht will not be able to fetch user input
-	then. See irr::SIrrlichtCreationParameters::WindowId for more
+	then. See SIrrlichtCreationParameters::WindowId for more
 	information and example code.
 	*/
 	virtual bool run() = 0;
@@ -179,12 +182,19 @@ public:
 	/** \return True if window is fullscreen. */
 	virtual bool isFullscreen() const = 0;
 
+	//! Enables or disables fullscreen mode.
+	/** Only works on SDL.
+	\return True on success. */
+	virtual bool setFullscreen(bool fullscreen) { return false; }
+
 	//! Checks if the window could possibly be visible.
-	//! Currently, this only returns false when the activity is stopped on
-	//! Android. Note that for Android activities, "stopped" means something
-	//! different than you might expect (and also something different than
-	//! "paused"). Read the Android lifecycle documentation.
+	/** If this returns false, you should not do any rendering. */
 	virtual bool isWindowVisible() const { return true; };
+
+	//! Checks if the Irrlicht device supports touch events.
+	/** Intentionally doesn't check whether a touch input device is available
+	or similar. */
+	virtual bool supportsTouchEvents() const { return false; }
 
 	//! Get the current color format of the window
 	/** \return Color format of the window. */
@@ -194,16 +204,10 @@ public:
 	/** IrrlichtDevice::run() will always return false after closeDevice() was called. */
 	virtual void closeDevice() = 0;
 
-	//! Get the version of the engine.
-	/** The returned string
-	will look like this: "1.2.3" or this: "1.2".
-	\return String which contains the version. */
-	virtual const c8 *getVersion() const = 0;
-
 	//! Sets a new user event receiver which will receive events from the engine.
 	/** Return true in IEventReceiver::OnEvent to prevent the event from continuing along
 	the chain of event receivers. The path that an event takes through the system depends
-	on its type. See irr::EEVENT_TYPE for details.
+	on its type. See EEVENT_TYPE for details.
 	\param receiver New receiver to be used. */
 	virtual void setEventReceiver(IEventReceiver *receiver) = 0;
 
@@ -236,7 +240,7 @@ public:
 	It does set the drawing/clientDC size of the window, the window decorations are added to that.
 	You get the current window size with IVideoDriver::getScreenSize() (might be unified in future)
 	*/
-	virtual void setWindowSize(const irr::core::dimension2d<u32> &size) = 0;
+	virtual void setWindowSize(const core::dimension2d<u32> &size) = 0;
 
 	//! Minimizes the window if possible.
 	virtual void minimizeWindow() = 0;
@@ -253,7 +257,7 @@ public:
 	//! Activate any joysticks, and generate events for them.
 	/** Irrlicht contains support for joysticks, but does not generate joystick events by default,
 	as this would consume joystick info that 3rd party libraries might rely on. Call this method to
-	activate joystick support in Irrlicht and to receive irr::SJoystickEvent events.
+	activate joystick support in Irrlicht and to receive SJoystickEvent events.
 	\param joystickInfo On return, this will contain an array of each joystick that was found and activated.
 	\return true if joysticks are supported on this device, false if joysticks are not
 				 supported or support is compiled out.
@@ -325,6 +329,12 @@ public:
 	used. */
 	virtual E_DEVICE_TYPE getType() const = 0;
 
+	//! Get the version string of the underlying system (e.g. SDL)
+	virtual std::string getVersionString() const
+	{
+		return "";
+	}
+
 	//! Get the display density in dots per inch.
 	//! Returns 0.0f on failure.
 	virtual float getDisplayDensity() const = 0;
@@ -336,6 +346,25 @@ public:
 	{
 		return video::isDriverSupported(driver);
 	}
-};
 
-} // end namespace irr
+	//! Get the corresponding scancode for the keycode.
+	/**
+	\param key The keycode to convert.
+	\return The implementation-dependent scancode for the key (represented by the u32 component) or, if a scancode is not
+	available, the corresponding Irrlicht keycode (represented by the EKEY_CODE component).
+	*/
+	virtual std::variant<u32, EKEY_CODE> getScancodeFromKey(const Keycode &key) const {
+		if (auto pv = std::get_if<EKEY_CODE>(&key))
+			return *pv;
+		return (u32)std::get<wchar_t>(key);
+	}
+
+	//! Get the corresponding keycode for the scancode.
+	/**
+	\param scancode The implementation-dependent scancode for the key.
+	\return The corresponding keycode.
+	*/
+	virtual Keycode getKeyFromScancode(const u32 scancode) const {
+		return Keycode(KEY_UNKNOWN, (wchar_t)scancode);
+	}
+};

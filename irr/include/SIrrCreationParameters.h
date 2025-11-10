@@ -10,10 +10,7 @@
 #include "ILogger.h"
 #include "position2d.h"
 #include "path.h"
-#include "IrrCompileConfig.h" // for IRRLICHT_SDK_VERSION
 
-namespace irr
-{
 class IEventReceiver;
 
 //! Structure for holding Irrlicht Device creation parameters.
@@ -44,47 +41,16 @@ struct SIrrlichtCreationParameters
 #else
 			LoggingLevel(ELL_INFORMATION),
 #endif
-			SDK_version_do_not_use(IRRLICHT_SDK_VERSION),
 			PrivateData(0),
 #ifdef IRR_MOBILE_PATHS
-			OGLES2ShaderPath("media/Shaders/")
+			OGLES2ShaderPath("media/Shaders/"),
 #elif defined(_IRR_EMSCRIPTEN_PLATFORM_)
-			OGLES2ShaderPath("/minetest/media/Shaders/")
+			OGLES2ShaderPath("/minetest/media/Shaders/"),
 #else
-			OGLES2ShaderPath("../../media/Shaders/")
+			OGLES2ShaderPath("../../media/Shaders/"),
 #endif
+			DriverDebug(false)
 	{
-	}
-
-	SIrrlichtCreationParameters(const SIrrlichtCreationParameters &other) :
-			SDK_version_do_not_use(IRRLICHT_SDK_VERSION)
-	{
-		*this = other;
-	}
-
-	SIrrlichtCreationParameters &operator=(const SIrrlichtCreationParameters &other)
-	{
-		DeviceType = other.DeviceType;
-		DriverType = other.DriverType;
-		WindowSize = other.WindowSize;
-		WindowPosition = other.WindowPosition;
-		Bits = other.Bits;
-		ZBufferBits = other.ZBufferBits;
-		Fullscreen = other.Fullscreen;
-		WindowMaximized = other.WindowMaximized;
-		WindowResizable = other.WindowResizable;
-		Stencilbuffer = other.Stencilbuffer;
-		Vsync = other.Vsync;
-		AntiAlias = other.AntiAlias;
-		WithAlphaChannel = other.WithAlphaChannel;
-		Doublebuffer = other.Doublebuffer;
-		Stereobuffer = other.Stereobuffer;
-		EventReceiver = other.EventReceiver;
-		WindowId = other.WindowId;
-		LoggingLevel = other.LoggingLevel;
-		PrivateData = other.PrivateData;
-		OGLES2ShaderPath = other.OGLES2ShaderPath;
-		return *this;
 	}
 
 	//! Type of the device.
@@ -249,11 +215,6 @@ struct SIrrlichtCreationParameters
 	*/
 	ELOG_LEVEL LoggingLevel;
 
-	//! Don't use or change this parameter.
-	/** Always set it to IRRLICHT_SDK_VERSION, which is done by default.
-	This is needed for sdk version checks. */
-	const c8 *const SDK_version_do_not_use;
-
 	//! Define some private data storage.
 	/** Used when platform devices need access to OS specific data structures etc.
 	This is only used for Android at the moment in order to access the native
@@ -263,7 +224,8 @@ struct SIrrlichtCreationParameters
 	//! Set the path where default-shaders to simulate the fixed-function pipeline can be found.
 	/** This is about the shaders which can be found in media/Shaders by default. It's only necessary
 	to set when using OGL-ES 2.0 */
-	irr::io::path OGLES2ShaderPath;
-};
+	io::path OGLES2ShaderPath;
 
-} // end namespace irr
+	//! Enable debug and error checks in video driver.
+	bool DriverDebug;
+};

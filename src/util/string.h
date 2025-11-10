@@ -1,26 +1,12 @@
-/*
-Minetest
-Copyright (C) 2010-2013 celeron55, Perttu Ahola <celeron55@gmail.com>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2010-2013 celeron55, Perttu Ahola <celeron55@gmail.com>
 
 #pragma once
 
 #include "irrlichttypes_bloated.h"
-#ifndef SERVER
+#include "config.h" // IS_CLIENT_BUILD
+#if IS_CLIENT_BUILD
 #include "irrString.h"
 #endif
 #include <cstdlib>
@@ -32,7 +18,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <sstream>
 #include <iomanip>
 #include <cctype>
+#include <cwctype>
 #include <unordered_map>
+#include <optional>
 
 class Translations;
 
@@ -84,8 +72,10 @@ struct FlagDesc {
 
 // Try to avoid converting between wide and UTF-8 unless you need to
 // input/output stuff via Irrlicht
-std::wstring utf8_to_wide(std::string_view input);
-std::string wide_to_utf8(std::wstring_view input);
+[[nodiscard]] std::wstring utf8_to_wide(std::string_view input);
+[[nodiscard]] std::string wide_to_utf8(std::wstring_view input);
+
+void wide_add_codepoint(std::wstring &result, char32_t codepoint);
 
 std::string urlencode(std::string_view str);
 std::string urldecode(std::string_view str);
@@ -94,13 +84,29 @@ u32 readFlagString(std::string str, const FlagDesc *flagdesc, u32 *flagmask);
 std::string writeFlagString(u32 flags, const FlagDesc *flagdesc, u32 flagmask);
 
 size_t mystrlcpy(char *dst, const char *src, size_t size) noexcept;
-char *mystrtok_r(char *s, const char *sep, char **lasts) noexcept;
 
+/// @brief turn string into a map seed. either directly if it's a number or by hashing it.
 u64 read_seed(const char *str);
+
 bool parseColorString(const std::string &value, video::SColor &color, bool quiet,
 		unsigned char default_alpha = 0xff);
 std::string encodeHexColorString(video::SColor color);
 
+/**
+ * Converts a letter to lowercase, with safe handling of the char type and non-ASCII.
+ * @param c input letter
+ * @returns same letter but lowercase
+*/
+inline char my_tolower(char c)
+{
+	// By design this function cannot handle any Unicode (codepoints don't fit into char),
+	// but make sure to pass it through unchanged.
+	// tolower() can mangle it if the POSIX locale is not UTF-8.
+	if (static_cast<unsigned char>(c) > 0x7f)
+		return c;
+	// toupper(3): "If the argument c is of type char, it must be cast to unsigned char"
+	return tolower(static_cast<unsigned char>(c));
+}
 
 /**
  * Returns a copy of \p str with spaces inserted at the right hand side to ensure
@@ -173,7 +179,7 @@ inline bool str_equal(std::basic_string_view<T> s1,
 		return false;
 
 	for (size_t i = 0; i < s1.size(); ++i)
-		if(tolower(s1[i]) != tolower(s2[i]))
+		if (my_tolower(s1[i]) != my_tolower(s2[i]))
 			return false;
 
 	return true;
@@ -212,7 +218,7 @@ inline bool str_starts_with(std::basic_string_view<T> str,
 		return str.compare(0, prefix.size(), prefix) == 0;
 
 	for (size_t i = 0; i < prefix.size(); ++i)
-		if (tolower(str[i]) != tolower(prefix[i]))
+		if (my_tolower(str[i]) != my_tolower(prefix[i]))
 			return false;
 	return true;
 }
@@ -253,7 +259,7 @@ inline bool str_ends_with(std::basic_string_view<T> str,
 		return str.compare(start, suffix.size(), suffix) == 0;
 
 	for (size_t i = 0; i < suffix.size(); ++i)
-		if (tolower(str[start + i]) != tolower(suffix[i]))
+		if (my_tolower(str[start + i]) != my_tolower(suffix[i]))
 			return false;
 	return true;
 }
@@ -281,6 +287,7 @@ MAKE_VARIANT(str_ends_with, std::basic_string_view<T>, const T*)
  * @return An std::vector<std::basic_string<T> > of the component parts
  */
 template <typename T>
+[[nodiscard]]
 inline std::vector<std::basic_string<T> > str_split(
 		const std::basic_string<T> &str,
 		T delimiter)
@@ -300,29 +307,42 @@ inline std::vector<std::basic_string<T> > str_split(
  * @param str
  * @return A copy of \p str converted to all lowercase characters.
  */
+[[nodiscard]]
 inline std::string lowercase(std::string_view str)
 {
 	std::string s2;
 	s2.resize(str.size());
 	for (size_t i = 0; i < str.size(); i++)
-		s2[i] = tolower(str[i]);
+		s2[i] = my_tolower(str[i]);
 	return s2;
 }
 
+
+inline bool my_isspace(const char c)
+{
+	return std::isspace(c);
+}
+
+inline bool my_isspace(const wchar_t c)
+{
+	return std::iswspace(c);
+}
 
 /**
  * @param str
  * @return A view of \p str with leading and trailing whitespace removed.
  */
-inline std::string_view trim(std::string_view str)
+template<typename T>
+[[nodiscard]]
+inline std::basic_string_view<T> trim(std::basic_string_view<T> str)
 {
 	size_t front = 0;
 	size_t back = str.size();
 
-	while (front < back && std::isspace(str[front]))
+	while (front < back && my_isspace(str[front]))
 		++front;
 
-	while (back > front && std::isspace(str[back - 1]))
+	while (back > front && my_isspace(str[back - 1]))
 		--back;
 
 	return str.substr(front, back - front);
@@ -336,16 +356,27 @@ inline std::string_view trim(std::string_view str)
  * @param str
  * @return A copy of \p str with leading and trailing whitespace removed.
  */
-inline std::string trim(std::string &&str)
+template<typename T>
+[[nodiscard]]
+inline std::basic_string<T> trim(std::basic_string<T> &&str)
 {
-	std::string ret(trim(std::string_view(str)));
+	std::basic_string<T> ret(trim(std::basic_string_view<T>(str)));
 	return ret;
 }
 
-// The above declaration causes ambiguity with char pointers so we have to fix that:
-inline std::string_view trim(const char *str)
+template<typename T>
+[[nodiscard]]
+inline std::basic_string_view<T> trim(const std::basic_string<T> &str)
 {
-	return trim(std::string_view(str));
+	return trim(std::basic_string_view<T>(str));
+}
+
+// The above declaration causes ambiguity with char pointers so we have to fix that:
+template<typename T>
+[[nodiscard]]
+inline std::basic_string_view<T> trim(const T *str)
+{
+	return trim(std::basic_string_view<T>(str));
 }
 
 
@@ -434,6 +465,10 @@ inline std::string ftos(float f)
 	return oss.str();
 }
 
+/// @brief Converts double to string. Handles high precision and inf/nan.
+std::string my_double_to_string(double number);
+/// @brief Converts string to double. Handles high precision and inf/nan.
+std::optional<double> my_string_to_double(const std::string &s);
 
 /**
  * Replace all occurrences of \p pattern in \p str with \p replacement.
@@ -531,6 +566,7 @@ std::string wrap_rows(std::string_view from, unsigned row_len, bool has_color_co
  * Removes backslashes from an escaped string (FormSpec strings)
  */
 template <typename T>
+[[nodiscard]]
 inline std::basic_string<T> unescape_string(const std::basic_string<T> &s)
 {
 	std::basic_string<T> res;
@@ -555,27 +591,26 @@ inline std::basic_string<T> unescape_string(const std::basic_string<T> &s)
  * @return \p s, with escape sequences removed.
  */
 template <typename T>
-std::basic_string<T> unescape_enriched(const std::basic_string<T> &s)
+[[nodiscard]]
+std::basic_string<T> unescape_enriched(std::basic_string_view<T> s)
 {
 	std::basic_string<T> output;
 	output.reserve(s.size());
 	size_t i = 0;
 	while (i < s.length()) {
-		if (s[i] == '\x1b') {
+		if (s[i] == static_cast<T>('\x1b')) {
 			++i;
-			if (i == s.length()) continue;
-			if (s[i] == '(') {
+			if (i == s.length())
+				continue;
+			if (s[i] == static_cast<T>('(')) {
 				++i;
-				while (i < s.length() && s[i] != ')') {
-					if (s[i] == '\\') {
+				while (i < s.length() && s[i] != static_cast<T>(')')) {
+					if (s[i] == static_cast<T>('\\'))
 						++i;
-					}
 					++i;
 				}
-				++i;
-			} else {
-				++i;
 			}
+			++i;
 			continue;
 		}
 		output += s[i];
@@ -584,7 +619,20 @@ std::basic_string<T> unescape_enriched(const std::basic_string<T> &s)
 	return output;
 }
 
+// (same templating issue here)
+[[nodiscard]]
+inline std::string unescape_enriched(std::string_view s)
+{
+	return unescape_enriched<char>(s);
+}
+[[nodiscard]]
+inline std::wstring unescape_enriched(std::wstring_view s)
+{
+	return unescape_enriched<wchar_t>(s);
+}
+
 template <typename T>
+[[nodiscard]]
 std::vector<std::basic_string<T> > split(const std::basic_string<T> &s, T delim)
 {
 	std::vector<std::basic_string<T> > tokens;
@@ -616,11 +664,15 @@ std::vector<std::basic_string<T> > split(const std::basic_string<T> &s, T delim)
 	return tokens;
 }
 
-std::wstring translate_string(const std::wstring &s, Translations *translations);
+[[nodiscard]]
+std::wstring translate_string(std::wstring_view s, Translations *translations);
 
-std::wstring translate_string(const std::wstring &s);
+[[nodiscard]]
+std::wstring translate_string(std::wstring_view s);
 
-inline std::wstring unescape_translate(const std::wstring &s) {
+[[nodiscard]]
+inline std::wstring unescape_translate(std::wstring_view s)
+{
 	return unescape_enriched(translate_string(s));
 }
 
@@ -704,6 +756,7 @@ inline const std::string duration_to_string(int sec)
  *
  * @return A std::string
  */
+[[nodiscard]]
 inline std::string str_join(const std::vector<std::string> &list,
 		std::string_view delimiter)
 {
@@ -718,23 +771,25 @@ inline std::string str_join(const std::vector<std::string> &list,
 	return oss.str();
 }
 
-#ifndef SERVER
+#if IS_CLIENT_BUILD
 /**
- * Create a UTF8 std::string from an irr::core::stringw.
+ * Create a UTF8 std::string from an core::stringw.
  */
-inline std::string stringw_to_utf8(const irr::core::stringw &input)
+[[nodiscard]]
+inline std::string stringw_to_utf8(const core::stringw &input)
 {
 	std::wstring_view sv(input.c_str(), input.size());
 	return wide_to_utf8(sv);
 }
 
- /**
-  * Create an irr::core:stringw from a UTF8 std::string.
-  */
-inline irr::core::stringw utf8_to_stringw(std::string_view input)
+/**
+ * Create an core:stringw from a UTF8 std::string.
+ */
+[[nodiscard]]
+inline core::stringw utf8_to_stringw(std::string_view input)
 {
 	std::wstring str = utf8_to_wide(input);
-	return irr::core::stringw(str.c_str(), str.size());
+	return core::stringw(str.c_str(), str.size());
 }
 #endif
 
@@ -744,7 +799,18 @@ inline irr::core::stringw utf8_to_stringw(std::string_view input)
  *    and add a prefix to them
  * 2. Remove 'unsafe' characters from the name by replacing them with '_'
  */
+[[nodiscard]]
 std::string sanitizeDirName(std::string_view str, std::string_view optional_prefix);
+
+/**
+ * Sanitize an untrusted string (e.g. from the network). This will get strip
+ * control characters and (optionally) any MT-style escape sequences too.
+ * Note that they won't be removed cleanly but rather just broken, unlike with
+ * unescape_enriched.
+ * Line breaks and UTF-8 is permitted.
+ */
+[[nodiscard]]
+std::string sanitize_untrusted(std::string_view str, bool keep_escapes = true);
 
 /**
  * Prints a sanitized version of a string without control characters.
@@ -755,9 +821,9 @@ std::string sanitizeDirName(std::string_view str, std::string_view optional_pref
 void safe_print_string(std::ostream &os, std::string_view str);
 
 /**
- * Parses a string of form `(1, 2, 3)` to a v3f
+ * Parses a string of form `(1, 2, 3)` or `1, 2, 4` to a v3f
  *
  * @param str string
  * @return float vector
  */
-v3f str_to_v3f(std::string_view str);
+std::optional<v3f> str_to_v3f(std::string_view str);

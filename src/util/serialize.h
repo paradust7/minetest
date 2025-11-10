@@ -1,47 +1,43 @@
-/*
-Minetest
-Copyright (C) 2010-2013 celeron55, Perttu Ahola <celeron55@gmail.com>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2010-2013 celeron55, Perttu Ahola <celeron55@gmail.com>
 
 #pragma once
 
 #include "irrlichttypes_bloated.h"
 #include "exceptions.h" // for SerializationError
-#include "debug.h" // for assert
 #include "ieee_float.h"
 
 #include "config.h"
-#if HAVE_ENDIAN_H
-	#ifdef _WIN32
-		#define __BYTE_ORDER 0
-		#define __LITTLE_ENDIAN 0
-		#define __BIG_ENDIAN 1
-	#elif defined(__MACH__) && defined(__APPLE__)
-		#include <machine/endian.h>
-	#elif defined(__FreeBSD__) || defined(__DragonFly__)
-		#include <sys/endian.h>
-	#else
-		#include <endian.h>
-	#endif
-#endif
 #include <cstring> // for memcpy
+#include <cassert>
 #include <iostream>
 #include <string>
 #include <string_view>
+
+/* make sure BYTE_ORDER macros are available */
+#ifdef _WIN32
+	#define BYTE_ORDER 1234
+#elif defined(__MACH__) && defined(__APPLE__)
+	#include <machine/endian.h>
+#elif defined(__FreeBSD__) || defined(__DragonFly__)
+	#include <sys/endian.h>
+#elif HAVE_ENDIAN_H
+	#include <endian.h>
+#else
+	#error "Can't detect endian (missing header)"
+#endif
+#ifndef LITTLE_ENDIAN
+	#define LITTLE_ENDIAN 1234
+#endif
+#ifndef BIG_ENDIAN
+	#define BIG_ENDIAN 4321
+#endif
+#if !defined(BYTE_ORDER) && defined(_BYTE_ORDER)
+	#define BYTE_ORDER _BYTE_ORDER
+#elif !defined(BYTE_ORDER) && defined(__BYTE_ORDER)
+	#define BYTE_ORDER __BYTE_ORDER
+#endif
 
 #define FIXEDPOINT_FACTOR 1000.0f
 
@@ -52,8 +48,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 // not represent the full range, but rather the largest safe range, of values on
 // all supported architectures.  Note: This definition makes assumptions on
 // platform float-to-int conversion behavior.
-#define F1000_MIN ((float)(s32)((float)(-0x7FFFFFFF - 1) / FIXEDPOINT_FACTOR))
-#define F1000_MAX ((float)(s32)((float)(0x7FFFFFFF) / FIXEDPOINT_FACTOR))
+static constexpr float F1000_MIN = (s32)((float)(S32_MIN) / FIXEDPOINT_FACTOR);
+static constexpr float F1000_MAX = (s32)((float)(S32_MAX) / FIXEDPOINT_FACTOR);
 
 #define STRING_MAX_LEN 0xFFFF
 #define WIDE_STRING_MAX_LEN 0xFFFF
@@ -163,7 +159,7 @@ inline void writeU64(u8 *data, u64 i)
 
 inline u8 readU8(const u8 *data)
 {
-	return ((u8)data[0] << 0);
+	return data[0];
 }
 
 inline s8 readS8(const u8 *data)
@@ -280,7 +276,7 @@ inline v3f readV3F32(const u8 *data)
 
 inline void writeU8(u8 *data, u8 i)
 {
-	data[0] = (i >> 0) & 0xFF;
+	data[0] = i;
 }
 
 inline void writeS8(u8 *data, s8 i)
@@ -439,12 +435,12 @@ MAKE_STREAM_WRITE_FXN(video::SColor, ARGB8, 4);
 //// More serialization stuff
 ////
 
-inline float clampToF1000(float v)
+[[nodiscard]] inline float clampToF1000(float v)
 {
 	return core::clamp(v, F1000_MIN, F1000_MAX);
 }
 
-inline v3f clampToF1000(v3f v)
+[[nodiscard]] inline v3f clampToF1000(v3f v)
 {
 	return {clampToF1000(v.X), clampToF1000(v.Y), clampToF1000(v.Z)};
 }
@@ -473,3 +469,10 @@ std::string serializeJsonStringIfNeeded(std::string_view s);
 
 // Parses a string serialized by serializeJsonStringIfNeeded.
 std::string deSerializeJsonStringIfNeeded(std::istream &is);
+
+// Serializes an array of strings (max 2^16 chars each)
+// Output is well suited for compression :)
+std::string serializeString16Array(const std::vector<std::string> &array);
+
+// Deserializes a string array
+std::vector<std::string> deserializeString16Array(std::istream &is);

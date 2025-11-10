@@ -1,21 +1,6 @@
-/*
-Minetest
-Copyright (C) 2013 celeron55, Perttu Ahola <celeron55@gmail.com>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2013 celeron55, Perttu Ahola <celeron55@gmail.com>
 
 #include "chat.h"
 
@@ -25,6 +10,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "config.h"
 #include "debug.h"
+#include "settings.h"
 #include "util/strfnd.h"
 #include "util/string.h"
 #include "util/numeric.h"
@@ -374,6 +360,13 @@ u32 ChatBuffer::formatChatLine(const ChatLine &line, u32 cols,
 						delim_chars.find(tempchar) == std::wstring::npos) {
 					++frag_length;
 					tempchar = linestring[in_pos+frag_length];
+				}
+
+				// Remove tailing punctuation characters
+				static const std::wstring tailing_chars = L",.";
+				tempchar = linestring[in_pos+frag_length - 1];
+				if (tailing_chars.find(tempchar) != std::wstring::npos) {
+					frag_length--;
 				}
 
 				space_pos = frag_length - 1;

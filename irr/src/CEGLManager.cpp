@@ -10,23 +10,13 @@
 #include "irrArray.h"
 #include "os.h"
 
-#if defined(_IRR_COMPILE_WITH_ANDROID_DEVICE_)
-#include <android/native_activity.h>
-#endif
-
-namespace irr
-{
 namespace video
 {
 
 CEGLManager::CEGLManager() :
 		IContextManager(), EglWindow(0), EglDisplay(EGL_NO_DISPLAY),
 		EglSurface(EGL_NO_SURFACE), EglContext(EGL_NO_CONTEXT), EglConfig(0), MajorVersion(0), MinorVersion(0)
-{
-#ifdef _DEBUG
-	setDebugName("CEGLManager");
-#endif
-}
+{}
 
 CEGLManager::~CEGLManager()
 {
@@ -55,12 +45,6 @@ bool CEGLManager::initialize(const SIrrlichtCreationParameters &params, const SE
 #elif defined(_IRR_COMPILE_WITH_X11_DEVICE_)
 	EglWindow = (NativeWindowType)Data.OpenGLLinux.X11Window;
 	EglDisplay = eglGetDisplay((NativeDisplayType)Data.OpenGLLinux.X11Display);
-#elif defined(_IRR_COMPILE_WITH_ANDROID_DEVICE_)
-	EglWindow = (ANativeWindow *)Data.OGLESAndroid.Window;
-	EglDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-#elif defined(_IRR_COMPILE_WITH_FB_DEVICE_)
-	EglWindow = (NativeWindowType)Data.OpenGLFB.Window;
-	EglDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
 #endif
 
 	// We must check if EGL display is valid.
@@ -119,10 +103,6 @@ bool CEGLManager::generateSurface()
 		// at this time only Android support this feature.
 		// this needs an update method instead!
 
-#if defined(_IRR_COMPILE_WITH_ANDROID_DEVICE_)
-	EglWindow = (ANativeWindow *)Data.OGLESAndroid.Window;
-#endif
-
 #if defined(_IRR_EMSCRIPTEN_PLATFORM_)
 	// eglChooseConfig is currently only implemented as stub in emscripten (version 1.37.22 at point of writing)
 	// But the other solution would also be fine as it also only generates a single context so there is not much to choose from.
@@ -135,13 +115,6 @@ bool CEGLManager::generateSurface()
 		os::Printer::log("Could not get config for EGL display.");
 		return false;
 	}
-
-#if defined(_IRR_COMPILE_WITH_ANDROID_DEVICE_)
-	EGLint Format = 0;
-	eglGetConfigAttrib(EglDisplay, EglConfig, EGL_NATIVE_VISUAL_ID, &Format);
-
-	ANativeWindow_setBuffersGeometry(EglWindow, 0, 0, Format);
-#endif
 
 	// Now we are able to create EGL surface.
 	EglSurface = eglCreateWindowSurface(EglDisplay, EglConfig, EglWindow, 0);
@@ -170,9 +143,6 @@ EGLConfig CEGLManager::chooseConfig(EConfigStyle confStyle)
 	// Find proper OpenGL BIT.
 	EGLint eglOpenGLBIT = 0;
 	switch (Params.DriverType) {
-	case EDT_OGLES1:
-		eglOpenGLBIT = EGL_OPENGL_ES_BIT;
-		break;
 	case EDT_OGLES2:
 	case EDT_WEBGL1:
 		eglOpenGLBIT = EGL_OPENGL_ES2_BIT;
@@ -322,7 +292,7 @@ EGLConfig CEGLManager::chooseConfig(EConfigStyle confStyle)
 	return configResult;
 }
 
-irr::s32 CEGLManager::rateConfig(EGLConfig config, EGLint eglOpenGLBIT, bool log)
+s32 CEGLManager::rateConfig(EGLConfig config, EGLint eglOpenGLBIT, bool log)
 {
 	// some values must be there or we ignore the config
 #ifdef EGL_VERSION_1_3
@@ -477,9 +447,6 @@ bool CEGLManager::generateContext()
 	EGLint OpenGLESVersion = 0;
 
 	switch (Params.DriverType) {
-	case EDT_OGLES1:
-		OpenGLESVersion = 1;
-		break;
 	case EDT_OGLES2:
 	case EDT_WEBGL1:
 		OpenGLESVersion = 2;
@@ -547,7 +514,8 @@ bool CEGLManager::swapBuffers()
 
 bool CEGLManager::testEGLError()
 {
-#if defined(EGL_VERSION_1_0) && defined(_DEBUG)
+	if (!Params.DriverDebug)
+		return false;
 	EGLint status = eglGetError();
 
 	switch (status) {
@@ -600,12 +568,8 @@ bool CEGLManager::testEGLError()
 	};
 
 	return true;
-#else
-	return false;
-#endif
 }
 
-}
 }
 
 #endif

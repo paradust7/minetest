@@ -4,16 +4,14 @@
 
 #include "CImageWriterPNG.h"
 
-#include "CImageLoaderPNG.h"
 #include "CColorConverter.h"
 #include "IWriteFile.h"
-#include "irrString.h"
+#include "coreutil.h"
 #include "os.h" // for logging
 
 #include <png.h> // use system lib png
+#include <memory>
 
-namespace irr
-{
 namespace video
 {
 
@@ -25,14 +23,20 @@ IImageWriter *createImageWriterPNG()
 // PNG function for error handling
 static void png_cpexcept_error(png_structp png_ptr, png_const_charp msg)
 {
-	os::Printer::log("PNG fatal error", msg, ELL_ERROR);
+	io::IWriteFile *file = reinterpret_cast<io::IWriteFile *>(png_get_error_ptr(png_ptr));
+	std::string logmsg = std::string("PNG fatal error for ")
+			+ file->getFileName().c_str() + ": " + msg;
+	os::Printer::log(logmsg.c_str(), ELL_ERROR);
 	longjmp(png_jmpbuf(png_ptr), 1);
 }
 
 // PNG function for warning handling
 static void png_cpexcept_warning(png_structp png_ptr, png_const_charp msg)
 {
-	os::Printer::log("PNG warning", msg, ELL_WARNING);
+	io::IWriteFile *file = reinterpret_cast<io::IWriteFile *>(png_get_error_ptr(png_ptr));
+	std::string logmsg = std::string("PNG warning for ")
+			+ file->getFileName().c_str() + ": " + msg;
+	os::Printer::log(logmsg.c_str(), ELL_WARNING);
 }
 
 // PNG function for file writing
@@ -48,11 +52,7 @@ void PNGAPI user_write_data_fcn(png_structp png_ptr, png_bytep data, png_size_t 
 }
 
 CImageWriterPNG::CImageWriterPNG()
-{
-#ifdef _DEBUG
-	setDebugName("CImageWriterPNG");
-#endif
-}
+{}
 
 bool CImageWriterPNG::isAWriteableFileExtension(const io::path &filename) const
 {
@@ -66,7 +66,7 @@ bool CImageWriterPNG::writeImage(io::IWriteFile *file, IImage *image, u32 param)
 
 	// Allocate the png write struct
 	png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING,
-			NULL, (png_error_ptr)png_cpexcept_error, (png_error_ptr)png_cpexcept_warning);
+			file, (png_error_ptr)png_cpexcept_error, (png_error_ptr)png_cpexcept_warning);
 	if (!png_ptr) {
 		os::Printer::log("PNGWriter: Internal PNG create write struct failure", file->getFileName(), ELL_ERROR);
 		return false;
@@ -89,22 +89,23 @@ bool CImageWriterPNG::writeImage(io::IWriteFile *file, IImage *image, u32 param)
 	png_set_write_fn(png_ptr, file, user_write_data_fcn, NULL);
 
 	// Set info
+	core::dimension2d<u32> img_dim = image->getDimension();
 	switch (image->getColorFormat()) {
 	case ECF_A8R8G8B8:
 	case ECF_A1R5G5B5:
 		png_set_IHDR(png_ptr, info_ptr,
-				image->getDimension().Width, image->getDimension().Height,
+				img_dim.Width, img_dim.Height,
 				8, PNG_COLOR_TYPE_RGB_ALPHA, PNG_INTERLACE_NONE,
 				PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
 		break;
 	default:
 		png_set_IHDR(png_ptr, info_ptr,
-				image->getDimension().Width, image->getDimension().Height,
+				img_dim.Width, img_dim.Height,
 				8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
 				PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
 	}
 
-	s32 lineWidth = image->getDimension().Width;
+	s32 lineWidth = img_dim.Width;
 	switch (image->getColorFormat()) {
 	case ECF_R8G8B8:
 	case ECF_R5G6B5:
@@ -118,61 +119,52 @@ bool CImageWriterPNG::writeImage(io::IWriteFile *file, IImage *image, u32 param)
 	default:
 		break;
 	}
-	u8 *tmpImage = new u8[image->getDimension().Height * lineWidth];
-	if (!tmpImage) {
-		os::Printer::log("PNGWriter: Internal PNG create image failure", file->getFileName(), ELL_ERROR);
-		png_destroy_write_struct(&png_ptr, &info_ptr);
-		return false;
-	}
+	std::unique_ptr<u8[]> tmpImage{new u8[img_dim.Height * lineWidth]};
 
+	auto num_pixels = img_dim.Height * img_dim.Width;
 	u8 *data = (u8 *)image->getData();
 	switch (image->getColorFormat()) {
 	case ECF_R8G8B8:
-		CColorConverter::convert_R8G8B8toR8G8B8(data, image->getDimension().Height * image->getDimension().Width, tmpImage);
+		CColorConverter::convert_R8G8B8toR8G8B8(data, num_pixels,
+			tmpImage.get());
 		break;
 	case ECF_A8R8G8B8:
-		CColorConverter::convert_A8R8G8B8toA8R8G8B8(data, image->getDimension().Height * image->getDimension().Width, tmpImage);
+		CColorConverter::convert_A8R8G8B8toA8R8G8B8(data, num_pixels,
+			tmpImage.get());
 		break;
 	case ECF_R5G6B5:
-		CColorConverter::convert_R5G6B5toR8G8B8(data, image->getDimension().Height * image->getDimension().Width, tmpImage);
+		CColorConverter::convert_R5G6B5toR8G8B8(data, num_pixels,
+			tmpImage.get());
 		break;
 	case ECF_A1R5G5B5:
-		CColorConverter::convert_A1R5G5B5toA8R8G8B8(data, image->getDimension().Height * image->getDimension().Width, tmpImage);
+		CColorConverter::convert_A1R5G5B5toA8R8G8B8(data, num_pixels,
+			tmpImage.get());
 		break;
 		// TODO: Error handling in case of unsupported color format
 	default:
 		os::Printer::log("CImageWriterPNG does not support image format", ColorFormatNames[image->getColorFormat()], ELL_WARNING);
 		png_destroy_write_struct(&png_ptr, &info_ptr);
-		delete[] tmpImage;
 		return false;
 	}
 
 	// Create array of pointers to rows in image data
 
 	// Used to point to image rows
-	u8 **RowPointers = new png_bytep[image->getDimension().Height];
-	if (!RowPointers) {
-		os::Printer::log("PNGWriter: Internal PNG create row pointers failure", file->getFileName(), ELL_ERROR);
-		png_destroy_write_struct(&png_ptr, &info_ptr);
-		delete[] tmpImage;
-		return false;
-	}
+	std::unique_ptr<u8*[]> RowPointers{new u8*[img_dim.Height]};
 
-	data = tmpImage;
+	data = tmpImage.get();
 	// Fill array of pointers to rows in image data
-	for (u32 i = 0; i < image->getDimension().Height; ++i) {
+	for (u32 i = 0; i < img_dim.Height; ++i) {
 		RowPointers[i] = data;
 		data += lineWidth;
 	}
 	// for proper error handling
 	if (setjmp(png_jmpbuf(png_ptr))) {
 		png_destroy_write_struct(&png_ptr, &info_ptr);
-		delete[] RowPointers;
-		delete[] tmpImage;
 		return false;
 	}
 
-	png_set_rows(png_ptr, info_ptr, RowPointers);
+	png_set_rows(png_ptr, info_ptr, RowPointers.get());
 
 	if (image->getColorFormat() == ECF_A8R8G8B8 || image->getColorFormat() == ECF_A1R5G5B5)
 		png_write_png(png_ptr, info_ptr, PNG_TRANSFORM_BGR, NULL);
@@ -180,11 +172,8 @@ bool CImageWriterPNG::writeImage(io::IWriteFile *file, IImage *image, u32 param)
 		png_write_png(png_ptr, info_ptr, PNG_TRANSFORM_IDENTITY, NULL);
 	}
 
-	delete[] RowPointers;
-	delete[] tmpImage;
 	png_destroy_write_struct(&png_ptr, &info_ptr);
 	return true;
 }
 
 } // namespace video
-} // namespace irr

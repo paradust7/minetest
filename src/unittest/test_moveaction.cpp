@@ -1,21 +1,6 @@
-/*
-Minetest
-Copyright (C) 2022 Minetest core developers & community
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2022 Minetest core developers & community
 
 #include "test.h"
 
@@ -34,6 +19,7 @@ public:
 	void testMove(ServerActiveObject *obj, IGameDef *gamedef);
 	void testMoveFillStack(ServerActiveObject *obj, IGameDef *gamedef);
 	void testMoveSomewhere(ServerActiveObject *obj, IGameDef *gamedef);
+	void testMoveSomewherePartial(ServerActiveObject *obj, IGameDef *gamedef);
 	void testMoveUnallowed(ServerActiveObject *obj, IGameDef *gamedef);
 	void testMovePartial(ServerActiveObject *obj, IGameDef *gamedef);
 
@@ -67,10 +53,13 @@ void TestMoveAction::runTests(IGameDef *gamedef)
 	auto null_map = std::unique_ptr<ServerMap>();
 	ServerEnvironment server_env(std::move(null_map), &server, &mb);
 	MockServerActiveObject obj(&server_env);
+	obj.setId(1);
+	server.getScriptIface()->addObjectReference(&obj);
 
 	TEST(testMove, &obj, gamedef);
 	TEST(testMoveFillStack, &obj, gamedef);
 	TEST(testMoveSomewhere, &obj, gamedef);
+	TEST(testMoveSomewherePartial, &obj, gamedef);
 	TEST(testMoveUnallowed, &obj, gamedef);
 	TEST(testMovePartial, &obj, gamedef);
 
@@ -80,6 +69,8 @@ void TestMoveAction::runTests(IGameDef *gamedef)
 
 	TEST(testCallbacks, &obj, &server);
 	TEST(testCallbacksSwap, &obj, &server);
+
+	server.getScriptIface()->removeObjectReference(&obj);
 }
 
 static ItemStack parse_itemstack(const char *s)
@@ -143,7 +134,29 @@ void TestMoveAction::testMoveSomewhere(ServerActiveObject *obj, IGameDef *gamede
 
 	UASSERT(inv.p2.getList("main")->getItem(0).getItemString() == "default:brick 10");
 	UASSERT(inv.p2.getList("main")->getItem(1).getItemString() == "default:stone 36");
+	// Partially moved
 	UASSERT(inv.p2.getList("main")->getItem(2).getItemString() == "default:stone 99");
+}
+
+void TestMoveAction::testMoveSomewherePartial(ServerActiveObject *obj, IGameDef *gamedef)
+{
+	// "Fail" because the destination list is full.
+	MockInventoryManager inv(gamedef);
+
+	InventoryList *src = inv.p1.addList("main", 3);
+	src->addItem(0, parse_itemstack("default:brick 10"));
+	src->changeItem(1, parse_itemstack("default:stone 111")); // oversized
+
+	InventoryList *dst = inv.p2.addList("main", 1);
+	dst->addItem(0, parse_itemstack("default:stone 98"));
+
+	// No free slots to fit
+	apply_action("MoveSomewhere 10 player:p1 main 0 player:p2 main", &inv, obj, gamedef);
+	UASSERT(inv.p1.getList("main")->getItem(0).getItemString() == "default:brick 10");
+
+	// Only 1 item fits
+	apply_action("MoveSomewhere 111 player:p1 main 1 player:p2 main", &inv, obj, gamedef);
+	UASSERT(inv.p1.getList("main")->getItem(1).getItemString() == "default:stone 110");
 }
 
 void TestMoveAction::testMoveUnallowed(ServerActiveObject *obj, IGameDef *gamedef)

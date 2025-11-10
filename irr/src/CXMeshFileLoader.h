@@ -6,17 +6,14 @@
 
 #include "IMeshLoader.h"
 #include "irrString.h"
-#include "CSkinnedMesh.h"
+#include "SkinnedMesh.h"
 
-namespace irr
-{
 namespace io
 {
 class IReadFile;
 } // end namespace io
 namespace scene
 {
-class IMeshManipulator;
 
 //! Meshloader capable of loading x meshes.
 class CXMeshFileLoader : public IMeshLoader
@@ -86,7 +83,7 @@ private:
 
 	bool parseDataObjectTemplate();
 
-	bool parseDataObjectFrame(CSkinnedMesh::SJoint *parent);
+	bool parseDataObjectFrame(SkinnedMesh::SJoint *parent);
 
 	bool parseDataObjectTransformationMatrix(core::matrix4 &mat);
 
@@ -110,7 +107,7 @@ private:
 
 	bool parseDataObjectAnimation();
 
-	bool parseDataObjectAnimationKey(ISkinnedMesh::SJoint *joint);
+	bool parseDataObjectAnimationKey(SkinnedMesh::SJoint *joint);
 
 	bool parseDataObjectTextureFilename(core::stringc &texturename);
 
@@ -155,7 +152,7 @@ private:
 	bool readRGB(video::SColor &color);
 	bool readRGBA(video::SColor &color);
 
-	CSkinnedMesh *AnimatedMesh;
+	SkinnedMeshBuilder *AnimatedMesh;
 
 	c8 *Buffer;
 	const c8 *P;
@@ -167,7 +164,7 @@ private:
 
 	bool ErrorState;
 
-	CSkinnedMesh::SJoint *CurFrame;
+	SkinnedMesh::SJoint *CurFrame;
 
 	core::array<SXMesh *> Meshes;
 
@@ -178,4 +175,3 @@ private:
 };
 
 } // end namespace scene
-} // end namespace irr

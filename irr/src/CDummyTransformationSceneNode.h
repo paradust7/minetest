@@ -6,8 +6,6 @@
 
 #include "IDummyTransformationSceneNode.h"
 
-namespace irr
-{
 namespace scene
 {
 
@@ -48,8 +46,7 @@ private:
 	void setPosition(const core::vector3df &newpos) override;
 
 	core::matrix4 RelativeTransformationMatrix;
-	core::aabbox3d<f32> Box;
+	core::aabbox3d<f32> Box{{0, 0, 0}};
 };
 
 } // end namespace scene
-} // end namespace irr

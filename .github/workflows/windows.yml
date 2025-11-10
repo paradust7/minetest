@@ -8,8 +8,11 @@ on:
       - 'lib/**.cpp'
       - 'src/**.[ch]'
       - 'src/**.cpp'
+      - 'irr/**.[ch]'
+      - 'irr/**.cpp'
       - '**/CMakeLists.txt'
       - 'cmake/Modules/**'
+      - 'po/**.po'
       - 'util/buildbot/**'
       - 'misc/*.manifest'
       - '.github/workflows/windows.yml'
@@ -19,72 +22,68 @@ on:
       - 'lib/**.cpp'
       - 'src/**.[ch]'
       - 'src/**.cpp'
+      - 'irr/**.[ch]'
+      - 'irr/**.cpp'
       - '**/CMakeLists.txt'
       - 'cmake/Modules/**'
+      - 'po/**.po'
       - 'util/buildbot/**'
       - 'misc/*.manifest'
       - '.github/workflows/windows.yml'
 
 jobs:
-  mingw32:
-    name: "MinGW cross-compiler (32-bit)"
+  mingw:
+    name: "MinGW cross-compiler (${{ matrix.bits }}-bit)"
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        bits: [32, 64]
     steps:
       - uses: actions/checkout@v4
       - name: Install compiler
         run: |
-          sudo apt-get update && sudo apt-get install -y gettext
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gettext wine wine${{ matrix.bits }}
           sudo ./util/buildbot/download_toolchain.sh /usr
 
       - name: Build
         run: |
-           EXISTING_MINETEST_DIR=$PWD ./util/buildbot/buildwin32.sh B
+           EXISTING_MINETEST_DIR=$PWD \
+           ./util/buildbot/buildwin${{ matrix.bits }}.sh B
+
+      # Check that the resulting binary can run (DLLs etc.)
+      - name: Runtime test
+        run: |
+          dest=$(mktemp -d)
+          unzip -q -d "$dest" B/build/*.zip
+          cd "$dest"/luanti-*-win*
+          wine bin/luanti.exe --version
 
       - uses: actions/upload-artifact@v4
         with:
-          name: mingw32
-          path: B/build/*.zip
-          if-no-files-found: error
-
-  mingw64:
-    name: "MinGW cross-compiler (64-bit)"
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install compiler
-        run: |
-          sudo apt-get update && sudo apt-get install -y gettext
-          sudo ./util/buildbot/download_toolchain.sh /usr
-
-      - name: Build
-        run: |
-          EXISTING_MINETEST_DIR=$PWD ./util/buildbot/buildwin64.sh B
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: mingw64
+          name: "mingw${{ matrix.bits }}"
           path: B/build/*.zip
           if-no-files-found: error
 
   msvc:
-    name: VS 2019 ${{ matrix.config.arch }}-${{ matrix.type }}
-    runs-on: windows-2019
+    name: VS 2022 ${{ matrix.config.arch }}-${{ matrix.type }}
+    runs-on: windows-2025
     env:
-      VCPKG_VERSION: 8eb57355a4ffb410a2e94c07b4dca2dffbee8e50
-      # 2023.10.19
-      vcpkg_packages: zlib zstd curl[winssl] openal-soft libvorbis libogg libjpeg-turbo sqlite3 freetype luajit gmp jsoncpp sdl2
+      VCPKG_DEFAULT_TRIPLET: ${{matrix.config.vcpkg_triplet}}
     strategy:
       fail-fast: false
       matrix:
         config:
           - {
               arch: x86,
-              generator: "-G'Visual Studio 16 2019' -A Win32",
+              generator: "-G'Visual Studio 17 2022' -A Win32",
               vcpkg_triplet: x86-windows
             }
           - {
               arch: x64,
-              generator: "-G'Visual Studio 16 2019' -A x64",
+              generator: "-G'Visual Studio 17 2022' -A x64",
               vcpkg_triplet: x64-windows
             }
         type: [portable]
@@ -96,31 +95,29 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Restore from cache and run vcpkg
-        uses: lukka/run-vcpkg@v7
+        uses: lukka/run-vcpkg@v11
         with:
-          vcpkgArguments: ${{env.vcpkg_packages}}
           vcpkgDirectory: '${{ github.workspace }}\vcpkg'
-          appendedCacheKey: ${{ matrix.config.vcpkg_triplet }}
-          vcpkgGitCommitId: ${{ env.VCPKG_VERSION }}
-          vcpkgTriplet: ${{ matrix.config.vcpkg_triplet }}
 
-      - name: Minetest CMake
+      - name: CMake
+        # Note: See #15976 for why CMAKE_POLICY_VERSION_MINIMUM=3.5 is set.
         run: |
           cmake ${{matrix.config.generator}}  `
           -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}\vcpkg\scripts\buildsystems\vcpkg.cmake"  `
           -DCMAKE_BUILD_TYPE=Release  `
+          -DCMAKE_POLICY_VERSION_MINIMUM=3.5  `
           -DENABLE_POSTGRESQL=OFF  `
           -DENABLE_LUAJIT=TRUE  `
           -DREQUIRE_LUAJIT=TRUE  `
           -DRUN_IN_PLACE=${{ contains(matrix.type, 'portable') }} .
 
-      - name: Build Minetest
+      - name: Build
         run: cmake --build . --config Release
 
       - name: Unittests
         # need this workaround for stdout to work
         run: |
-          $proc = start .\bin\Release\minetest.exe --run-unittests -NoNewWindow -Wait -PassThru
+          $proc = start .\bin\Release\luanti.exe --run-unittests -NoNewWindow -Wait -PassThru
           exit $proc.ExitCode
         continue-on-error: true # FIXME!!
 

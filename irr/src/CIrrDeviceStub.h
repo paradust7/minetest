@@ -8,8 +8,6 @@
 #include "SIrrCreationParameters.h"
 #include "IContextManager.h"
 
-namespace irr
-{
 // lots of prototypes:
 class ILogger;
 class CLogger;
@@ -33,7 +31,15 @@ IFileSystem *createFileSystem();
 
 namespace video
 {
-IVideoDriver *createNullDriver(io::IFileSystem *io, const core::dimension2d<u32> &screenSize);
+	IVideoDriver *createNullDriver(io::IFileSystem *io, const core::dimension2d<u32> &screenSize);
+
+	IVideoDriver *createOpenGLDriver(const SIrrlichtCreationParameters &params, io::IFileSystem *io, IContextManager *contextManager);
+
+	IVideoDriver *createOpenGL3Driver(const SIrrlichtCreationParameters &params, io::IFileSystem *io, IContextManager *contextManager);
+
+	IVideoDriver *createOGLES2Driver(const SIrrlichtCreationParameters &params, io::IFileSystem *io, IContextManager *contextManager);
+
+	IVideoDriver *createWebGL1Driver(const SIrrlichtCreationParameters &params, io::IFileSystem *io, IContextManager *contextManager);
 }
 
 //! Stub for an Irrlicht Device implementation
@@ -69,9 +75,6 @@ public:
 
 	//! Sets the window icon.
 	bool setWindowIcon(const video::IImage *img) override;
-
-	//! Returns the version of the engine.
-	const char *getVersion() const override;
 
 	//! send the event to the right receiver
 	bool postEventFromUser(const SEvent &event) override;
@@ -154,13 +157,10 @@ public:
 	float getDisplayDensity() const override;
 
 	//! Resize the render window.
-	void setWindowSize(const irr::core::dimension2d<u32> &size) override {}
+	void setWindowSize(const core::dimension2d<u32> &size) override {}
 
 protected:
 	void createGUIAndScene();
-
-	//! checks version of SDK and prints warning if there might be a problem
-	bool checkVersion(const char *version);
 
 	//! Compares to the last call of this function to return double and triple clicks.
 	/** Needed for win32 device event handling
@@ -200,5 +200,3 @@ protected:
 	SIrrlichtCreationParameters CreationParams;
 	bool Close;
 };
-
-} // end namespace irr

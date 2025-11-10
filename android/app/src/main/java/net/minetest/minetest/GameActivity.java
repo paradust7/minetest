@@ -20,18 +20,27 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 package net.minetest.minetest;
 
-import android.app.NativeActivity;
+import org.libsdl.app.SDLActivity;
+
+import android.app.Notification;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.Context;
 import android.content.Intent;
+import android.content.ActivityNotFoundException;
 import android.net.Uri;
-import android.os.Bundle;
+import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.InputType;
 import android.util.Log;
 import android.view.KeyEvent;
-import android.view.View;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.Toast;
+import android.content.res.Configuration;
 
 import androidx.annotation.Keep;
 import androidx.appcompat.app.AlertDialog;
@@ -45,11 +54,28 @@ import java.util.Objects;
 // This annotation prevents the minifier/Proguard from mangling them.
 @Keep
 @SuppressWarnings("unused")
-public class GameActivity extends NativeActivity {
-	static {
-		System.loadLibrary("c++_shared");
-		System.loadLibrary("minetest");
+public class GameActivity extends SDLActivity {
+	@Override
+	protected String getMainSharedObject() {
+		return getContext().getApplicationInfo().nativeLibraryDir + "/libluanti.so";
 	}
+
+	@Override
+	protected String getMainFunction() {
+		return "SDL_Main";
+	}
+
+	@Override
+	protected String[] getLibraries() {
+		return new String[] {
+			"luanti"
+		};
+	}
+
+	// Prevent SDL from changing orientation settings since we already set the
+	// correct orientation in our AndroidManifest.xml
+	@Override
+	public void setOrientationBis(int w, int h, boolean resizable, String hint) {}
 
 	enum DialogType { TEXT_INPUT, SELECTION_INPUT }
 	enum DialogState { DIALOG_SHOWN, DIALOG_INPUTTED, DIALOG_CANCELED }
@@ -58,32 +84,6 @@ public class GameActivity extends NativeActivity {
 	private DialogState inputDialogState = DialogState.DIALOG_CANCELED;
 	private String messageReturnValue = "";
 	private int selectionReturnValue = 0;
-
-	@Override
-	public void onCreate(Bundle savedInstanceState) {
-		super.onCreate(savedInstanceState);
-		getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-	}
-
-	private void makeFullScreen() {
-		this.getWindow().getDecorView().setSystemUiVisibility(
-				View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
-				View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
-				View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
-	}
-
-	@Override
-	public void onWindowFocusChanged(boolean hasFocus) {
-		super.onWindowFocusChanged(hasFocus);
-		if (hasFocus)
-			makeFullScreen();
-	}
-
-	@Override
-	protected void onResume() {
-		super.onResume();
-		makeFullScreen();
-	}
 
 	private native void saveSettings();
 
@@ -96,10 +96,8 @@ public class GameActivity extends NativeActivity {
 		saveSettings();
 	}
 
-	@Override
-	public void onBackPressed() {
-		// Ignore the back press so Minetest can handle it
-	}
+	private NotificationManager mNotifyManager;
+	private boolean gameNotificationShown = false;
 
 	public void showTextInputDialog(String hint, String current, int editType) {
 		runOnUiThread(() -> showTextInputDialogUI(hint, current, editType));
@@ -213,7 +211,11 @@ public class GameActivity extends NativeActivity {
 
 	public void openURI(String uri) {
 		Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(uri));
-		startActivity(browserIntent);
+		try {
+			startActivity(browserIntent);
+		} catch (ActivityNotFoundException e) {
+			runOnUiThread(() -> Toast.makeText(this, R.string.no_web_browser, Toast.LENGTH_SHORT).show());
+		}
 	}
 
 	public String getUserDataPath() {
@@ -264,5 +266,72 @@ public class GameActivity extends NativeActivity {
 		}
 
 		return langCode;
+	}
+
+	public boolean hasPhysicalKeyboard() {
+		return getContext().getResources().getConfiguration().keyboard != Configuration.KEYBOARD_NOKEYS;
+	}
+
+	// TODO: share code with UnzipService.createNotification
+	private void updateGameNotification() {
+		if (mNotifyManager == null) {
+			mNotifyManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+		}
+
+		if (!gameNotificationShown) {
+			mNotifyManager.cancel(MainActivity.NOTIFICATION_ID_GAME);
+			return;
+		}
+
+		Notification.Builder builder;
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+			builder = new Notification.Builder(this, MainActivity.NOTIFICATION_CHANNEL_ID);
+		} else {
+			builder = new Notification.Builder(this);
+		}
+
+		Intent notificationIntent = new Intent(this, GameActivity.class);
+		notificationIntent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP
+			| Intent.FLAG_ACTIVITY_SINGLE_TOP);
+		int pendingIntentFlag = 0;
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+			pendingIntentFlag = PendingIntent.FLAG_MUTABLE;
+		}
+		PendingIntent intent = PendingIntent.getActivity(this, 0,
+			notificationIntent, pendingIntentFlag);
+
+		builder.setContentTitle(getString(R.string.game_notification_title))
+			.setSmallIcon(R.mipmap.ic_launcher)
+			.setContentIntent(intent)
+			.setOngoing(true);
+
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+			// This avoids a stuck notification if the app is killed while
+			// in-game: (1) if the user closes the app from the "Recents" screen
+			// or (2) if the system kills the app while it is in background.
+			// onStop is called too early to remove the notification and
+			// onDestroy is often not called at all, so there's this hack instead.
+			builder.setTimeoutAfter(16000);
+
+			// Replace the notification just before it expires as long as the app is
+			// running (and we're still in-game).
+			final Handler handler = new Handler(Looper.getMainLooper());
+			handler.postDelayed(new Runnable() {
+				@Override
+				public void run() {
+					if (gameNotificationShown) {
+						updateGameNotification();
+					}
+				}
+			}, 15000);
+		}
+
+		mNotifyManager.notify(MainActivity.NOTIFICATION_ID_GAME, builder.build());
+	}
+
+
+	public void setPlayingNowNotification(boolean show) {
+		gameNotificationShown = show;
+		updateGameNotification();
 	}
 }

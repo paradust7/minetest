@@ -11,17 +11,12 @@
 #include <GL/gl.h>
 #include <GL/wglext.h>
 
-namespace irr
-{
 namespace video
 {
 
 CWGLManager::CWGLManager() :
 		PrimaryContext(SExposedVideoData(0)), PixelFormat(0), libHandle(NULL)
 {
-#ifdef _DEBUG
-	setDebugName("CWGLManager");
-#endif
 	memset(FunctionPointers, 0, sizeof(FunctionPointers));
 }
 
@@ -179,9 +174,8 @@ bool CWGLManager::initialize(const SIrrlichtCreationParameters &params, const SE
 	const bool pixel_format_supported = (wglExtensions.find("WGL_ARB_pixel_format") != -1);
 	const bool multi_sample_supported = ((wglExtensions.find("WGL_ARB_multisample") != -1) ||
 										 (wglExtensions.find("WGL_EXT_multisample") != -1) || (wglExtensions.find("WGL_3DFX_multisample") != -1));
-#ifdef _DEBUG
-	os::Printer::log("WGL_extensions", wglExtensions);
-#endif
+	if (params.DriverDebug)
+		os::Printer::log("WGL_extensions", wglExtensions);
 
 	// Without a GL context we can't call wglGetProcAddress so store this for later
 	FunctionPointers[0] = (void *)wglGetProcAddress("wglCreateContextAttribsARB");
@@ -437,7 +431,6 @@ bool CWGLManager::swapBuffers()
 	return SwapBuffers((HDC)CurrentContext.OpenGLWin32.HDc) == TRUE;
 }
 
-}
 }
 
 #endif

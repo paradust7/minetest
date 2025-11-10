@@ -1,21 +1,6 @@
-/*
-Minetest
-Copyright (C) 2014 celeron55, Perttu Ahola <celeron55@gmail.com>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2014 celeron55, Perttu Ahola <celeron55@gmail.com>
 
 #pragma once
 
@@ -23,21 +8,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #error This header has to be included on Android port only!
 #endif
 
-#include <jni.h>
-#include <android_native_app_glue.h>
-#include <android/log.h>
-
 #include "irrlichttypes_bloated.h"
-
 #include <string>
 
 namespace porting {
-// Java app
-extern android_app *app_global;
-
-// Java <-> C++ interaction interface
-extern JNIEnv *jnienv;
-
 /**
  * Show a text input dialog in Java
  * @param hint Hint to be shown
@@ -53,7 +27,7 @@ void showTextInputDialog(const std::string &hint, const std::string &current, in
  * @param listSize Size of the list
  * @param selectedIdx Selected index
  */
-void showComboBoxDialog(const std::string optionList[], s32 listSize, s32 selectedIdx);
+void showComboBoxDialog(const std::string *optionList, s32 listSize, s32 selectedIdx);
 
 /**
  * Opens a share intent to the file at path
@@ -61,6 +35,13 @@ void showComboBoxDialog(const std::string optionList[], s32 listSize, s32 select
  * @param path
  */
 void shareFileAndroid(const std::string &path);
+
+/**
+ * Shows/hides notification that the game is running
+ *
+ * @param show whether to show/hide the notification
+ */
+void setPlayingNowNotification(bool show);
 
 /*
  * Types of Android input dialog:
@@ -105,9 +86,10 @@ std::string getInputDialogMessage();
  */
 int getInputDialogSelection();
 
-#ifndef SERVER
+
+bool hasPhysicalKeyboardAndroid();
+
 float getDisplayDensity();
 v2u32 getDisplaySize();
-#endif
 
 }

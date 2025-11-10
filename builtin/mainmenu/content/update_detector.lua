@@ -1,19 +1,6 @@
---Minetest
---Copyright (C) 2023 rubenwardy
---
---This program is free software; you can redistribute it and/or modify
---it under the terms of the GNU Lesser General Public License as published by
---the Free Software Foundation; either version 2.1 of the License, or
---(at your option) any later version.
---
---This program is distributed in the hope that it will be useful,
---but WITHOUT ANY WARRANTY; without even the implied warranty of
---MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
---GNU Lesser General Public License for more details.
---
---You should have received a copy of the GNU Lesser General Public License along
---with this program; if not, write to the Free Software Foundation, Inc.,
---51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+-- Luanti
+-- Copyright (C) 2023 rubenwardy
+-- SPDX-License-Identifier: LGPL-2.1-or-later
 
 
 update_detector = {}
@@ -26,13 +13,23 @@ if not core.get_http_api then
 end
 
 
+assert(core.create_dir(core.get_cache_path() .. DIR_DELIM .. "cdb"))
+local cache_file_path = core.get_cache_path() .. DIR_DELIM .. "cdb" .. DIR_DELIM .. "updates.json"
 local has_fetched = false
 local latest_releases
 do
-	local tmp = core.get_once("cdb_latest_releases")
-	if tmp then
-		latest_releases = core.deserialize(tmp, true)
-		has_fetched = latest_releases ~= nil
+	if check_cache_age("cdb_updates_last_checked", 24 * 3600) then
+		local f = io.open(cache_file_path, "r")
+		local data = ""
+		if f then
+			data = f:read("*a")
+			f:close()
+		end
+		data = data ~= "" and core.parse_json(data) or nil
+		if type(data) == "table" then
+			latest_releases = data
+			has_fetched = true
+		end
 	end
 end
 
@@ -62,9 +59,6 @@ end
 
 
 local function has_packages_from_cdb()
-	pkgmgr.refresh_globals()
-	pkgmgr.update_gamelist()
-
 	for _, content in pairs(pkgmgr.get_all()) do
 		if pkgmgr.get_contentdb_id(content) then
 			return true
@@ -97,7 +91,8 @@ local function fetch()
 			return
 		end
 		latest_releases = lowercase_keys(releases)
-		core.set_once("cdb_latest_releases", core.serialize(latest_releases))
+		core.safe_file_write(cache_file_path, core.write_json(latest_releases))
+		cache_settings:set("cdb_updates_last_checked", tostring(os.time()))
 
 		if update_detector.get_count() > 0 then
 			local maintab = ui.find_by_name("maintab")
@@ -116,15 +111,15 @@ function update_detector.get_all()
 		return {}
 	end
 
-	pkgmgr.refresh_globals()
-	pkgmgr.update_gamelist()
-
 	local ret = {}
 	local all_content = pkgmgr.get_all()
 	for _, content in ipairs(all_content) do
+		assert(content.path and content.path ~= "")
 		local cdb_id = pkgmgr.get_contentdb_id(content)
 
-		if cdb_id then
+		-- Do not consider content that we cannot modify to be out-of-date.
+		-- This would be technically correct but confusing for the user.
+		if cdb_id and core.may_modify_path(content.path) then
 			-- The backend will account for aliases in `latest_releases`
 			local latest_release = latest_releases[cdb_id]
 			if not latest_release and content.type == "game" then

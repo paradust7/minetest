@@ -4,14 +4,10 @@
 
 static const char *const copyright = "Irrlicht Engine (c) 2002-2017 Nikolaus Gebhardt"; // put string in binary
 
-#ifdef _IRR_WINDOWS_
-#include <windows.h>
-#if defined(_DEBUG) && !defined(__GNUWIN32__)
-#include <crtdbg.h>
-#endif // _DEBUG
-#endif
-
 #include "irrlicht.h"
+#include "matrix4.h"
+#include "SMaterial.h"
+
 #ifdef _IRR_COMPILE_WITH_WINDOWS_DEVICE_
 #include "CIrrDeviceWin32.h"
 #endif
@@ -28,14 +24,8 @@ static const char *const copyright = "Irrlicht Engine (c) 2002-2017 Nikolaus Geb
 #include "CIrrDeviceSDL.h"
 #endif
 
-#ifdef _IRR_COMPILE_WITH_ANDROID_DEVICE_
-#include "Android/CIrrDeviceAndroid.h"
-#endif
-
-namespace irr
-{
 //! stub for calling createDeviceEx
-IRRLICHT_API IrrlichtDevice *IRRCALLCONV createDevice(video::E_DRIVER_TYPE driverType,
+IrrlichtDevice *createDevice(video::E_DRIVER_TYPE driverType,
 		const core::dimension2d<u32> &windowSize,
 		u32 bits, bool fullscreen,
 		bool stencilbuffer, bool vsync, IEventReceiver *res)
@@ -54,7 +44,7 @@ IRRLICHT_API IrrlichtDevice *IRRCALLCONV createDevice(video::E_DRIVER_TYPE drive
 	return createDeviceEx(p);
 }
 
-extern "C" IRRLICHT_API IrrlichtDevice *IRRCALLCONV createDeviceEx(const SIrrlichtCreationParameters &params)
+extern "C" IrrlichtDevice *createDeviceEx(const SIrrlichtCreationParameters &params)
 {
 
 	IrrlichtDevice *dev = 0;
@@ -72,11 +62,6 @@ extern "C" IRRLICHT_API IrrlichtDevice *IRRCALLCONV createDeviceEx(const SIrrlic
 #ifdef _IRR_COMPILE_WITH_X11_DEVICE_
 	if (params.DeviceType == EIDT_X11 || (!dev && params.DeviceType == EIDT_BEST))
 		dev = new CIrrDeviceLinux(params);
-#endif
-
-#ifdef _IRR_COMPILE_WITH_ANDROID_DEVICE_
-	if (params.DeviceType == EIDT_ANDROID || (!dev && params.DeviceType == EIDT_BEST))
-		dev = new CIrrDeviceAndroid(params);
 #endif
 
 #ifdef _IRR_COMPILE_WITH_SDL_DEVICE_
@@ -101,9 +86,9 @@ const matrix4 IdentityMatrix(matrix4::EM4CONST_IDENTITY);
 
 namespace video
 {
-SMaterial IdentityMaterial;
+const SMaterial IdentityMaterial;
 
-extern "C" IRRLICHT_API bool IRRCALLCONV isDriverSupported(E_DRIVER_TYPE driver)
+extern "C" bool isDriverSupported(E_DRIVER_TYPE driver)
 {
 	switch (driver) {
 	case EDT_NULL:
@@ -114,10 +99,6 @@ extern "C" IRRLICHT_API bool IRRCALLCONV isDriverSupported(E_DRIVER_TYPE driver)
 #endif
 #ifdef _IRR_COMPILE_WITH_OPENGL_
 	case EDT_OPENGL:
-		return true;
-#endif
-#ifdef _IRR_COMPILE_WITH_OGLES1_
-	case EDT_OGLES1:
 		return true;
 #endif
 #ifdef _IRR_COMPILE_WITH_OGLES2_
@@ -133,29 +114,3 @@ extern "C" IRRLICHT_API bool IRRCALLCONV isDriverSupported(E_DRIVER_TYPE driver)
 	}
 }
 }
-
-} // end namespace irr
-
-#if defined(_IRR_WINDOWS_API_) && !defined(_IRR_STATIC_LIB_)
-
-BOOL APIENTRY DllMain(HANDLE hModule,
-		DWORD ul_reason_for_call,
-		LPVOID lpReserved)
-{
-	// _crtBreakAlloc = 139;
-
-	switch (ul_reason_for_call) {
-	case DLL_PROCESS_ATTACH:
-#if defined(_DEBUG) && !defined(__GNUWIN32__)
-		_CrtSetDbgFlag(_CRTDBG_LEAK_CHECK_DF | _CRTDBG_ALLOC_MEM_DF);
-#endif
-		break;
-	case DLL_THREAD_ATTACH:
-	case DLL_THREAD_DETACH:
-	case DLL_PROCESS_DETACH:
-		break;
-	}
-	return TRUE;
-}
-
-#endif // defined(_IRR_WINDOWS_)

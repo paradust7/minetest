@@ -1,51 +1,39 @@
-/*
-Minetest
-Copyright (C) 2010-2013 celeron55, Perttu Ahola <celeron55@gmail.com>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2010-2013 celeron55, Perttu Ahola <celeron55@gmail.com>
 
 #include "keycode.h"
 #include "settings.h"
 #include "log.h"
 #include "debug.h"
+#include "renderingengine.h"
 #include "util/hex.h"
 #include "util/string.h"
 #include "util/basic_macros.h"
+#include <unordered_map>
+#include <vector>
 
 struct table_key {
-	const char *Name;
-	irr::EKEY_CODE Key;
+	std::string Name; // An EKEY_CODE 'symbol' name as a string
+	EKEY_CODE Key;
 	wchar_t Char; // L'\0' means no character assigned
-	const char *LangName; // NULL means it doesn't have a human description
+	std::string LangName; // empty string means it doesn't have a human description
 };
 
 #define DEFINEKEY1(x, lang) /* Irrlicht key without character */ \
-	{ #x, irr::x, L'\0', lang },
+	{ #x, x, L'\0', lang },
 #define DEFINEKEY2(x, ch, lang) /* Irrlicht key with character */ \
-	{ #x, irr::x, ch, lang },
+	{ #x, x, ch, lang },
 #define DEFINEKEY3(ch) /* single Irrlicht key (e.g. KEY_KEY_X) */ \
-	{ "KEY_KEY_" TOSTRING(ch), irr::KEY_KEY_ ## ch, (wchar_t) *TOSTRING(ch), TOSTRING(ch) },
+	{ "KEY_KEY_" TOSTRING(ch), KEY_KEY_ ## ch, static_cast<wchar_t>(*TOSTRING(ch)), TOSTRING(ch) },
 #define DEFINEKEY4(ch) /* single Irrlicht function key (e.g. KEY_F3) */ \
-	{ "KEY_F" TOSTRING(ch), irr::KEY_F ## ch, L'\0', "F" TOSTRING(ch) },
+	{ "KEY_F" TOSTRING(ch), KEY_F ## ch, L'\0', "F" TOSTRING(ch) },
 #define DEFINEKEY5(ch) /* key without Irrlicht keycode */ \
-	{ ch, irr::KEY_KEY_CODES_COUNT, (wchar_t) *ch, ch },
+	{ ch, KEY_KEY_CODES_COUNT, static_cast<wchar_t>(*ch), ch },
 
 #define N_(text) text
 
-static const struct table_key table[] = {
+static std::vector<table_key> table = {
 	// Keys that can be reliably mapped between Char and Key
 	DEFINEKEY3(0)
 	DEFINEKEY3(1)
@@ -89,20 +77,20 @@ static const struct table_key table[] = {
 	DEFINEKEY2(KEY_PERIOD, L'.', ".")
 
 	// Keys without a Char
-	DEFINEKEY1(KEY_LBUTTON, N_("Left Button"))
-	DEFINEKEY1(KEY_RBUTTON, N_("Right Button"))
+	// Note: we add "Key" to the description if the string could be confused for something else
+	DEFINEKEY1(KEY_LBUTTON, N_("Left Click"))
+	DEFINEKEY1(KEY_RBUTTON, N_("Right Click"))
 	//~ Usually paired with the Pause key
 	DEFINEKEY1(KEY_CANCEL, N_("Break Key"))
-	DEFINEKEY1(KEY_MBUTTON, N_("Middle Button"))
-	DEFINEKEY1(KEY_XBUTTON1, N_("X Button 1"))
-	DEFINEKEY1(KEY_XBUTTON2, N_("X Button 2"))
+	DEFINEKEY1(KEY_MBUTTON, N_("Middle Click"))
+	DEFINEKEY1(KEY_XBUTTON1, N_("Mouse X1"))
+	DEFINEKEY1(KEY_XBUTTON2, N_("Mouse X2"))
 	DEFINEKEY1(KEY_BACK, N_("Backspace"))
-	DEFINEKEY1(KEY_TAB, N_("Tab"))
+	DEFINEKEY1(KEY_TAB, N_("Tab Key"))
 	DEFINEKEY1(KEY_CLEAR, N_("Clear Key"))
 	DEFINEKEY1(KEY_RETURN, N_("Return Key"))
 	DEFINEKEY1(KEY_SHIFT, N_("Shift Key"))
 	DEFINEKEY1(KEY_CONTROL, N_("Control Key"))
-	//~ Key name, common on Windows keyboards
 	DEFINEKEY1(KEY_MENU, N_("Menu Key"))
 	//~ Usually paired with the Break key
 	DEFINEKEY1(KEY_PAUSE, N_("Pause Key"))
@@ -110,22 +98,21 @@ static const struct table_key table[] = {
 	DEFINEKEY1(KEY_SPACE, N_("Space"))
 	DEFINEKEY1(KEY_PRIOR, N_("Page Up"))
 	DEFINEKEY1(KEY_NEXT, N_("Page Down"))
-	DEFINEKEY1(KEY_END, N_("End"))
-	DEFINEKEY1(KEY_HOME, N_("Home"))
+	DEFINEKEY1(KEY_END, N_("End Key"))
+	DEFINEKEY1(KEY_HOME, N_("Home Key"))
 	DEFINEKEY1(KEY_LEFT, N_("Left Arrow"))
 	DEFINEKEY1(KEY_UP, N_("Up Arrow"))
 	DEFINEKEY1(KEY_RIGHT, N_("Right Arrow"))
 	DEFINEKEY1(KEY_DOWN, N_("Down Arrow"))
-	//~ Key name
-	DEFINEKEY1(KEY_SELECT, N_("Select"))
+	DEFINEKEY1(KEY_SELECT, N_("Select Key"))
 	//~ "Print screen" key
 	DEFINEKEY1(KEY_PRINT, N_("Print"))
-	DEFINEKEY1(KEY_EXECUT, N_("Execute"))
-	DEFINEKEY1(KEY_SNAPSHOT, N_("Snapshot"))
 	DEFINEKEY1(KEY_INSERT, N_("Insert"))
 	DEFINEKEY1(KEY_DELETE, N_("Delete Key"))
-	DEFINEKEY1(KEY_HELP, N_("Help"))
+	DEFINEKEY1(KEY_HELP, N_("Help Key"))
+	//~ Name of key
 	DEFINEKEY1(KEY_LWIN, N_("Left Windows"))
+	//~ Name of key
 	DEFINEKEY1(KEY_RWIN, N_("Right Windows"))
 	DEFINEKEY1(KEY_NUMPAD0, N_("Numpad 0")) // These are not assigned to a char
 	DEFINEKEY1(KEY_NUMPAD1, N_("Numpad 1")) // to prevent interference with KEY_KEY_[0-9].
@@ -141,7 +128,7 @@ static const struct table_key table[] = {
 	DEFINEKEY1(KEY_ADD, N_("Numpad +"))
 	DEFINEKEY1(KEY_SEPARATOR, N_("Numpad ."))
 	DEFINEKEY1(KEY_SUBTRACT, N_("Numpad -"))
-	DEFINEKEY1(KEY_DECIMAL, NULL)
+	DEFINEKEY1(KEY_DECIMAL, N_("Numpad .")) // duplicate of KEY_SEPARATOR?
 	DEFINEKEY1(KEY_DIVIDE, N_("Numpad /"))
 	DEFINEKEY4(1)
 	DEFINEKEY4(2)
@@ -184,13 +171,15 @@ static const struct table_key table[] = {
 	DEFINEKEY1(KEY_FINAL, "Final")
 	DEFINEKEY1(KEY_KANJI, "Kanji")
 	DEFINEKEY1(KEY_HANJA, "Hanja")
-	DEFINEKEY1(KEY_ESCAPE, N_("IME Escape"))
-	DEFINEKEY1(KEY_CONVERT, N_("IME Convert"))
-	DEFINEKEY1(KEY_NONCONVERT, N_("IME Nonconvert"))
-	DEFINEKEY1(KEY_ACCEPT, N_("IME Accept"))
-	DEFINEKEY1(KEY_MODECHANGE, N_("IME Mode Change"))
-	DEFINEKEY1(KEY_APPS, N_("Apps"))
-	DEFINEKEY1(KEY_SLEEP, N_("Sleep"))
+	DEFINEKEY1(KEY_ESCAPE, "IME Escape")
+	DEFINEKEY1(KEY_CONVERT, "IME Convert")
+	DEFINEKEY1(KEY_NONCONVERT, "IME Nonconvert")
+	DEFINEKEY1(KEY_ACCEPT, "IME Accept")
+	DEFINEKEY1(KEY_MODECHANGE, "IME Mode Change")
+	DEFINEKEY1(KEY_EXECUT, "Execute Key")
+	DEFINEKEY1(KEY_SNAPSHOT, "Snapshot Key")
+	DEFINEKEY1(KEY_APPS, "Apps Key")
+	DEFINEKEY1(KEY_SLEEP, "Sleep Key")
 	DEFINEKEY1(KEY_OEM_1, "OEM 1") // KEY_OEM_[0-9] and KEY_OEM_102 are assigned to multiple
 	DEFINEKEY1(KEY_OEM_2, "OEM 2") // different chars (on different platforms too) and thus w/o char
 	DEFINEKEY1(KEY_OEM_3, "OEM 3")
@@ -204,11 +193,11 @@ static const struct table_key table[] = {
 	DEFINEKEY1(KEY_ATTN, "Attn")
 	DEFINEKEY1(KEY_CRSEL, "CrSel")
 	DEFINEKEY1(KEY_EXSEL, "ExSel")
-	DEFINEKEY1(KEY_EREOF, N_("Erase EOF"))
+	DEFINEKEY1(KEY_EREOF, "Erase EOF")
 	DEFINEKEY1(KEY_PLAY, N_("Play"))
-	DEFINEKEY1(KEY_ZOOM, N_("Zoom Key"))
+	DEFINEKEY1(KEY_ZOOM, "Zoom Key")
 	DEFINEKEY1(KEY_PA1, "PA1")
-	DEFINEKEY1(KEY_OEM_CLEAR, N_("OEM Clear"))
+	DEFINEKEY1(KEY_OEM_CLEAR, "OEM Clear")
 
 	// Keys without Irrlicht keycode
 	DEFINEKEY5("!")
@@ -236,145 +225,180 @@ static const struct table_key table[] = {
 	DEFINEKEY5("_")
 };
 
+static const table_key invalid_key = {"", KEY_UNKNOWN, L'\0', ""};
+
 #undef N_
 
 
-struct table_key lookup_keyname(const char *name)
+static const table_key &lookup_keychar(wchar_t Char)
 {
-	for (const auto &table_key : table) {
-		if (strcmp(table_key.Name, name) == 0)
-			return table_key;
-	}
+	if (Char == L'\0')
+		return invalid_key;
 
-	throw UnknownKeycode(name);
-}
-
-struct table_key lookup_keykey(irr::EKEY_CODE key)
-{
-	for (const auto &table_key : table) {
-		if (table_key.Key == key)
-			return table_key;
-	}
-
-	std::ostringstream os;
-	os << "<Keycode " << (int) key << ">";
-	throw UnknownKeycode(os.str().c_str());
-}
-
-struct table_key lookup_keychar(wchar_t Char)
-{
 	for (const auto &table_key : table) {
 		if (table_key.Char == Char)
 			return table_key;
 	}
 
-	std::ostringstream os;
-	os << "<Char " << hex_encode((char*) &Char, sizeof(wchar_t)) << ">";
-	throw UnknownKeycode(os.str().c_str());
+	// Create a new entry in the lookup table if one is not available.
+	auto newsym = wide_to_utf8(std::wstring_view(&Char, 1));
+	table_key new_key {newsym, KEY_KEY_CODES_COUNT, Char, newsym};
+	return table.emplace_back(std::move(new_key));
 }
 
-KeyPress::KeyPress(const char *name)
+static const table_key &lookup_keykey(EKEY_CODE key)
 {
-	if (strlen(name) == 0) {
-		Key = irr::KEY_KEY_CODES_COUNT;
-		Char = L'\0';
-		m_name = "";
+	if (!Keycode::isValid(key))
+		return invalid_key;
+
+	for (const auto &table_key : table) {
+		if (table_key.Key == key)
+			return table_key;
+	}
+
+	return invalid_key;
+}
+
+static const table_key &lookup_keyname(std::string_view name)
+{
+	if (name.empty())
+		return invalid_key;
+
+	for (const auto &table_key : table) {
+		if (table_key.Name == name)
+			return table_key;
+	}
+
+	auto wname = utf8_to_wide(name);
+	if (wname.empty())
+		return invalid_key;
+	return lookup_keychar(wname[0]);
+}
+
+static const table_key &lookup_scancode(const u32 scancode)
+{
+	auto key = RenderingEngine::get_raw_device()->getKeyFromScancode(scancode);
+	return std::holds_alternative<EKEY_CODE>(key) ?
+		lookup_keykey(std::get<EKEY_CODE>(key)) :
+		lookup_keychar(std::get<wchar_t>(key));
+}
+
+static const table_key &lookup_scancode(const std::variant<u32, EKEY_CODE> &scancode)
+{
+	return std::holds_alternative<EKEY_CODE>(scancode) ?
+		lookup_keykey(std::get<EKEY_CODE>(scancode)) :
+		lookup_scancode(std::get<u32>(scancode));
+}
+
+void KeyPress::loadFromKey(EKEY_CODE keycode, wchar_t keychar)
+{
+	scancode = RenderingEngine::get_raw_device()->getScancodeFromKey(Keycode(keycode, keychar));
+}
+
+KeyPress::KeyPress(const std::string &name)
+{
+	if (loadFromScancode(name))
 		return;
-	}
-
-	if (strlen(name) <= 4) {
-		// Lookup by resulting character
-		int chars_read = mbtowc(&Char, name, 1);
-		FATAL_ERROR_IF(chars_read != 1, "Unexpected multibyte character");
-		try {
-			struct table_key k = lookup_keychar(Char);
-			m_name = k.Name;
-			Key = k.Key;
-			return;
-		} catch (UnknownKeycode &e) {};
-	} else {
-		// Lookup by name
-		m_name = name;
-		try {
-			struct table_key k = lookup_keyname(name);
-			Key = k.Key;
-			Char = k.Char;
-			return;
-		} catch (UnknownKeycode &e) {};
-	}
-
-	// It's not a known key, complain and try to do something
-	Key = irr::KEY_KEY_CODES_COUNT;
-	int chars_read = mbtowc(&Char, name, 1);
-	FATAL_ERROR_IF(chars_read != 1, "Unexpected multibyte character");
-	m_name = "";
-	warningstream << "KeyPress: Unknown key '" << name
-		<< "', falling back to first char." << std::endl;
+	const auto &key = lookup_keyname(name);
+	loadFromKey(key.Key, key.Char);
 }
 
-KeyPress::KeyPress(const irr::SEvent::SKeyInput &in, bool prefer_character)
+KeyPress::KeyPress(const SEvent::SKeyInput &in)
 {
-	if (prefer_character)
-		Key = irr::KEY_KEY_CODES_COUNT;
-	else
-		Key = in.Key;
-	Char = in.Char;
-
-	try {
-		if (valid_kcode(Key))
-			m_name = lookup_keykey(Key).Name;
+	if (USE_SDL2) {
+		if (in.SystemKeyCode)
+			scancode.emplace<u32>(in.SystemKeyCode);
 		else
-			m_name = lookup_keychar(Char).Name;
-	} catch (UnknownKeycode &e) {
-		m_name.clear();
-	};
+			scancode.emplace<EKEY_CODE>(in.Key);
+	} else {
+		loadFromKey(in.Key, in.Char);
+	}
 }
 
-const char *KeyPress::sym() const
+std::string KeyPress::formatScancode() const
 {
-	return m_name.c_str();
+	if (USE_SDL2) {
+		if (auto pv = std::get_if<u32>(&scancode))
+			return *pv == 0 ? "" : "SYSTEM_SCANCODE_" + std::to_string(*pv);
+	}
+	return "";
 }
 
-const char *KeyPress::name() const
+std::string KeyPress::sym() const
 {
-	if (m_name.empty())
-		return "";
-	const char *ret;
-	if (valid_kcode(Key))
-		ret = lookup_keykey(Key).LangName;
-	else
-		ret = lookup_keychar(Char).LangName;
-	return ret ? ret : "<Unnamed key>";
+	std::string name = lookup_scancode(scancode).Name;
+	if (USE_SDL2 || name.empty())
+		if (auto newname = formatScancode(); !newname.empty())
+			return newname;
+	return name;
 }
 
-const KeyPress EscapeKey("KEY_ESCAPE");
-const KeyPress CancelKey("KEY_CANCEL");
+std::string KeyPress::name() const
+{
+	const auto &name = lookup_scancode(scancode).LangName;
+	if (!name.empty())
+		return name;
+	return formatScancode();
+}
+
+EKEY_CODE KeyPress::getKeycode() const
+{
+	return lookup_scancode(scancode).Key;
+}
+
+wchar_t KeyPress::getKeychar() const
+{
+	return lookup_scancode(scancode).Char;
+}
+
+bool KeyPress::loadFromScancode(const std::string &name)
+{
+	if (USE_SDL2) {
+		if (!str_starts_with(name, "SYSTEM_SCANCODE_"))
+			return false;
+		char *p;
+		const auto code = strtoul(name.c_str()+16, &p, 10);
+		if (p != name.c_str() + name.size())
+			return false;
+		scancode.emplace<u32>(code);
+		return true;
+	} else {
+		return false;
+	}
+}
+
+std::unordered_map<std::string, KeyPress> specialKeyCache;
+KeyPress KeyPress::getSpecialKey(const std::string &name)
+{
+	auto &key = specialKeyCache[name];
+	if (!key)
+		key = KeyPress(name);
+	return key;
+}
 
 /*
 	Key config
 */
 
 // A simple cache for quicker lookup
-std::unordered_map<std::string, KeyPress> g_key_setting_cache;
+static std::unordered_map<std::string, KeyPress> g_key_setting_cache;
 
-KeyPress getKeySetting(const char *settingname)
+KeyPress getKeySetting(const std::string &settingname)
 {
-	std::unordered_map<std::string, KeyPress>::iterator n;
-	n = g_key_setting_cache.find(settingname);
+	auto n = g_key_setting_cache.find(settingname);
 	if (n != g_key_setting_cache.end())
 		return n->second;
 
-	KeyPress k(g_settings->get(settingname).c_str());
-	g_key_setting_cache[settingname] = k;
-	return k;
+	auto keysym = g_settings->get(settingname);
+	auto &ref = g_key_setting_cache[settingname];
+	ref = KeyPress(keysym);
+	if (!keysym.empty() && !ref) {
+		warningstream << "Invalid key '" << keysym << "' for '" << settingname << "'." << std::endl;
+	}
+	return ref;
 }
 
 void clearKeyCache()
 {
 	g_key_setting_cache.clear();
-}
-
-irr::EKEY_CODE keyname_to_keycode(const char *name)
-{
-	return lookup_keyname(name).Key;
 }

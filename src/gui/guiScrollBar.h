@@ -12,14 +12,16 @@ the arrow buttons where there is insufficient space.
 
 #pragma once
 
-#include "irrlichttypes_extrabloated.h"
+#include <optional>
+#include <IGUIEnvironment.h>
+#include <IGUIScrollBar.h>
 
 class ISimpleTextureSource;
 
-using namespace irr;
+
 using namespace gui;
 
-class GUIScrollBar : public IGUIElement
+class GUIScrollBar : public IGUIScrollBar
 {
 public:
 	GUIScrollBar(IGUIEnvironment *environment, IGUIElement *parent, s32 id,
@@ -33,22 +35,34 @@ public:
 		DEFAULT
 	};
 
-	virtual void draw();
-	virtual void updateAbsolutePosition();
-	virtual bool OnEvent(const SEvent &event);
+	virtual void draw() override;
+	virtual void updateAbsolutePosition() override;
+	virtual bool OnEvent(const SEvent &event) override;
+	virtual void OnPostRender(u32 time_ms) override;
 
-	s32 getMax() const { return max_pos; }
-	s32 getMin() const { return min_pos; }
-	s32 getLargeStep() const { return large_step; }
-	s32 getSmallStep() const { return small_step; }
-	s32 getPos() const;
+	s32 getMax() const override { return max_pos; }
+	s32 getMin() const override { return min_pos; }
+	s32 getLargeStep() const override { return large_step; }
+	s32 getSmallStep() const override { return small_step; }
+	s32 getPos() const override;
+	s32 getTargetPos() const override;
+	bool isHorizontal() const { return is_horizontal; }
 
-	void setMax(const s32 &max);
-	void setMin(const s32 &min);
-	void setSmallStep(const s32 &step);
-	void setLargeStep(const s32 &step);
-	void setPos(const s32 &pos);
-	void setPageSize(const s32 &size);
+	void setMax(s32 max) override;
+	void setMin(s32 min) override;
+	void setSmallStep(s32 step) override;
+	void setLargeStep(s32 step) override;
+	//! Sets a position immediately, aborting any ongoing interpolation.
+	// setPos does not send EGET_SCROLL_BAR_CHANGED events for you.
+	void setPos(const s32 pos) override;
+	//! The same as setPos, but it takes care of sending EGET_SCROLL_BAR_CHANGED events.
+	void setPosAndSend(s32 pos);
+	//! Sets a target position for interpolation.
+	// If you want to do an interpolated addition, use
+	// setPosInterpolated(getTargetPos() + x).
+	// setPosInterpolated takes care of sending EGET_SCROLL_BAR_CHANGED events.
+	void setPosInterpolated(s32 pos) override;
+	void setPageSize(s32 size) override;
 	void setArrowsVisible(ArrowVisibility visible);
 
 private:
@@ -79,4 +93,11 @@ private:
 	video::SColor current_icon_color;
 
 	ISimpleTextureSource *m_tsrc;
+
+	void setPosRaw(const s32 pos);
+	void updatePos();
+	std::optional<s32> target_pos;
+	u32 last_time_ms = 0;
+	u32 last_delta_ms = 17; // assume 60 FPS
+	void interpolatePos();
 };

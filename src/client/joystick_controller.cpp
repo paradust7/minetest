@@ -1,24 +1,8 @@
-/*
-Minetest
-Copyright (C) 2016 est31, <MTest31@outlook.com>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2016 est31, <MTest31@outlook.com>
 
 #include "joystick_controller.h"
-#include "irrlichttypes_extrabloated.h"
 #include "keys.h"
 #include "settings.h"
 #include "gettime.h"
@@ -26,7 +10,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "util/string.h"
 #include "util/numeric.h"
 
-bool JoystickButtonCmb::isTriggered(const irr::SEvent::SJoystickEvent &ev) const
+bool JoystickButtonCmb::isTriggered(const SEvent::SJoystickEvent &ev) const
 {
 	u32 buttons = ev.ButtonStates;
 
@@ -34,7 +18,7 @@ bool JoystickButtonCmb::isTriggered(const irr::SEvent::SJoystickEvent &ev) const
 	return buttons == compare_mask;
 }
 
-bool JoystickAxisCmb::isTriggered(const irr::SEvent::SJoystickEvent &ev) const
+bool JoystickAxisCmb::isTriggered(const SEvent::SJoystickEvent &ev) const
 {
 	s16 ax_val = ev.Axis[axis_to_compare];
 
@@ -213,7 +197,7 @@ JoystickController::JoystickController()
 	clear();
 }
 
-void JoystickController::onJoystickConnect(const std::vector<irr::SJoystickInfo> &joystick_infos)
+void JoystickController::onJoystickConnect(const std::vector<SJoystickInfo> &joystick_infos)
 {
 	s32         id     = g_settings->getS32("joystick_id");
 	std::string layout = g_settings->get("joystick_type");
@@ -245,7 +229,7 @@ void JoystickController::setLayoutFromControllerName(const std::string &name)
 	}
 }
 
-bool JoystickController::handleEvent(const irr::SEvent::SJoystickEvent &ev)
+bool JoystickController::handleEvent(const SEvent::SJoystickEvent &ev)
 {
 	if (ev.Joystick != m_joystick_id)
 		return false;

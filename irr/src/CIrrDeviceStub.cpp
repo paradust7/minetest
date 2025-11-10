@@ -8,14 +8,48 @@
 #include "IFileSystem.h"
 #include "IGUIElement.h"
 #include "IGUIEnvironment.h"
+#include "IVideoDriver.h"
 #include "os.h"
 #include "CTimer.h"
 #include "CLogger.h"
 #include "irrString.h"
-#include "IrrCompileConfig.h" // for IRRLICHT_SDK_VERSION
 
-namespace irr
+namespace video
 {
+#ifndef _IRR_COMPILE_WITH_OPENGL_
+IVideoDriver *createOpenGLDriver(const SIrrlichtCreationParameters &params, io::IFileSystem *io, IContextManager *contextManager)
+{
+	os::Printer::log("No OpenGL support compiled in.", ELL_ERROR);
+	return nullptr;
+}
+#endif
+
+#ifndef ENABLE_OPENGL3
+IVideoDriver *createOpenGL3Driver(const SIrrlichtCreationParameters &params, io::IFileSystem *io, IContextManager *contextManager)
+{
+	os::Printer::log("No OpenGL 3 support compiled in.", ELL_ERROR);
+	return nullptr;
+}
+#endif
+
+#ifndef _IRR_COMPILE_WITH_OGLES2_
+IVideoDriver *createOGLES2Driver(const SIrrlichtCreationParameters &params, io::IFileSystem *io, IContextManager *contextManager)
+{
+	os::Printer::log("No OpenGL ES 2 support compiled in.", ELL_ERROR);
+	return nullptr;
+}
+#endif
+
+#ifndef _IRR_COMPILE_WITH_WEBGL1_
+IVideoDriver *createWebGL1Driver(const SIrrlichtCreationParameters &params, io::IFileSystem *io, IContextManager *contextManager)
+{
+	os::Printer::log("No WebGL 1 support compiled in.", ELL_ERROR);
+	return nullptr;
+}
+#endif
+}
+
+
 //! constructor
 CIrrDeviceStub::CIrrDeviceStub(const SIrrlichtCreationParameters &params) :
 		IrrlichtDevice(), VideoDriver(0), GUIEnvironment(0), SceneManager(0),
@@ -38,12 +72,6 @@ CIrrDeviceStub::CIrrDeviceStub(const SIrrlichtCreationParameters &params) :
 	os::Printer::Logger = Logger;
 
 	FileSystem = io::createFileSystem();
-
-	core::stringc s = "Irrlicht Engine version ";
-	s.append(getVersion());
-	os::Printer::log(s.c_str(), ELL_INFORMATION);
-
-	checkVersion(params.SDK_version_do_not_use);
 }
 
 CIrrDeviceStub::~CIrrDeviceStub()
@@ -129,12 +157,6 @@ bool CIrrDeviceStub::setWindowIcon(const video::IImage *img)
 	return false;
 }
 
-//! Returns the version of the engine.
-const char *CIrrDeviceStub::getVersion() const
-{
-	return IRRLICHT_SDK_VERSION;
-}
-
 //! \return Returns a pointer to the mouse cursor control interface.
 gui::ICursorControl *CIrrDeviceStub::getCursorControl()
 {
@@ -147,30 +169,12 @@ video::IContextManager *CIrrDeviceStub::getContextManager()
 	return ContextManager;
 }
 
-//! checks version of sdk and prints warning if there might be a problem
-bool CIrrDeviceStub::checkVersion(const char *version)
-{
-	if (strcmp(getVersion(), version)) {
-		core::stringc w;
-		w = "Warning: The library version of the Irrlicht Engine (";
-		w += getVersion();
-		w += ") does not match the version the application was compiled with (";
-		w += version;
-		w += "). This may cause problems.";
-		os::Printer::log(w.c_str(), ELL_WARNING);
-
-		return false;
-	}
-
-	return true;
-}
-
 //! Compares to the last call of this function to return double and triple clicks.
 u32 CIrrDeviceStub::checkSuccessiveClicks(s32 mouseX, s32 mouseY, EMOUSE_INPUT_EVENT inputEvent)
 {
 	const s32 MAX_MOUSEMOVE = 3;
 
-	irr::u32 clickTime = getTimer()->getRealTime();
+	u32 clickTime = getTimer()->getRealTime();
 
 	if ((clickTime - MouseMultiClicks.LastClickTime) < MouseMultiClicks.DoubleClickTime && core::abs_(MouseMultiClicks.LastClick.X - mouseX) <= MAX_MOUSEMOVE && core::abs_(MouseMultiClicks.LastClick.Y - mouseY) <= MAX_MOUSEMOVE && MouseMultiClicks.CountSuccessiveClicks < 3 && MouseMultiClicks.LastMouseInputEvent == inputEvent) {
 		++MouseMultiClicks.CountSuccessiveClicks;
@@ -372,5 +376,3 @@ bool CIrrDeviceStub::acceptsIME()
 	gui::IGUIElement *elem = GUIEnvironment->getFocus();
 	return elem && elem->acceptsIME();
 }
-
-} // end namespace irr

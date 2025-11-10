@@ -1,30 +1,20 @@
-/*
-Minetest
-Copyright (C) 2010-2013 celeron55, Perttu Ahola <celeron55@gmail.com>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2010-2013 celeron55, Perttu Ahola <celeron55@gmail.com>
 
 #pragma once
 
-#include "irrlichttypes_extrabloated.h"
-#include "client/inputhandler.h"
-#include "gameparams.h"
-#include "chat.h"
+#include <string>
+
+class ChatBackend;
 
 class RenderingEngine;
+class Settings;
+class MyEventReceiver;
+class InputHandler;
+struct GameStartData;
+struct MainMenuData;
+class FrameMarker;
 
 class ClientLauncher
 {
@@ -46,12 +36,16 @@ private:
 	void init_args(GameStartData &start_data, const Settings &cmd_args);
 	bool init_engine();
 	void init_input();
-	void init_guienv(gui::IGUIEnvironment *guienv);
+	void init_joysticks();
+
+	static void setting_changed_callback(const std::string &name, void *data);
+	void config_guienv();
 
 	void launch_game(std::function<void(bool)> resolve);
 	void after_main_menu(std::function<void(bool)> resolve);
 
 	void main_menu(std::function<void()> resolve);
+	void main_menu_wait_loop(std::function<void()> resolve);
 	void main_menu_loop(std::function<void()> resolve);
 	void main_menu_after_loop(std::function<void()> resolve);
 	void main_menu_after_guiengine(std::function<void()> resolve);
@@ -69,7 +63,8 @@ private:
 	std::string error_message;
 	bool first_loop = true;
 	bool retval = true;
-	bool *kill = nullptr;
+	volatile std::sig_atomic_t *kill = nullptr;
+	FrameMarker *framemarker = nullptr;
 
 	// locals for launch_game
 	std::string server_name;

@@ -29,21 +29,6 @@
 
 #include "fast_atof.h"
 
-#if defined(_IRR_COMPILE_WITH_SDL_DEVICE_)
-static const bool sdl_supports_primary_selection = [] {
-#if SDL_VERSION_ATLEAST(2, 25, 0)
-	SDL_version linked_version;
-	SDL_GetVersion(&linked_version);
-	return (linked_version.major == 2 && linked_version.minor >= 25) || linked_version.major > 2;
-#else
-	return false;
-#endif
-}();
-#endif
-
-namespace irr
-{
-
 #if defined(_IRR_COMPILE_WITH_X11_DEVICE_)
 // constructor  linux
 COSOperator::COSOperator(const core::stringc &osVersion, CIrrDeviceLinux *device) :
@@ -55,11 +40,7 @@ COSOperator::COSOperator(const core::stringc &osVersion, CIrrDeviceLinux *device
 // constructor
 COSOperator::COSOperator(const core::stringc &osVersion) :
 		OperatingSystem(osVersion)
-{
-#ifdef _DEBUG
-	setDebugName("COSOperator");
-#endif
-}
+{}
 
 COSOperator::~COSOperator()
 {
@@ -113,8 +94,8 @@ void COSOperator::copyToClipboard(const c8 *text) const
 	if ((text != NULL) && (strlen(text) > 0)) {
 		str = [NSString stringWithCString:text encoding:NSUTF8StringEncoding];
 		board = [NSPasteboard generalPasteboard];
-		[board declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:NSApp];
-		[board setString:str forType:NSStringPboardType];
+		[board declareTypes:[NSArray arrayWithObject:NSPasteboardTypeString] owner:NSApp];
+		[board setString:str forType:NSPasteboardTypeString];
 	}
 
 #elif defined(_IRR_COMPILE_WITH_X11_DEVICE_)
@@ -131,8 +112,7 @@ void COSOperator::copyToPrimarySelection(const c8 *text) const
 
 #if defined(_IRR_COMPILE_WITH_SDL_DEVICE_)
 #if SDL_VERSION_ATLEAST(2, 25, 0)
-	if (sdl_supports_primary_selection)
-		SDL_SetPrimarySelectionText(text);
+	SDL_SetPrimarySelectionText(text);
 #endif
 
 #elif defined(_IRR_COMPILE_WITH_X11_DEVICE_)
@@ -172,7 +152,7 @@ const c8 *COSOperator::getTextFromClipboard() const
 	char *result = 0;
 
 	board = [NSPasteboard generalPasteboard];
-	str = [board stringForType:NSStringPboardType];
+	str = [board stringForType:NSPasteboardTypeString];
 
 	if (str != nil)
 		result = (char *)[str cStringUsingEncoding:NSUTF8StringEncoding];
@@ -195,11 +175,9 @@ const c8 *COSOperator::getTextFromPrimarySelection() const
 {
 #if defined(_IRR_COMPILE_WITH_SDL_DEVICE_)
 #if SDL_VERSION_ATLEAST(2, 25, 0)
-	if (sdl_supports_primary_selection) {
-		SDL_free(PrimarySelectionText);
-		PrimarySelectionText = SDL_GetPrimarySelectionText();
-		return PrimarySelectionText;
-	}
+	SDL_free(PrimarySelectionText);
+	PrimarySelectionText = SDL_GetPrimarySelectionText();
+	return PrimarySelectionText;
 #endif
 	return 0;
 
@@ -264,5 +242,3 @@ bool COSOperator::getSystemMemory(u32 *Total, u32 *Avail) const
 	return false;
 #endif
 }
-
-} // end namespace

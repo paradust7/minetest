@@ -1,9 +1,9 @@
 IrrlichtMt version 1.9
 ======================
 
-IrrlichtMt is the 3D engine of [Minetest](https://github.com/minetest).
+IrrlichtMt is the 3D engine of [Luanti](https://github.com/luanti-org).
 It is based on the [Irrlicht Engine](https://irrlicht.sourceforge.io/) but is now developed independently.
-It is intentionally not compatible to upstream and is planned to be eventually absorbed into Minetest.
+It is intentionally not compatible to upstream and is planned to be eventually absorbed into Luanti.
 
 Build
 -----
@@ -18,38 +18,13 @@ The following libraries are required to be installed:
 * SDL2 (see below)
 
 Aside from standard search options (`ZLIB_INCLUDE_DIR`, `ZLIB_LIBRARY`, ...) the following options are available:
-* `BUILD_SHARED_LIBS` (default: `ON`) - Build IrrlichtMt as a shared library
-* `BUILD_EXAMPLES` (default: `OFF`) - Build example applications
 * `ENABLE_OPENGL` - Enable OpenGL driver
 * `ENABLE_OPENGL3` (default: `OFF`) - Enable OpenGL 3+ driver
-* `ENABLE_GLES1` - Enable OpenGL ES driver, legacy
 * `ENABLE_GLES2` - Enable OpenGL ES 2+ driver
 * `USE_SDL2` (default: platform-dependent, usually `ON`) - Use SDL2 instead of older native device code
 
-e.g. on a Linux system you might want to build for local use like this:
+However, IrrlichtMt cannot be built or installed separately.
 
-	git clone https://github.com/minetest/irrlicht
-	cd irrlicht
-	cmake . -DBUILD_SHARED_LIBS=OFF
-	make -j$(nproc)
-
-This will put an IrrlichtMtTargets.cmake file into the cmake directory in the current build directory, and it can then be imported from another project by pointing `find_package()` to the build directory, or by setting the `CMAKE_PREFIX_PATH` variable to that same path.
-
-on Windows system:
-
-It is highly recommended to use vcpkg as package manager.
-
-After you successfully built vcpkg you can easily install the required libraries:
-
-	vcpkg install zlib libjpeg-turbo libpng sdl2 --triplet x64-windows
-	
-Run the following script in PowerShell:
-
-	git clone https://github.com/minetest/irrlicht
-	cd irrlicht
-	cmake -B build -G "Visual Studio 17 2022" -A "Win64" -DCMAKE_TOOLCHAIN_FILE=[vcpkg-root]/scripts/buildsystems/vcpkg.cmake -DBUILD_SHARED_LIBS=OFF
-	cmake --build build --config Release
-	
 Platforms
 ---------
 
@@ -60,6 +35,27 @@ We aim to support these platforms:
 * Android
 
 This doesn't mean other platforms don't work or won't be supported, if you find something that doesn't work contributions are welcome.
+
+Compatibility matrix
+--------------------
+
+Driver (rows) vs Device (columns)
+
+|                           | SDL [1]  | Linux [2]      | OSX [3]          | Win32 [4]       |
+|---------------------------|----------|----------------|------------------|-----------------|
+| OpenGL 1.2 (to 2.1)       | Works    | Works (GLX)    | Works (NSOpenGL) | Works (WGL)     |
+| OpenGL 3.2+               | Works    | Testing (GLX)  | Not implemented  | Testing (WGL)   |
+| OpenGL ES 2.x             | Works    | Untested (EGL) | Not implemented  | Untested (EGL)  |
+| WebGL 1                   | Untested | Untested (EGL) | Not implemented  | Not implemented |
+| Null (no graphics output) | Works    | Works          | Works            | Works           |
+
+Notes:
+
+* [1] `CIrrDeviceSDL`: supports Android, Linux, macOS, Windows
+* [2] `CIrrDeviceLinux`: supports Linux
+* [3] `CIrrDeviceOSX`: supports macOS
+* [4] `CIrrDeviceWin32`: supports Windows
+
 
 License
 -------

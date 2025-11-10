@@ -1,21 +1,6 @@
-/*
-Minetest
-Copyright (C) 2013 kwolekr, Ryan Kwolek <kwolekr@minetest.net>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation; either version 2.1 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*/
+// Luanti
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// Copyright (C) 2013 kwolekr, Ryan Kwolek <kwolekr@minetest.net>
 
 #pragma once
 
@@ -23,7 +8,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "lua_api/l_base.h"
 
 class Map;
-class MapBlock;
 class MMVManip;
 
 /*
@@ -39,6 +23,7 @@ private:
 	static int gc_object(lua_State *L);
 
 	static int l_read_from_map(lua_State *L);
+	static int l_initialize(lua_State *L);
 	static int l_get_data(lua_State *L);
 	static int l_set_data(lua_State *L);
 	static int l_write_to_map(lua_State *L);
@@ -60,11 +45,12 @@ private:
 	static int l_was_modified(lua_State *L);
 	static int l_get_emerged_area(lua_State *L);
 
+	static int l_close(lua_State *L);
+
 public:
 	MMVManip *vm = nullptr;
 
 	LuaVoxelManip(MMVManip *mmvm, bool is_mapgen_vm);
-	LuaVoxelManip(Map *map, v3s16 p1, v3s16 p2);
 	LuaVoxelManip(Map *map);
 	~LuaVoxelManip();
 

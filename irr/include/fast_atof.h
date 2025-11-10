@@ -4,11 +4,11 @@
 
 #pragma once
 
-#include "irrMath.h"
-#include "irrString.h"
+#include "irrTypes.h"
+#include <cfloat>
+#include <climits>
+#include <cmath>
 
-namespace irr
-{
 namespace core
 {
 
@@ -305,7 +305,7 @@ inline const char *fast_atof_move(const char *in, f32 &result)
 		if (numDecimals < IRR_ATOF_TABLE_SIZE) {
 			value += decimal * fast_atof_table[numDecimals];
 		} else {
-			value += decimal * (f32)pow(10.f, -(float)numDecimals);
+			value += decimal * std::pow(10.f, -(float)numDecimals);
 		}
 		in = afterDecimal;
 	}
@@ -316,7 +316,7 @@ inline const char *fast_atof_move(const char *in, f32 &result)
 		// strtol10() will deal with both + and - signs,
 		// but calculate as f32 to prevent overflow at FLT_MAX
 		// Using pow with float cast instead of powf as otherwise accuracy decreases.
-		value *= (f32)pow(10.f, (f32)strtol10(in, &in));
+		value *= std::pow(10.f, (f32)strtol10(in, &in));
 	}
 
 	result = negative ? -value : value;
@@ -340,4 +340,3 @@ inline float fast_atof(const char *floatAsString, const char **out = 0)
 }
 
 } // end namespace core
-} // end namespace irr

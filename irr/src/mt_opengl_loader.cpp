@@ -5,9 +5,9 @@
 #include <string>
 #include <sstream>
 
-OpenGLProcedures GL = OpenGLProcedures();
+OpenGLProcedures GL;
 
-void OpenGLProcedures::LoadAllProcedures(irr::video::IContextManager *cmgr)
+void OpenGLProcedures::LoadAllProcedures(video::IContextManager *cmgr)
 {
 
 	if (!CullFace) CullFace = (PFNGLCULLFACEPROC_MT)cmgr->getProcAddress("glCullFace");
@@ -758,12 +758,11 @@ void OpenGLProcedures::LoadAllProcedures(irr::video::IContextManager *cmgr)
 	if (!NamedBufferPageCommitment) NamedBufferPageCommitment = (PFNGLNAMEDBUFFERPAGECOMMITMENTPROC_MT)cmgr->getProcAddress("glNamedBufferPageCommitmentARB");
 	if (!TexPageCommitment) TexPageCommitment = (PFNGLTEXPAGECOMMITMENTPROC_MT)cmgr->getProcAddress("glTexPageCommitmentARB");
 
-// On Emscripten, this causes a GL error which makes
-// testGLError() assert on debug build.
-#ifndef __EMSCRIPTEN__
-	// OpenGL 3 way to enumerate extensions
+	/* OpenGL 3 & ES 3 way to enumerate extensions */
 	GLint ext_count = 0;
 	GetIntegerv(NUM_EXTENSIONS, &ext_count);
+	// clear error which is raised if unsupported
+	while (GetError() != GL.NO_ERROR) {}
 	extensions.reserve(ext_count);
 	for (GLint k = 0; k < ext_count; k++) {
 		auto tmp = GetStringi(EXTENSIONS, k);
@@ -772,16 +771,14 @@ void OpenGLProcedures::LoadAllProcedures(irr::video::IContextManager *cmgr)
 	}
 	if (!extensions.empty())
 		return;
-#endif
 
-	// OpenGL 2 / ES 2 way to enumerate extensions
+	/* OpenGL 2 / ES 2 way to enumerate extensions */
 	auto ext_str = GetString(EXTENSIONS);
 	if (!ext_str)
 		return;
 	// get the extension string, chop it up
-	std::stringstream ext_ss((char*)ext_str);
+	std::istringstream ext_ss((char*)ext_str);
 	std::string tmp;
 	while (std::getline(ext_ss, tmp, ' '))
 		extensions.emplace(tmp);
-
 }
