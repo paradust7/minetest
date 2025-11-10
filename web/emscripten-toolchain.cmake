@@ -120,6 +120,7 @@ set(EMSCRIPTEN_COMMON_FLAGS
     "-sINITIAL_MEMORY=256MB"
     "-sMAXIMUM_MEMORY=2GB"
     "-sALLOW_MEMORY_GROWTH=1"
+    # "-sALLOW_TABLE_GROWTH=1"
     "-sSTACK_SIZE=5MB"
     
     # WebGL / Graphics
@@ -143,14 +144,12 @@ set(EMSCRIPTEN_COMMON_FLAGS
     # Note: NOT using PROXY_POSIX_SOCKETS - we implement our own socket layer
     
     # Debug and Error Reporting (reduced verbosity for performance)
-    "-sASSERTIONS=1"  # Basic assertions (was 2)
-    "-sSTACK_OVERFLOW_CHECK=1"  # Basic stack checking (was 2)
+    "-sASSERTIONS=0"
+    "-sSTACK_OVERFLOW_CHECK=0"
     "-sALLOW_UNIMPLEMENTED_SYSCALLS=1"
     "-sERROR_ON_UNDEFINED_SYMBOLS=0"
-    # Disabled for performance/stability:
-    # "-sSAFE_HEAP=1"  # Too slow for real-time rendering
-    "-sGL_DEBUG=1"  # Enable to debug GL issues
-    "-sGL_TRACK_ERRORS=1"  # Track GL errors
+    # "-sGL_DEBUG=1"  # Enable to debug GL issues
+    # "-sGL_TRACK_ERRORS=1"  # Track GL errors
     "-sRUNTIME_DEBUG=0"  # Disable runtime keepalive spam
     
     # CRITICAL: ASYNCIFY allows synchronous main loops to yield to the browser
@@ -158,6 +157,7 @@ set(EMSCRIPTEN_COMMON_FLAGS
     "-sASYNCIFY=1"
     "-sASYNCIFY_STACK_SIZE=65536"  # Increased for deeper call stacks
     "-sASYNCIFY_ADVISE=1"  # Warn about functions needing asyncification
+    # "-sASYNCIFY_ONLY=[\"_main\",\"_invoke_ii\",\"_invoke_vi\",\"_invoke_iiiiiiii\",\"_invoke_iiiiii\",\"_invoke_iiii\",\"_invoke_viiii\",\"_emscripten_sleep\"]"
     
     # Threading support (required for server thread + network threads)
     # Enables Web Workers for true multithreading
@@ -172,6 +172,11 @@ set(EMSCRIPTEN_COMMON_FLAGS
     # CRITICAL: Tell SDL to use emscripten_set_main_loop_timing for proper FPS limiting
     # This makes SDL respect vsync and use requestAnimationFrame
     "-sDEFAULT_TO_CXX=1"  # C++ support for SDL
+
+    # "-sPROXY_TO_PTHREAD=1"
+    # "-sOFFSCREENCANVAS_SUPPORT=1"
+    # "-sOFFSCREENCANVASES_TO_PTHREAD=\"#canvas\""
+    # "-sOFFSCREEN_FRAMEBUFFER=1"
 )
 
 # Additional compile flags for SDL2

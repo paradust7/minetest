@@ -289,9 +289,9 @@ void UDPSocket::Send(const Address &destination, const void *data, int size)
 		return;
 	}
 
-	EM_ASM({
+	/* EM_ASM({
 		console.log('[socket.cpp] Send() called: fd=' + $0 + ', size=' + $1 + ', dest_port=' + $2 + ', socket_family=' + $3 + ', dest_family=' + $4);
-	}, m_handle, size, destination.getPort(), m_addr_family, destination.getFamily());
+	}, m_handle, size, destination.getPort(), m_addr_family, destination.getFamily()); */
 	
 	if (destination.getFamily() != m_addr_family) {
 		EM_ASM({
@@ -316,9 +316,9 @@ void UDPSocket::Send(const Address &destination, const void *data, int size)
 		snprintf(dest_buf, sizeof(dest_buf), "%u.%u.%u.%u", 
 			bytes[0], bytes[1], bytes[2], bytes[3]);
 	}
-	EM_ASM({
+	/* EM_ASM({
 		console.log('[socket.cpp] Calling em_socket_sendto: fd=' + $0 + ', dest=' + UTF8ToString($1) + ', port=' + $2);
-	}, m_handle, dest_buf, destination.getPort());
+	}, m_handle, dest_buf, destination.getPort()); */
 	sent = em_socket_sendto(m_handle, data, size, dest_buf, destination.getPort());
 #else
 	if (m_addr_family == AF_INET6) {
@@ -365,7 +365,7 @@ int UDPSocket::Receive(Address &sender, void *data, int size)
 	if (received < 0)
 		return -1;
 	
-	EM_ASM({ console.log('[socket.cpp] About to parse address'); });
+	/* EM_ASM({ console.log('[socket.cpp] About to parse address'); }); */
 	
 	// Parse IP address string and create Address with matching family
 	// CRITICAL: The returned address MUST match the socket's address family
@@ -375,7 +375,7 @@ int UDPSocket::Receive(Address &sender, void *data, int size)
 		// Received IPv4 address string
 		if (m_addr_family == AF_INET6) {
 			// Socket is IPv6, so return IPv6-mapped IPv4 address
-			EM_ASM({ console.log('[socket.cpp] Parsed IPv4, converting to IPv6 for socket compatibility'); });
+			/* EM_ASM({ console.log('[socket.cpp] Parsed IPv4, converting to IPv6 for socket compatibility'); }); */
 			// Use IPv6 localhost for simplicity (both client and server use localhost)
 			IPv6AddressBytes bytes;
 			bytes.bytes[0] = 0; bytes.bytes[1] = 0; bytes.bytes[2] = 0; bytes.bytes[3] = 0;
@@ -385,7 +385,7 @@ int UDPSocket::Receive(Address &sender, void *data, int size)
 			sender = Address(&bytes, src_port);
 		} else {
 			// Socket is IPv4, return IPv4 address
-			EM_ASM({ console.log('[socket.cpp] Parsed IPv4 address'); });
+			/* EM_ASM({ console.log('[socket.cpp] Parsed IPv4 address'); }); */
 			sender = Address(a, b, c, d, src_port);
 		}
 	} else {
@@ -403,7 +403,7 @@ int UDPSocket::Receive(Address &sender, void *data, int size)
 		}
 	}
 	
-	EM_ASM({ console.log('[socket.cpp] Receive() completed successfully'); });
+	/* EM_ASM({ console.log('[socket.cpp] Receive() completed successfully'); }); */
 	
 	return received;
 #else

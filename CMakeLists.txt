@@ -101,6 +101,8 @@ endif()
 # Load default options for Emscripten (Web)
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 	message(STATUS "Configuring for Emscripten/WebAssembly build")
+
+	set(EMSCRIPTEN TRUE)
 	
 	# Emscripten-specific settings
 	set(BUILD_SERVER FALSE CACHE BOOL "Build server" FORCE)
@@ -122,7 +124,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 	set(RUN_IN_PLACE TRUE CACHE BOOL "Run in place" FORCE)
 	
 	# Disable LTO for Emscripten (WASM has its own optimization)
-	set(ENABLE_LTO FALSE CACHE BOOL "Use Link Time Optimization" FORCE)
+	set(ENABLE_LTO TRUE CACHE BOOL "Use Link Time Optimization" FORCE)
 	
 	message(STATUS "Web build: LuaJIT disabled, using vanilla Lua")
 	message(STATUS "Web build: Server and database backends disabled")
