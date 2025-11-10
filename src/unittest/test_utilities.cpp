@@ -24,6 +24,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "util/numeric.h"
 #include "util/string.h"
 #include "util/base64.h"
+#include "util/colorize.h"
 
 class TestUtilities : public TestBase {
 public:
@@ -59,6 +60,7 @@ public:
 	void testBase64();
 	void testSanitizeDirName();
 	void testIsBlockInSight();
+	void testColorizeURL();
 };
 
 static TestUtilities g_test_instance;
@@ -92,6 +94,7 @@ void TestUtilities::runTests(IGameDef *gamedef)
 	TEST(testBase64);
 	TEST(testSanitizeDirName);
 	TEST(testIsBlockInSight);
+	TEST(testColorizeURL);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -240,20 +243,26 @@ void TestUtilities::testPadString()
 
 void TestUtilities::testStartsWith()
 {
-	UASSERT(str_starts_with(std::string(), std::string()) == true);
+	std::string the("the");
+	UASSERT(str_starts_with(std::string(), "") == true);
 	UASSERT(str_starts_with(std::string("the sharp pickaxe"),
 		std::string()) == true);
 	UASSERT(str_starts_with(std::string("the sharp pickaxe"),
-		std::string("the")) == true);
+		std::string_view(the)) == true);
 	UASSERT(str_starts_with(std::string("the sharp pickaxe"),
 		std::string("The")) == false);
 	UASSERT(str_starts_with(std::string("the sharp pickaxe"),
 		std::string("The"), true) == true);
-	UASSERT(str_starts_with(std::string("T"), std::string("The")) == false);
+	UASSERT(str_starts_with(std::string("T"), "The") == false);
 }
 
 void TestUtilities::testStrEqual()
 {
+	std::string foo("foo");
+	UASSERT(str_equal(foo, std::string_view(foo)));
+	UASSERT(!str_equal(foo, std::string("bar")));
+	UASSERT(str_equal(std::string_view(foo), std::string_view(foo)));
+	UASSERT(str_equal(std::wstring(L"FOO"), std::wstring(L"foo"), true));
 	UASSERT(str_equal(utf8_to_wide("abc"), utf8_to_wide("abc")));
 	UASSERT(str_equal(utf8_to_wide("ABC"), utf8_to_wide("abc"), true));
 }
@@ -629,14 +638,14 @@ void TestUtilities::testBase64()
 
 void TestUtilities::testSanitizeDirName()
 {
-	UASSERT(sanitizeDirName("a", "~") == "a");
-	UASSERT(sanitizeDirName("  ", "~") == "__");
-	UASSERT(sanitizeDirName(" a ", "~") == "_a_");
-	UASSERT(sanitizeDirName("COM1", "~") == "~COM1");
-	UASSERT(sanitizeDirName("COM1", ":") == "_COM1");
-	UASSERT(sanitizeDirName("cOm\u00B2", "~") == "~cOm\u00B2");
-	UASSERT(sanitizeDirName("cOnIn$", "~") == "~cOnIn$");
-	UASSERT(sanitizeDirName(" cOnIn$ ", "~") == "_cOnIn$_");
+	UASSERTEQ(auto, sanitizeDirName("a", "~"), "a");
+	UASSERTEQ(auto, sanitizeDirName("  ", "~"), "__");
+	UASSERTEQ(auto, sanitizeDirName(" a ", "~"), "_a_");
+	UASSERTEQ(auto, sanitizeDirName("COM1", "~"), "~COM1");
+	UASSERTEQ(auto, sanitizeDirName("COM1", ":"), "_COM1");
+	UASSERTEQ(auto, sanitizeDirName("cOm\u00B2", "~"), "~cOm\u00B2");
+	UASSERTEQ(auto, sanitizeDirName("cOnIn$", "~"), "~cOnIn$");
+	UASSERTEQ(auto, sanitizeDirName(" cOnIn$ ", "~"), "_cOnIn$_");
 }
 
 template <typename F, typename C>
@@ -703,4 +712,20 @@ void TestUtilities::testIsBlockInSight()
 		// should still be considered visible
 		UASSERT(isBlockInSight({-1, 0, 0}, cam_pos, cam_dir, fov, range));
 	}
+}
+
+void TestUtilities::testColorizeURL()
+{
+#ifdef USE_CURL
+	#define RED COLOR_CODE("#faa")
+	#define GREY COLOR_CODE("#aaa")
+	#define WHITE COLOR_CODE("#fff")
+
+	std::string result = colorize_url("http://example.com/");
+	UASSERT(result == (GREY "http://" WHITE "example.com" GREY "/"));
+
+	result = colorize_url(u8"https://u:p@wikipedi\u0430.org:1234/heIIoll?a=b#c");
+	UASSERT(result ==
+		(GREY "https://u:p@" WHITE "wikipedi" RED "%d0%b0" WHITE ".org" GREY ":1234/heIIoll?a=b#c"));
+#endif
 }

@@ -31,8 +31,6 @@ minetest = core
 
 -- Load other files
 local scriptdir = core.get_builtin_path()
-local gamepath = scriptdir .. "game" .. DIR_DELIM
-local clientpath = scriptdir .. "client" .. DIR_DELIM
 local commonpath = scriptdir .. "common" .. DIR_DELIM
 local asyncpath = scriptdir .. "async" .. DIR_DELIM
 
@@ -42,7 +40,7 @@ dofile(commonpath .. "serialize.lua")
 dofile(commonpath .. "misc_helpers.lua")
 
 if INIT == "game" then
-	dofile(gamepath .. "init.lua")
+	dofile(scriptdir .. "game" .. DIR_DELIM .. "init.lua")
 	assert(not core.get_http_api)
 elseif INIT == "mainmenu" then
 	local mm_script = core.settings:get("main_menu_script")
@@ -65,9 +63,12 @@ elseif INIT == "mainmenu" then
 elseif INIT == "async"  then
 	dofile(asyncpath .. "mainmenu.lua")
 elseif INIT == "async_game" then
+	dofile(commonpath .. "metatable.lua")
 	dofile(asyncpath .. "game.lua")
 elseif INIT == "client" then
-	dofile(clientpath .. "init.lua")
+	dofile(scriptdir .. "client" .. DIR_DELIM .. "init.lua")
+elseif INIT == "emerge" then
+	dofile(scriptdir .. "emerge" .. DIR_DELIM .. "init.lua")
 else
 	error(("Unrecognized builtin initialization type %s!"):format(tostring(INIT)))
 end

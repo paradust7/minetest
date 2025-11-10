@@ -118,6 +118,11 @@ public:
 	COPY_MECHANISM(PrngException);
 };
 
+class ShaderException : public BaseException {
+public:
+	ShaderException(const std::string &s): BaseException(s) {}
+};
+
 class ModError : public BaseException {
 public:
 	ModError(const std::string &s): BaseException(s) {}

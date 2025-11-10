@@ -90,7 +90,7 @@
 #    Smooths rotation of camera, also called look or mouse smoothing. 0 to disable.
 camera_smoothing (Camera smoothing) float 0.0 0.0 0.99
 
-#    Smooths rotation of camera when in cinematic mode, 0 to disable. Enter cinematic mode by using the key set in Change Keys.
+#    Smooths rotation of camera when in cinematic mode, 0 to disable. Enter cinematic mode by using the key set in Controls.
 #
 #    Requires: keyboard_mouse
 cinematic_camera_smoothing (Camera smoothing in cinematic mode) float 0.7 0.0 0.99
@@ -147,6 +147,11 @@ enable_hotbar_mouse_wheel (Hotbar: Enable mouse wheel for selection) bool true
 invert_hotbar_mouse_wheel (Hotbar: Invert mouse wheel direction) bool false
 
 [*Touchscreen]
+
+#    Enables touchscreen mode, allowing you to play the game with a touchscreen.
+#
+#    Requires: !android
+enable_touch (Enable touchscreen) bool true
 
 #    The length in pixels it takes for touchscreen interaction to start.
 #
@@ -401,7 +406,8 @@ anisotropic_filter (Anisotropic filtering) bool false
 #
 #    * None - No antialiasing (default)
 #
-#    * FSAA - Hardware-provided full-screen antialiasing (incompatible with shaders)
+#    * FSAA - Hardware-provided full-screen antialiasing
+#             (incompatible with Post Processing and Undersampling)
 #             A.K.A multi-sample antialiasing (MSAA)
 #             Smoothens out block edges but does not affect the insides of textures.
 #             A restart is required to change this option.
@@ -440,7 +446,6 @@ enable_raytraced_culling (Enable Raytraced Culling) bool true
 
 #    Shaders allow advanced visual effects and may increase performance on some video
 #    cards.
-#    This only works with the OpenGL video backend.
 #
 #    Requires: shaders_support
 enable_shaders (Shaders) bool true
@@ -557,12 +562,17 @@ shadow_sky_body_orbit_tilt (Sky Body Orbit Tilt) float 0.0 -60.0 60.0
 
 [**Post Processing]
 
+#    Enables the post processing pipeline.
+#
+#    Requires: shaders
+enable_post_processing (Enable Post Processing) bool true
+
 #    Enables Hable's 'Uncharted 2' filmic tone mapping.
 #    Simulates the tone curve of photographic film and how this approximates the
 #    appearance of high dynamic range images. Mid-range contrast is slightly
 #    enhanced, highlights and shadows are gradually compressed.
 #
-#    Requires: shaders
+#    Requires: shaders, enable_post_processing
 tone_mapping (Filmic tone mapping) bool false
 
 #    Enable automatic exposure correction
@@ -570,14 +580,14 @@ tone_mapping (Filmic tone mapping) bool false
 #    automatically adjust to the brightness of the scene,
 #    simulating the behavior of human eye.
 #
-#    Requires: shaders
+#    Requires: shaders, enable_post_processing
 enable_auto_exposure (Enable Automatic Exposure) bool false
 
 #    Set the exposure compensation in EV units.
 #    Value of 0.0 (default) means no exposure compensation.
 #    Range: from -1 to 1.0
 #
-#    Requires: shaders, enable_auto_exposure
+#    Requires: shaders, enable_post_processing, enable_auto_exposure
 exposure_compensation (Exposure compensation) float 0.0 -1.0 1.0
 
 #    Apply dithering to reduce color banding artifacts.
@@ -588,7 +598,7 @@ exposure_compensation (Exposure compensation) float 0.0 -1.0 1.0
 #    With OpenGL ES, dithering only works if the shader supports high
 #    floating-point precision and it may have a higher performance impact.
 #
-#    Requires: shaders
+#    Requires: shaders, enable_post_processing
 debanding (Enable Debanding) bool true
 
 [**Bloom]
@@ -596,7 +606,7 @@ debanding (Enable Debanding) bool true
 #    Set to true to enable bloom effect.
 #    Bright colors will bleed over the neighboring objects.
 #
-#    Requires: shaders
+#    Requires: shaders, enable_post_processing
 enable_bloom (Enable Bloom) bool false
 
 #    Set to true to render debugging breakdown of the bloom effect.
@@ -604,32 +614,32 @@ enable_bloom (Enable Bloom) bool false
 #    top-left - processed base image, top-right - final image
 #    bottom-left - raw base image, bottom-right - bloom texture.
 #
-#    Requires: shaders, enable_bloom
+#    Requires: shaders, enable_post_processing, enable_bloom
 enable_bloom_debug (Enable Bloom Debug) bool false
 
 #    Defines how much bloom is applied to the rendered image
 #    Smaller values make bloom more subtle
 #    Range: from 0.01 to 1.0, default: 0.05
 #
-#    Requires: shaders, enable_bloom
+#    Requires: shaders, enable_post_processing, enable_bloom
 bloom_intensity (Bloom Intensity) float 0.05 0.01 1.0
 
 #    Defines the magnitude of bloom overexposure.
 #    Range: from 0.1 to 10.0, default: 1.0
 #
-#    Requires: shaders, enable_bloom
+#    Requires: shaders, enable_post_processing, enable_bloom
 bloom_strength_factor (Bloom Strength Factor) float 1.0 0.1 10.0
 
 #    Logical value that controls how far the bloom effect spreads
 #    from the bright objects.
 #    Range: from 0.1 to 8, default: 1
 #
-#    Requires: shaders, enable_bloom
+#    Requires: shaders, enable_post_processing, enable_bloom
 bloom_radius (Bloom Radius) float 1 0.1 8
 
 #    Set to true to enable volumetric lighting effect (a.k.a. "Godrays").
 #
-#    Requires: shaders, enable_bloom
+#    Requires: shaders, enable_post_processing, enable_bloom
 enable_volumetric_lighting (Volumetric lighting) bool false
 
 [*Audio]
@@ -649,7 +659,7 @@ mute_sound (Mute sound) bool false
 
 [*User Interfaces]
 
-#    Set the language. Leave empty to use the system language.
+#    Set the language. By default, the system language is used.
 #    A restart is required after changing this.
 language (Language) enum   ,be,bg,ca,cs,da,de,el,en,eo,es,et,eu,fi,fr,gd,gl,hu,id,it,ja,jbo,kk,ko,lt,lv,ms,nb,nl,nn,pl,pt,pt_BR,ro,ru,sk,sl,sr_Cyrl,sr_Latn,sv,sw,tr,uk,vi,zh_CN,zh_TW
 
@@ -1069,7 +1079,8 @@ mgv5_np_dungeons (Dungeon noise) noise_params_3d 0.9, 0.5, (500, 500, 500), 0, 2
 #    The 'snowbiomes' flag enables the new 5 biome system.
 #    When the 'snowbiomes' flag is enabled jungles are automatically enabled and
 #    the 'jungles' flag is ignored.
-mgv6_spflags (Mapgen V6 specific flags) flags jungles,biomeblend,mudflow,snowbiomes,noflat,trees jungles,biomeblend,mudflow,snowbiomes,flat,trees,nojungles,nobiomeblend,nomudflow,nosnowbiomes,noflat,notrees
+#    The 'temples' flag disables generation of desert temples. Normal dungeons will appear instead.
+mgv6_spflags (Mapgen V6 specific flags) flags jungles,biomeblend,mudflow,snowbiomes,noflat,trees,temples jungles,biomeblend,mudflow,snowbiomes,flat,trees,temples,nojungles,nobiomeblend,nomudflow,nosnowbiomes,noflat,notrees,notemples
 
 #    Deserts occur when np_biome exceeds this value.
 #    When the 'snowbiomes' flag is enabled, this is ignored.
@@ -1798,16 +1809,12 @@ shader_path (Shader path) path
 #    The rendering back-end.
 #    Note: A restart is required after changing this!
 #    OpenGL is the default for desktop, and OGLES2 for Android.
-#    Shaders are supported by OpenGL and OGLES2 (experimental).
-video_driver (Video driver) enum  ,opengl,ogles1,ogles2
+#    Shaders are supported by everything but OGLES1.
+video_driver (Video driver) enum  ,opengl,opengl3,ogles1,ogles2
 
 #    Distance in nodes at which transparency depth sorting is enabled
 #    Use this to limit the performance impact of transparency depth sorting
 transparency_sorting_distance (Transparency Sorting Distance) int 16 0 128
-
-#    Enable vertex buffer objects.
-#    This should greatly improve graphics performance.
-enable_vbo (VBO) bool true
 
 #    Radius of cloud area stated in number of 64 node cloud squares.
 #    Values larger than 26 will start to produce sharp cutoffs at cloud area corners.
@@ -1826,11 +1833,6 @@ mesh_generation_interval (Mapblock mesh generation delay) int 0 0 50
 #    Number of threads to use for mesh generation.
 #    Value of 0 (default) will let Minetest autodetect the number of available threads.
 mesh_generation_threads (Mapblock mesh generation threads) int 0 0 8
-
-#    Size of the MapBlock cache of the mesh generator. Increasing this will
-#    increase the cache hit %, reducing the data being copied from the main
-#    thread, thus reducing jitter.
-meshgen_block_cache_size (Mapblock mesh generator's MapBlock cache size in MB) int 20 0 1000
 
 #    True = 256
 #    False = 128
@@ -1869,6 +1871,11 @@ texture_min_size (Base texture size) int 64 1 32768
 #    draw calls, benefiting especially high-end GPUs.
 #    Systems with a low-end GPU (or no GPU) would benefit from smaller values.
 client_mesh_chunk (Client Mesh Chunksize) int 1 1 16
+
+[**Sound]
+#    Comma-separated list of AL and ALC extensions that should not be used.
+#    Useful for testing. See al_extensions.[h,cpp] for details.
+sound_extensions_blacklist (Sound Extensions Blacklist) string
 
 [**Font]
 
@@ -2008,9 +2015,10 @@ ask_reconnect_on_crash (Ask to reconnect after crash) bool false
 
 [**Server/Env Performance]
 
-#    Length of a server tick and the interval at which objects are generally updated over
-#    network, stated in seconds.
-dedicated_server_step (Dedicated server step) float 0.09 0.0
+#    Length of a server tick (the interval at which everything is generally updated),
+#    stated in seconds.
+#    Does not apply to sessions hosted from the client menu.
+dedicated_server_step (Dedicated server step) float 0.09 0.0 1.0
 
 #    Whether players are shown to clients without any range limit.
 #    Deprecated, use the setting player_transfer_distance instead.
@@ -2080,8 +2088,7 @@ liquid_update (Liquid update tick) float 1.0 0.001
 #    At this distance the server will aggressively optimize which blocks are sent to
 #    clients.
 #    Small values potentially improve performance a lot, at the expense of visible
-#    rendering glitches (some blocks will not be rendered under water and in caves,
-#    as well as sometimes on land).
+#    rendering glitches (some blocks might not be rendered correctly in caves).
 #    Setting this to a value greater than max_block_send_distance disables this
 #    optimization.
 #    Stated in MapBlocks (16 nodes).
@@ -2098,7 +2105,7 @@ server_side_occlusion_culling (Server-side occlusion culling) bool true
 #    rendering glitches (missing blocks).
 #    This is especially useful for very large viewing range (upwards of 500).
 #    Stated in MapBlocks (16 nodes).
-block_cull_optimize_distance (Block cull optimize distance) int 20 2 2047
+block_cull_optimize_distance (Block cull optimize distance) int 25 2 2047
 
 [**Mapgen]
 

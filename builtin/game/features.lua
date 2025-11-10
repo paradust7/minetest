@@ -29,6 +29,16 @@ core.features = {
 	compress_zstd = true,
 	sound_params_start_time = true,
 	physics_overrides_v2 = true,
+	hud_def_type_field = true,
+	random_state_restore = true,
+	after_order_expiry_registration = true,
+	wallmounted_rotate = true,
+	item_specific_pointabilities = true,
+	blocking_pointability_type = true,
+	dynamic_add_media_startup = true,
+	dynamic_add_media_filepath = true,
+	lsystem_decoration_type = true,
+	item_meta_range = true,
 }
 
 function core.has_feature(arg)

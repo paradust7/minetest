@@ -91,6 +91,8 @@ public:
 
 	virtual void setPos(const v3f &pos)
 		{ setBasePosition(pos); }
+	virtual void addPos(const v3f &added_pos)
+		{ setBasePosition(m_base_position + added_pos); }
 	// continuous: if true, object does not stop immediately at pos
 	virtual void moveTo(v3f pos, bool continuous)
 		{ setBasePosition(pos); }
@@ -227,6 +229,10 @@ public:
 
 	/*
 		Whether the object's static data has been stored to a block
+
+		Note that `!isStaticAllowed() && m_static_exists` is a valid state
+		(though it usually doesn't persist long) and you need to be careful
+		about handling it.
 	*/
 	bool m_static_exists = false;
 	/*

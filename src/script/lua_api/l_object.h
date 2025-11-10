@@ -73,6 +73,9 @@ private:
 	// set_pos(self, pos)
 	static int l_set_pos(lua_State *L);
 
+	// add_pos(self, pos)
+	static int l_add_pos(lua_State *L);
+
 	// move_to(self, pos, continuous)
 	static int l_move_to(lua_State *L);
 
@@ -296,6 +299,9 @@ private:
 
 	// hud_get(self, id)
 	static int l_hud_get(lua_State *L);
+
+	// hud_get_all(self)
+	static int l_hud_get_all(lua_State *L);
 
 	// hud_set_flags(self, flags)
 	static int l_hud_set_flags(lua_State *L);

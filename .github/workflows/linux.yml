@@ -11,7 +11,6 @@ on:
       - '**/CMakeLists.txt'
       - 'cmake/Modules/**'
       - 'util/ci/**'
-      - 'misc/irrlichtmt_tag.txt'
       - 'Dockerfile'
       - '.dockerignore'
       - '.github/workflows/linux.yml'
@@ -24,7 +23,6 @@ on:
       - '**/CMakeLists.txt'
       - 'cmake/Modules/**'
       - 'util/ci/**'
-      - 'misc/irrlichtmt_tag.txt'
       - 'Dockerfile'
       - '.dockerignore'
       - '.github/workflows/linux.yml'
@@ -37,7 +35,7 @@ jobs:
   gcc_7:
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Install deps
         run: |
           source ./util/ci/common.sh
@@ -58,7 +56,7 @@ jobs:
   gcc_12:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Install deps
         run: |
           source ./util/ci/common.sh
@@ -73,17 +71,20 @@ jobs:
 
       - name: Test
         run: |
-          ./bin/minetest --run-unittests
+          mkdir nowrite
+          chmod a-w nowrite
+          cd nowrite
+          ../bin/minetest --run-unittests
 
   # Older clang version (should be close to our minimum supported version)
   clang_7:
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Install deps
         run: |
           source ./util/ci/common.sh
-          install_linux_deps clang-7 valgrind
+          install_linux_deps clang-7 llvm
 
       - name: Build
         run: |
@@ -91,24 +92,21 @@ jobs:
         env:
           CC: clang-7
           CXX: clang++-7
+          CMAKE_FLAGS: '-DCMAKE_C_FLAGS="-fsanitize=address" -DCMAKE_CXX_FLAGS="-fsanitize=address"'
 
       - name: Unittest
         run: |
           ./bin/minetest --run-unittests
 
-      - name: Valgrind
-        run: |
-          valgrind --leak-check=full --leak-check-heuristics=all --undef-value-errors=no --error-exitcode=9 ./bin/minetest --run-unittests
-
   # Current clang version
   clang_14:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Install deps
         run: |
           source ./util/ci/common.sh
-          install_linux_deps clang-14 gdb
+          install_linux_deps clang-14 lldb
 
       - name: Build
         run: |
@@ -130,7 +128,7 @@ jobs:
     name: "clang_9 (PROMETHEUS=1)"
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Install deps
         run: |
           source ./util/ci/common.sh
@@ -151,13 +149,3 @@ jobs:
       - name: Test
         run: |
           ./bin/minetestserver --run-unittests
-
-  docker:
-    name: "Docker image"
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@v3
-      - name: Build docker image
-        run: |
-          docker build . -t minetest:latest
-          docker run --rm minetest:latest /usr/local/bin/minetestserver --version

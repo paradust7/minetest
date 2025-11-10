@@ -2,6 +2,8 @@
 Copyright (C) 2014 sapier
 Copyright (C) 2018 srifqi, Muhammad Rifqi Priyo Susanto
 		<muhammadrifqipriyosusanto@gmail.com>
+Copyright (C) 2024 grorp, Gregor Parzefall
+		<gregor.parzefall@posteo.de>
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU Lesser General Public License as published by
@@ -29,6 +31,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "client/keycode.h"
 #include "client/renderingengine.h"
 #include "util/numeric.h"
+#include <ISceneCollisionManager.h>
 
 #include <iostream>
 #include <algorithm>
@@ -52,6 +55,7 @@ const std::string joystick_image_names[] = {
 
 static EKEY_CODE id_to_keycode(touch_gui_button_id id)
 {
+	EKEY_CODE code;
 	// ESC isn't part of the keymap.
 	if (id == exit_id)
 		return KEY_ESCAPE;
@@ -107,7 +111,15 @@ static EKEY_CODE id_to_keycode(touch_gui_button_id id)
 			break;
 	}
 	assert(!key.empty());
-	return keyname_to_keycode(g_settings->get("keymap_" + key).c_str());
+	std::string resolved = g_settings->get("keymap_" + key);
+	try {
+		code = keyname_to_keycode(resolved.c_str());
+	} catch (UnknownKeycode &e) {
+		code = KEY_UNKNOWN;
+		warningstream << "TouchScreenGUI: Unknown key '" << resolved
+			      << "' for '" << key << "', hiding button." << std::endl;
+	}
+	return code;
 }
 
 static void load_button_texture(const button_info *btn, const std::string &path,
@@ -520,13 +532,23 @@ void TouchScreenGUI::init(ISimpleTextureSource *tsrc)
 							+ 0.5f * button_size),
 			AHBB_Dir_Right_Left, 3.0f);
 
-	m_settings_bar.addButton(fly_id, L"fly", "fly_btn.png");
-	m_settings_bar.addButton(noclip_id, L"noclip", "noclip_btn.png");
-	m_settings_bar.addButton(fast_id, L"fast", "fast_btn.png");
-	m_settings_bar.addButton(debug_id, L"debug", "debug_btn.png");
-	m_settings_bar.addButton(camera_id, L"camera", "camera_btn.png");
-	m_settings_bar.addButton(range_id, L"rangeview", "rangeview_btn.png");
-	m_settings_bar.addButton(minimap_id, L"minimap", "minimap_btn.png");
+	const static std::map<touch_gui_button_id, std::string> settings_bar_buttons {
+		{fly_id, "fly"},
+		{noclip_id, "noclip"},
+		{fast_id, "fast"},
+		{debug_id, "debug"},
+		{camera_id, "camera"},
+		{range_id, "rangeview"},
+		{minimap_id, "minimap"},
+	};
+	for (const auto &pair : settings_bar_buttons) {
+		if (id_to_keycode(pair.first) == KEY_UNKNOWN)
+			continue;
+
+		std::wstring wide = utf8_to_wide(pair.second);
+		m_settings_bar.addButton(pair.first, wide.c_str(),
+				pair.second + "_btn.png");
+	}
 
 	// Chat is shown by default, so chat_hide_btn.png is shown first.
 	m_settings_bar.addToggleButton(toggle_chat_id, L"togglechat",
@@ -542,10 +564,20 @@ void TouchScreenGUI::init(ISimpleTextureSource *tsrc)
 							+ 0.5f * button_size),
 			AHBB_Dir_Left_Right, 2.0f);
 
-	m_rare_controls_bar.addButton(chat_id, L"chat", "chat_btn.png");
-	m_rare_controls_bar.addButton(inventory_id, L"inv", "inventory_btn.png");
-	m_rare_controls_bar.addButton(drop_id, L"drop", "drop_btn.png");
-	m_rare_controls_bar.addButton(exit_id, L"exit", "exit_btn.png");
+	const static std::map<touch_gui_button_id, std::string> rare_controls_bar_buttons {
+		{chat_id, "chat"},
+		{inventory_id, "inventory"},
+		{drop_id, "drop"},
+		{exit_id, "exit"},
+	};
+	for (const auto &pair : rare_controls_bar_buttons) {
+		if (id_to_keycode(pair.first) == KEY_UNKNOWN)
+			continue;
+
+		std::wstring wide = utf8_to_wide(pair.second);
+		m_rare_controls_bar.addButton(pair.first, wide.c_str(),
+				pair.second + "_btn.png");
+	}
 
 	m_initialized = true;
 }
@@ -656,23 +688,13 @@ void TouchScreenGUI::handleReleaseEvent(size_t evt_id)
 		// handle the point used for moving view
 		m_has_move_id = false;
 
-		// if this pointer issued a mouse event issue symmetric release here
-		if (m_move_sent_as_mouse_event) {
-			SEvent translated {};
-			translated.EventType               = EET_MOUSE_INPUT_EVENT;
-			translated.MouseInput.X            = m_move_downlocation.X;
-			translated.MouseInput.Y            = m_move_downlocation.Y;
-			translated.MouseInput.Shift        = false;
-			translated.MouseInput.Control      = false;
-			translated.MouseInput.ButtonStates = 0;
-			translated.MouseInput.Event        = EMIE_LMOUSE_LEFT_UP;
-			if (m_draw_crosshair) {
-				translated.MouseInput.X = m_screensize.X / 2;
-				translated.MouseInput.Y = m_screensize.Y / 2;
-			}
-			m_receiver->OnEvent(translated);
-		} else if (!m_move_has_really_moved) {
-			doRightClick();
+		// If m_tap_state is already set to TapState::ShortTap, we must keep
+		// that value. Otherwise, many short taps will be ignored if you tap
+		// very fast.
+		if (!m_move_has_really_moved && m_tap_state != TapState::LongTap) {
+			m_tap_state = TapState::ShortTap;
+		} else {
+			m_tap_state = TapState::None;
 		}
 	}
 
@@ -694,12 +716,10 @@ void TouchScreenGUI::handleReleaseEvent(size_t evt_id)
 				<< evt_id << std::endl;
 	}
 
-	for (auto iter = m_known_ids.begin(); iter != m_known_ids.end(); ++iter) {
-		if (iter->id == evt_id) {
-			m_known_ids.erase(iter);
-			break;
-		}
-	}
+	// By the way: Android reuses pointer IDs, so m_pointer_pos[evt_id]
+	// will be overwritten soon anyway.
+	m_pointer_downpos.erase(evt_id);
+	m_pointer_pos.erase(evt_id);
 }
 
 void TouchScreenGUI::translateEvent(const SEvent &event)
@@ -726,17 +746,6 @@ void TouchScreenGUI::translateEvent(const SEvent &event)
 	const v2s32 dir_fixed = touch_pos - fixed_joystick_center;
 
 	if (event.TouchInput.Event == ETIE_PRESSED_DOWN) {
-		/*
-		 * Add to own copy of event list...
-		 * android would provide this information but Irrlicht guys don't
-		 * wanna design an efficient interface
-		 */
-		id_status to_be_added{};
-		to_be_added.id = event.TouchInput.ID;
-		to_be_added.X  = event.TouchInput.X;
-		to_be_added.Y  = event.TouchInput.Y;
-		m_known_ids.push_back(to_be_added);
-
 		size_t eventID = event.TouchInput.ID;
 
 		touch_gui_button_id button = getButtonID(X, Y);
@@ -793,14 +802,14 @@ void TouchScreenGUI::translateEvent(const SEvent &event)
 					m_move_id                  = event.TouchInput.ID;
 					m_move_has_really_moved    = false;
 					m_move_downtime            = porting::getTimeMs();
-					m_move_downlocation        = touch_pos;
-					m_move_sent_as_mouse_event = false;
-					if (m_draw_crosshair)
-						m_move_downlocation = v2s32(m_screensize.X / 2, m_screensize.Y / 2);
+					m_move_pos                 = touch_pos;
+					// DON'T reset m_tap_state here, otherwise many short taps
+					// will be ignored if you tap very fast.
 				}
 			}
 		}
 
+		m_pointer_downpos[event.TouchInput.ID] = touch_pos;
 		m_pointer_pos[event.TouchInput.ID] = touch_pos;
 	}
 	else if (event.TouchInput.Event == ETIE_LEFT_UP) {
@@ -813,40 +822,24 @@ void TouchScreenGUI::translateEvent(const SEvent &event)
 				m_pointer_pos[event.TouchInput.ID] == touch_pos)
 			return;
 
-		const v2s32 free_joystick_center = v2s32(m_pointer_pos[event.TouchInput.ID].X,
-				m_pointer_pos[event.TouchInput.ID].Y);
+		const v2s32 dir_free_original = touch_pos - m_pointer_downpos[event.TouchInput.ID];
+		const v2s32 free_joystick_center = m_pointer_pos[event.TouchInput.ID];
 		const v2s32 dir_free = touch_pos - free_joystick_center;
 
 		const double touch_threshold_sq = m_touchscreen_threshold * m_touchscreen_threshold;
 
-		if (m_has_move_id) {
-			if (event.TouchInput.ID == m_move_id &&
-					(!m_move_sent_as_mouse_event || m_draw_crosshair)) {
-				if (dir_free.getLengthSQ() > touch_threshold_sq || m_move_has_really_moved) {
-					m_move_has_really_moved = true;
+		if (m_has_move_id && event.TouchInput.ID == m_move_id) {
+			m_move_pos = touch_pos;
+			m_pointer_pos[event.TouchInput.ID] = touch_pos;
 
-					// update camera_yaw and camera_pitch
-					m_pointer_pos[event.TouchInput.ID] = touch_pos;
+			// update camera_yaw and camera_pitch
+			const double d = g_settings->getFloat("touchscreen_sensitivity", 0.001f, 10.0f)
+					* 6.0f / RenderingEngine::getDisplayDensity();
+			m_camera_yaw_change -= dir_free.X * d;
+			m_camera_pitch_change += dir_free.Y * d;
 
-					// adapt to similar behavior as pc screen
-					const double d = g_settings->getFloat("touchscreen_sensitivity", 0.001f, 10.0f) * 3.0f;
-
-					m_camera_yaw_change -= dir_free.X * d;
-					m_camera_pitch_change += dir_free.Y * d;
-
-					// update shootline
-					// no need to update (X, Y) when using crosshair since the shootline is not used
-					m_shootline = m_device
-							->getSceneManager()
-							->getSceneCollisionManager()
-							->getRayFromScreenCoordinates(touch_pos);
-				}
-			} else if (event.TouchInput.ID == m_move_id && m_move_sent_as_mouse_event) {
-				m_shootline = m_device
-						->getSceneManager()
-						->getSceneCollisionManager()
-						->getRayFromScreenCoordinates(touch_pos);
-			}
+			if (dir_free_original.getLengthSQ() > touch_threshold_sq)
+				m_move_has_really_moved = true;
 		}
 
 		if (m_has_joystick_id && event.TouchInput.ID == m_joystick_id) {
@@ -930,40 +923,6 @@ void TouchScreenGUI::handleChangedButton(const SEvent &event)
 		handleButtonEvent((touch_gui_button_id) current_button_id, event.TouchInput.ID, true);
 }
 
-bool TouchScreenGUI::doRightClick()
-{
-	v2s32 mPos = v2s32(m_move_downlocation.X, m_move_downlocation.Y);
-	if (m_draw_crosshair) {
-		mPos.X = m_screensize.X / 2;
-		mPos.Y = m_screensize.Y / 2;
-	}
-
-	SEvent translated {};
-	translated.EventType               = EET_MOUSE_INPUT_EVENT;
-	translated.MouseInput.X            = mPos.X;
-	translated.MouseInput.Y            = mPos.Y;
-	translated.MouseInput.Shift        = false;
-	translated.MouseInput.Control      = false;
-	translated.MouseInput.ButtonStates = EMBSM_RIGHT;
-
-	// update shootline
-	m_shootline = m_device
-			->getSceneManager()
-			->getSceneCollisionManager()
-			->getRayFromScreenCoordinates(mPos);
-
-	translated.MouseInput.Event = EMIE_RMOUSE_PRESSED_DOWN;
-	verbosestream << "TouchScreenGUI::translateEvent right click press" << std::endl;
-	m_receiver->OnEvent(translated);
-
-	translated.MouseInput.ButtonStates = 0;
-	translated.MouseInput.Event = EMIE_RMOUSE_LEFT_UP;
-	verbosestream << "TouchScreenGUI::translateEvent right click release" << std::endl;
-	m_receiver->OnEvent(translated);
-
-	return true;
-}
-
 void TouchScreenGUI::applyJoystickStatus()
 {
 	if (m_joystick_triggers_aux1) {
@@ -1037,35 +996,27 @@ void TouchScreenGUI::step(float dtime)
 	applyJoystickStatus();
 
 	// if a new placed pointer isn't moved for some time start digging
-	if (m_has_move_id &&
-			(!m_move_has_really_moved) &&
-			(!m_move_sent_as_mouse_event)) {
+	if (m_has_move_id && !m_move_has_really_moved && m_tap_state == TapState::None) {
 		u64 delta = porting::getDeltaMs(m_move_downtime, porting::getTimeMs());
 
 		if (delta > MIN_DIG_TIME_MS) {
-			s32 mX = m_move_downlocation.X;
-			s32 mY = m_move_downlocation.Y;
-			if (m_draw_crosshair) {
-				mX = m_screensize.X / 2;
-				mY = m_screensize.Y / 2;
-			}
-			m_shootline = m_device
-					->getSceneManager()
-					->getSceneCollisionManager()
-					->getRayFromScreenCoordinates(v2s32(mX, mY));
-
-			SEvent translated {};
-			translated.EventType               = EET_MOUSE_INPUT_EVENT;
-			translated.MouseInput.X            = mX;
-			translated.MouseInput.Y            = mY;
-			translated.MouseInput.Shift        = false;
-			translated.MouseInput.Control      = false;
-			translated.MouseInput.ButtonStates = EMBSM_LEFT;
-			translated.MouseInput.Event        = EMIE_LMOUSE_PRESSED_DOWN;
-			verbosestream << "TouchScreenGUI::step left click press" << std::endl;
-			m_receiver->OnEvent(translated);
-			m_move_sent_as_mouse_event         = true;
+			m_tap_state = TapState::LongTap;
 		}
+	}
+
+	// Update the shootline.
+	// Since not only the pointer position, but also the player position and
+	// thus the camera position can change, it doesn't suffice to update the
+	// shootline when a touch event occurs.
+	// Note that the shootline isn't used if touch_use_crosshair is enabled.
+	// Only updating when m_has_move_id means that the shootline will stay at
+	// it's last in-world position when the player doesn't need it.
+	if (!m_draw_crosshair && m_has_move_id) {
+		v2s32 pointer_pos = getPointerPos();
+		m_shootline = m_device
+				->getSceneManager()
+				->getSceneCollisionManager()
+				->getRayFromScreenCoordinates(pointer_pos);
 	}
 
 	m_settings_bar.step(dtime);
@@ -1098,8 +1049,8 @@ void TouchScreenGUI::setVisible(bool visible)
 
 	// clear all active buttons
 	if (!visible) {
-		while (!m_known_ids.empty())
-			handleReleaseEvent(m_known_ids.begin()->id);
+		while (!m_pointer_pos.empty())
+			handleReleaseEvent(m_pointer_pos.begin()->first);
 
 		m_settings_bar.hide();
 		m_rare_controls_bar.hide();
@@ -1123,4 +1074,112 @@ void TouchScreenGUI::show()
 		return;
 
 	setVisible(true);
+}
+
+v2s32 TouchScreenGUI::getPointerPos()
+{
+	if (m_draw_crosshair)
+		return v2s32(m_screensize.X / 2, m_screensize.Y / 2);
+	// We can't just use m_pointer_pos[m_move_id] because applyContextControls
+	// may emit release events after m_pointer_pos[m_move_id] is erased.
+	return m_move_pos;
+}
+
+void TouchScreenGUI::emitMouseEvent(EMOUSE_INPUT_EVENT type)
+{
+	v2s32 pointer_pos = getPointerPos();
+
+	SEvent event{};
+	event.EventType               = EET_MOUSE_INPUT_EVENT;
+	event.MouseInput.X            = pointer_pos.X;
+	event.MouseInput.Y            = pointer_pos.Y;
+	event.MouseInput.Shift        = false;
+	event.MouseInput.Control      = false;
+	event.MouseInput.ButtonStates = 0;
+	event.MouseInput.Event        = type;
+	m_receiver->OnEvent(event);
+}
+
+void TouchScreenGUI::applyContextControls(const TouchInteractionMode &mode)
+{
+	// Since the pointed thing has already been determined when this function
+	// is called, we cannot use this function to update the shootline.
+
+	bool target_dig_pressed = false;
+	bool target_place_pressed = false;
+
+	u64 now = porting::getTimeMs();
+
+	// If the meanings of short and long taps have been swapped, abort any ongoing
+	// short taps because they would do something else than the player expected.
+	// Long taps don't need this, they're adjusted to the swapped meanings instead.
+	if (mode != m_last_mode) {
+		m_dig_pressed_until = 0;
+		m_place_pressed_until = 0;
+	}
+	m_last_mode = mode;
+
+	switch (m_tap_state) {
+	case TapState::ShortTap:
+		if (mode == SHORT_DIG_LONG_PLACE) {
+			if (!m_dig_pressed) {
+				// The button isn't currently pressed, we can press it.
+				m_dig_pressed_until = now + SIMULATED_CLICK_DURATION_MS;
+				// We're done with this short tap.
+				m_tap_state = TapState::None;
+			}  else {
+				// The button is already pressed, perhaps due to another short tap.
+				// Release it now, press it again during the next client step.
+				// We can't release and press during the same client step because
+				// the digging code simply ignores that.
+				m_dig_pressed_until = 0;
+			}
+		} else {
+			if (!m_place_pressed) {
+				// The button isn't currently pressed, we can press it.
+				m_place_pressed_until = now + SIMULATED_CLICK_DURATION_MS;
+				// We're done with this short tap.
+				m_tap_state = TapState::None;
+			}  else {
+				// The button is already pressed, perhaps due to another short tap.
+				// Release it now, press it again during the next client step.
+				// We can't release and press during the same client step because
+				// the digging code simply ignores that.
+				m_place_pressed_until = 0;
+			}
+		}
+		break;
+
+	case TapState::LongTap:
+		if (mode == SHORT_DIG_LONG_PLACE)
+			target_place_pressed = true;
+		else
+			target_dig_pressed = true;
+		break;
+
+	case TapState::None:
+		break;
+	}
+
+	// Apply short taps.
+	target_dig_pressed |= now < m_dig_pressed_until;
+	target_place_pressed |= now < m_place_pressed_until;
+
+	if (target_dig_pressed && !m_dig_pressed) {
+		emitMouseEvent(EMIE_LMOUSE_PRESSED_DOWN);
+		m_dig_pressed = true;
+
+	} else if (!target_dig_pressed && m_dig_pressed) {
+		emitMouseEvent(EMIE_LMOUSE_LEFT_UP);
+		m_dig_pressed = false;
+	}
+
+	if (target_place_pressed && !m_place_pressed) {
+		emitMouseEvent(EMIE_RMOUSE_PRESSED_DOWN);
+		m_place_pressed = true;
+
+	} else if (!target_place_pressed && m_place_pressed) {
+		emitMouseEvent(irr::EMIE_RMOUSE_LEFT_UP);
+		m_place_pressed = false;
+	}
 }

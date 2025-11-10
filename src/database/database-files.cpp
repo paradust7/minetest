@@ -25,6 +25,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "filesys.h"
 #include "server/player_sao.h"
 #include "util/string.h"
+#include <json/json.h>
 #include <cassert>
 
 // !!! WARNING !!!
@@ -428,13 +429,14 @@ bool ModStorageDatabaseFiles::hasModEntry(const std::string &modname, const std:
 }
 
 bool ModStorageDatabaseFiles::setModEntry(const std::string &modname,
-	const std::string &key, const std::string &value)
+	const std::string &key, std::string_view value)
 {
 	Json::Value *meta = getOrCreateJson(modname);
 	if (!meta)
 		return false;
 
-	(*meta)[key] = Json::Value(value);
+	Json::Value value_v(value.data(), value.data() + value.size());
+	(*meta)[key] = std::move(value_v);
 	m_modified.insert(modname);
 
 	return true;

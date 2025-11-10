@@ -20,23 +20,27 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "mainloop.h"
 #include "guiEngine.h"
 
-#include <IGUIStaticText.h>
-#include <ICameraSceneNode.h>
-#include "client/renderingengine.h"
-#include "scripting_mainmenu.h"
-#include "config.h"
-#include "version.h"
-#include "porting.h"
-#include "filesys.h"
-#include "settings.h"
-#include "guiMainMenu.h"
-#include "sound.h"
-#include "httpfetch.h"
-#include "log.h"
 #include "client/fontengine.h"
 #include "client/guiscalingfilter.h"
-#include "irrlicht_changes/static_text.h"
+#include "client/renderingengine.h"
+#include "client/shader.h"
 #include "client/tile.h"
+#include "config.h"
+#include "content/content.h"
+#include "content/mods.h"
+#include "filesys.h"
+#include "guiMainMenu.h"
+#include "httpfetch.h"
+#include "irrlicht_changes/static_text.h"
+#include "log.h"
+#include "porting.h"
+#include "scripting_mainmenu.h"
+#include "settings.h"
+#include "sound.h"
+#include "version.h"
+#include <ICameraSceneNode.h>
+#include <IGUIStaticText.h>
+#include "client/imagefilters.h"
 
 #if USE_SOUND
 	#include "client/sound/sound_openal.h"
@@ -139,6 +143,10 @@ GUIEngine::GUIEngine(JoystickController *joystick,
 	// create texture source
 	m_texture_source = std::make_unique<MenuTextureSource>(rendering_engine->get_video_driver());
 
+	// create shader source
+	// (currently only used by clouds)
+	m_shader_source.reset(createShaderSource());
+
 	// create soundmanager
 #if USE_SOUND
 	if (g_settings->getBool("enable_sound") && g_sound_manager_singleton.get()) {
@@ -210,6 +218,57 @@ GUIEngine::GUIEngine(JoystickController *joystick,
 	});
 }
 
+
+/******************************************************************************/
+std::string findLocaleFileInMods(const std::string &path, const std::string &filename)
+{
+	std::vector<ModSpec> mods = flattenMods(getModsInPath(path, "root", true));
+
+	for (const auto &mod : mods) {
+		std::string ret = mod.path + DIR_DELIM "locale" DIR_DELIM + filename;
+		if (fs::PathExists(ret)) {
+			return ret;
+		}
+	}
+
+	return "";
+}
+
+/******************************************************************************/
+Translations *GUIEngine::getContentTranslations(const std::string &path,
+		const std::string &domain, const std::string &lang_code)
+{
+	if (domain.empty() || lang_code.empty())
+		return nullptr;
+
+	std::string filename = domain + "." + lang_code + ".tr";
+	std::string key = path + DIR_DELIM "locale" DIR_DELIM + filename;
+
+	if (key == m_last_translations_key)
+		return &m_last_translations;
+
+	std::string trans_path = key;
+	ContentType type = getContentType(path);
+	if (type == ContentType::GAME)
+		trans_path = findLocaleFileInMods(path + DIR_DELIM "mods" DIR_DELIM, filename);
+	else if (type == ContentType::MODPACK)
+		trans_path = findLocaleFileInMods(path, filename);
+	// We don't need to search for locale files in a mod, as there's only one `locale` folder.
+
+	if (trans_path.empty())
+		return nullptr;
+
+	m_last_translations_key = key;
+	m_last_translations = {};
+
+	std::string data;
+	if (fs::ReadFile(trans_path, data)) {
+		m_last_translations.loadTranslation(data);
+	}
+
+	return &m_last_translations;
+}
+
 /******************************************************************************/
 bool GUIEngine::loadMainMenuScript()
 {
@@ -237,10 +296,11 @@ bool GUIEngine::loadMainMenuScript()
 /******************************************************************************/
 void GUIEngine::run(std::function<void()> resolve)
 {
+	IrrlichtDevice *device = m_rendering_engine->get_raw_device();
+	driver = device->getVideoDriver();
+
 	// Always create clouds because they may or may not be
 	// needed based on the game selected
-	driver = m_rendering_engine->get_video_driver();
-
 	cloudInit();
 
 	text_height = g_fontengine->getTextHeight();
@@ -267,21 +327,23 @@ void GUIEngine::run(std::function<void()> resolve)
 		);
 	initial_window_maximized = g_settings->getBool("window_maximized");
 
-	t_last_frame = porting::getTimeUs();
 	dtime = 0.0f;
+	fps_control.reset();
 
 	run_loop(resolve);
 }
 
 void GUIEngine::run_loop(std::function<void()> resolve) {
+	IrrlichtDevice *device = m_rendering_engine->get_raw_device();
 	// EXTRANEOUS INDENT
-		bool keep_going = m_rendering_engine->run() && (!m_startgame) && (!m_kill);
+		bool keep_going = m_rendering_engine->run() && !m_startgame && !m_kill;
 		if (!keep_going) {
             RenderingEngine::autosaveScreensizeAndCo(initial_screen_size, initial_window_maximized);
 			resolve();
 			return;
 		}
-		if (RenderingEngine::shouldRender()) {
+		fps_control.limit(device, &dtime);
+		if (device->isWindowVisible()) {
 			// check if we need to update the "upper left corner"-text
 			if (text_height != g_fontengine->getTextHeight()) {
 				updateTopLeftTextSize();
@@ -290,13 +352,12 @@ void GUIEngine::run_loop(std::function<void()> resolve) {
 
 			driver->beginScene(true, true, RenderingEngine::MENU_SKY_COLOR);
 
-			if (m_clouds_enabled)
-			{
-				cloudPreProcess();
+			if (m_clouds_enabled) {
+				drawClouds(dtime);
 				drawOverlay(driver);
-			}
-			else
+			} else {
 				drawBackground(driver);
+			}
 
 			drawFooter(driver);
 
@@ -311,24 +372,9 @@ void GUIEngine::run_loop(std::function<void()> resolve) {
 			driver->endScene();
         }
 
-		IrrlichtDevice *device = m_rendering_engine->get_raw_device();
-
-		u32 frametime_min = 1000 / (device->isWindowFocused()
-			? g_settings->getFloat("fps_max")
-			: g_settings->getFloat("fps_max_unfocused"));
-		//if (m_clouds_enabled)
-		//	cloudPostProcess(frametime_min, device);
-		//else
-		//	sleep_ms(frametime_min);
-
-		u64 t_now = porting::getTimeUs();
-		dtime = static_cast<f32>(t_now - t_last_frame) * 1.0e-6f;
-		t_last_frame = t_now;
-
 		m_script->step();
 
 		sound_volume_control(m_sound_manager.get(), device->isWindowActive());
-
 		m_sound_manager->step(dtime);
 
 #ifdef __ANDROID__
@@ -347,68 +393,37 @@ GUIEngine::~GUIEngine()
 
 	m_sound_manager.reset();
 
-	m_irr_toplefttext->setText(L"");
+	m_irr_toplefttext->remove();
 
-	//clean up texture pointers
+	m_cloud.clouds.reset();
+
+	// delete textures
 	for (image_definition &texture : m_textures) {
 		if (texture.texture)
 			m_rendering_engine->get_video_driver()->removeTexture(texture.texture);
 	}
-
-	m_texture_source.reset();
-
-	m_cloud.clouds.reset();
 }
 
 /******************************************************************************/
 void GUIEngine::cloudInit()
 {
-	m_cloud.clouds = make_irr<Clouds>(m_smgr, -1, rand());
+	m_shader_source->addShaderConstantSetterFactory(
+		new FogShaderConstantSetterFactory());
+
+	m_cloud.clouds = make_irr<Clouds>(m_smgr, m_shader_source.get(), -1, rand());
 	m_cloud.clouds->setHeight(100.0f);
 	m_cloud.clouds->update(v3f(0, 0, 0), video::SColor(255,240,240,255));
 
 	m_cloud.camera = m_smgr->addCameraSceneNode(0,
 				v3f(0,0,0), v3f(0, 60, 100));
 	m_cloud.camera->setFarValue(10000);
-
-	m_cloud.lasttime = m_rendering_engine->get_timer_time();
 }
 
 /******************************************************************************/
-void GUIEngine::cloudPreProcess()
+void GUIEngine::drawClouds(float dtime)
 {
-	u32 time = m_rendering_engine->get_timer_time();
-
-	if(time > m_cloud.lasttime)
-		m_cloud.dtime = (time - m_cloud.lasttime) / 1000.0;
-	else
-		m_cloud.dtime = 0;
-
-	m_cloud.lasttime = time;
-
-	m_cloud.clouds->step(m_cloud.dtime*3);
-	m_cloud.clouds->render();
+	m_cloud.clouds->step(dtime*3);
 	m_smgr->drawAll();
-}
-
-/******************************************************************************/
-void GUIEngine::cloudPostProcess(u32 frametime_min, IrrlichtDevice *device)
-{
-	// Time of frame without fps limit
-	u32 busytime_u32;
-
-	// not using getRealTime is necessary for wine
-	u32 time = m_rendering_engine->get_timer_time();
-	if(time > m_cloud.lasttime)
-		busytime_u32 = time - m_cloud.lasttime;
-	else
-		busytime_u32 = 0;
-
-	// FPS limit
-	if (busytime_u32 < frametime_min) {
-		u32 sleeptime = frametime_min - busytime_u32;
-		device->sleep(sleeptime);
-	}
 }
 
 /******************************************************************************/
@@ -626,13 +641,15 @@ bool GUIEngine::downloadFile(const std::string &url, const std::string &target)
 	fetch_request.caller = HTTPFETCH_SYNC;
 	fetch_request.timeout = std::max(MIN_HTTPFETCH_TIMEOUT,
 		(long)g_settings->getS32("curl_file_download_timeout"));
-	httpfetch_sync(fetch_request, fetch_result);
+	bool completed = httpfetch_sync_interruptible(fetch_request, fetch_result);
 
-	if (!fetch_result.succeeded) {
+	if (!completed || !fetch_result.succeeded) {
 		target_file.close();
 		fs::DeleteSingleFileOrEmptyDirectory(target);
 		return false;
 	}
+	// TODO: directly stream the response data into the file instead of first
+	// storing the complete response in memory
 	target_file << fetch_result.data;
 
 	return true;

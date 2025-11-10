@@ -38,7 +38,9 @@ Functions
 ---------
 
 * `core.start()`
+  * start game session
 * `core.close()`
+  * exit engine
 * `core.get_min_supp_proto()`
   * returns the minimum supported network protocol version
 * `core.get_max_supp_proto()`
@@ -53,6 +55,10 @@ Functions
   * Android only. Shares file using the share popup
 * `core.get_version()` (possible in async calls)
   * returns current core version
+* `core.set_once(key, value)`:
+  * save a string value that persists even if menu is closed
+* `core.get_once(key)`:
+  * get a string value saved by above function, or `nil`
 
 
 
@@ -317,6 +323,7 @@ Package - content which is downloadable from the content db, may or may not be i
           description      = "description",
           author           = "author",
           path             = "path/to/content",
+          textdomain = "textdomain", -- textdomain to translate title / description with
           depends          = {"mod", "names"}, -- mods only
           optional_depends = {"mod", "names"}, -- mods only
       }
@@ -334,6 +341,13 @@ Package - content which is downloadable from the content db, may or may not be i
           error_message = "",  -- message or nil
       }
       ```
+* `core.get_content_translation(path, domain, string)`
+  * Translates `string` using `domain` in content directory at `path`.
+  * Textdomains will be found by looking through all locale folders.
+  * String should contain translation markup from `core.translate(textdomain, ...)`.
+  * Ex: `core.get_content_translation("mods/mymod", "mymod", core.translate("mymod", "Hello World"))`
+    will translate "Hello World" into the current user's language
+    using `mods/mymod/locale/mymod.fr.tr`.
 
 Logging
 -------

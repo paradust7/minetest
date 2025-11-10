@@ -25,7 +25,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "client/client.h"
 #include "client/renderingengine.h"
 #include "client/sound.h"
-#include "client/tile.h"
+#include "client/texturesource.h"
 #include "client/mapblock_mesh.h"
 #include "util/basic_macros.h"
 #include "util/numeric.h"
@@ -411,8 +411,7 @@ GenericCAO::~GenericCAO()
 
 bool GenericCAO::getSelectionBox(aabb3f *toset) const
 {
-	if (!m_prop.is_visible || !m_is_visible || m_is_local_player
-			|| !m_prop.pointable) {
+	if (!m_prop.is_visible || !m_is_visible || m_is_local_player) {
 		return false;
 	}
 	*toset = m_selection_box;
@@ -620,6 +619,8 @@ void GenericCAO::addToScene(ITextureSource *tsrc, scene::ISceneManager *smgr)
 
 	infostream << "GenericCAO::addToScene(): " << m_prop.visual << std::endl;
 
+	m_material_type_param = 0.5f; // May cut off alpha < 128 depending on m_material_type
+
 	if (m_enable_shaders) {
 		IShaderSource *shader_source = m_client->getShaderSource();
 		MaterialType material_type;
@@ -634,8 +635,12 @@ void GenericCAO::addToScene(ITextureSource *tsrc, scene::ISceneManager *smgr)
 		u32 shader_id = shader_source->getShader("object_shader", material_type, NDT_NORMAL);
 		m_material_type = shader_source->getShaderInfo(shader_id).material;
 	} else {
-		m_material_type = (m_prop.use_texture_alpha) ?
-			video::EMT_TRANSPARENT_ALPHA_CHANNEL : video::EMT_TRANSPARENT_ALPHA_CHANNEL_REF;
+		if (m_prop.use_texture_alpha) {
+			m_material_type = video::EMT_TRANSPARENT_ALPHA_CHANNEL;
+			m_material_type_param = 1.0f / 256.f; // minimal alpha for texture rendering
+		} else {
+			m_material_type = video::EMT_TRANSPARENT_ALPHA_CHANNEL_REF;
+		}
 	}
 
 	auto grabMatrixNode = [this] {
@@ -807,10 +812,21 @@ void GenericCAO::addToScene(ITextureSource *tsrc, scene::ISceneManager *smgr)
 			(m_prop.visual == "wielditem"));
 
 		m_wield_meshnode->setScale(m_prop.visual_size / 2.0f);
-		m_wield_meshnode->setColor(video::SColor(0xFFFFFFFF));
 	} else {
 		infostream<<"GenericCAO::addToScene(): \""<<m_prop.visual
 				<<"\" not supported"<<std::endl;
+	}
+
+	/* Set VBO hint */
+	// - if shaders are disabled we modify the mesh often
+	// - sprites are also modified often
+	// - the wieldmesh sets its own hint
+	// - bone transformations do not need to modify the vertex data
+	if (m_enable_shaders && (m_meshnode || m_animated_meshnode)) {
+		if (m_meshnode)
+			m_meshnode->getMesh()->setHardwareMappingHint(scene::EHM_STATIC);
+		if (m_animated_meshnode)
+			m_animated_meshnode->getMesh()->setHardwareMappingHint(scene::EHM_STATIC);
 	}
 
 	/* don't update while punch texture modifier is active */
@@ -1211,7 +1227,7 @@ void GenericCAO::step(float dtime, ClientEnvironment *env)
 		}
 	}
 
-	if (node && fabs(m_prop.automatic_rotate) > 0.001f) {
+	if (node && std::abs(m_prop.automatic_rotate) > 0.001f) {
 		// This is the child node's rotation. It is only used for automatic_rotate.
 		v3f local_rot = node->getRotation();
 		local_rot.Y = modulo360f(local_rot.Y - dtime * core::RADTODEG *
@@ -1341,7 +1357,7 @@ void GenericCAO::updateTextures(std::string mod)
 
 			video::SMaterial &material = m_spritenode->getMaterial(0);
 			material.MaterialType = m_material_type;
-			material.MaterialTypeParam = 0.5f;
+			material.MaterialTypeParam = m_material_type_param;
 			material.setTexture(0, tsrc->getTextureForMesh(texturestring));
 
 			// This allows setting per-material colors. However, until a real lighting
@@ -1377,7 +1393,7 @@ void GenericCAO::updateTextures(std::string mod)
 				// Set material flags and texture
 				video::SMaterial &material = m_animated_meshnode->getMaterial(i);
 				material.MaterialType = m_material_type;
-				material.MaterialTypeParam = 0.5f;
+				material.MaterialTypeParam = m_material_type_param;
 				material.TextureLayers[0].Texture = texture;
 				material.Lighting = true;
 				material.BackfaceCulling = m_prop.backface_culling;
@@ -1421,7 +1437,7 @@ void GenericCAO::updateTextures(std::string mod)
 				// Set material flags and texture
 				video::SMaterial &material = m_meshnode->getMaterial(i);
 				material.MaterialType = m_material_type;
-				material.MaterialTypeParam = 0.5f;
+				material.MaterialTypeParam = m_material_type_param;
 				material.Lighting = false;
 				material.setTexture(0, tsrc->getTextureForMesh(texturestring));
 				material.getTextureMatrix(0).makeIdentity();

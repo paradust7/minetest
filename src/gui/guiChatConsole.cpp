@@ -25,7 +25,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "client/keycode.h"
 #include "settings.h"
 #include "porting.h"
-#include "client/tile.h"
+#include "client/texturesource.h"
 #include "client/fontengine.h"
 #include "log.h"
 #include "gettext.h"
@@ -678,12 +678,8 @@ bool GUIChatConsole::OnEvent(const SEvent& event)
 				if (!was_url_pressed
 						&& event.MouseInput.Event == EMIE_MMOUSE_PRESSED_DOWN) {
 					// Paste primary selection at cursor pos
-#if IRRLICHT_VERSION_MT_REVISION >= 11
 					const c8 *text = Environment->getOSOperator()
 							->getTextFromPrimarySelection();
-#else
-					const c8 *text = nullptr;
-#endif
 					if (text)
 						prompt.input(utf8_to_wide(text));
 				}
@@ -774,9 +770,7 @@ bool GUIChatConsole::weblinkClick(s32 col, s32 row)
 
 void GUIChatConsole::updatePrimarySelection()
 {
-#if IRRLICHT_VERSION_MT_REVISION >= 11
 	std::wstring wselected = m_chat_backend->getPrompt().getSelection();
 	std::string selected = wide_to_utf8(wselected);
 	Environment->getOSOperator()->copyToPrimarySelection(selected.c_str());
-#endif
 }

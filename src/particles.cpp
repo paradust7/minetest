@@ -46,9 +46,9 @@ T RangedParameter<T>::pickWithin() const
 	auto p = numericAbsolute(bias) + 1;
 	for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i) {
 		if (bias < 0)
-			values[i] = 1.0f - pow(myrand_float(), p);
+			values[i] = 1.0f - std::pow(myrand_float(), p);
 		else
-			values[i] = pow(myrand_float(), p);
+			values[i] = std::pow(myrand_float(), p);
 	}
 	return T::pick(values, min, max);
 }
@@ -84,6 +84,8 @@ T TweenedParameter<T>::blend(float fac) const
 					fac *= myrand_range(0.7f, 1.0f);
 				}
 			}
+			case TweenStyle::TweenStyle_END:
+				break;
 		}
 		if (fac>1.f)
 			fac = 1.f;
@@ -110,6 +112,8 @@ template<typename T>
 void TweenedParameter<T>::deSerialize(std::istream &is)
 {
 	style = static_cast<TweenStyle>(readU8(is));
+	if (style >= TweenStyle::TweenStyle_END)
+		style = TweenStyle::fwd;
 	reps = readU16(is);
 	beginning = readF32(is);
 	start.deSerialize(is);

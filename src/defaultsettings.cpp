@@ -39,14 +39,18 @@ void set_default_settings()
 	// Client
 	settings->setDefault("address", "");
 	settings->setDefault("enable_sound", "true");
+#if ENABLE_TOUCH
+	settings->setDefault("enable_touch", "true");
+#else
+	settings->setDefault("enable_touch", "false");
+#endif
 	settings->setDefault("sound_volume", "0.8");
 	settings->setDefault("sound_volume_unfocused", "0.3");
 	settings->setDefault("mute_sound", "false");
+	settings->setDefault("sound_extensions_blacklist", "");
 	settings->setDefault("enable_mesh_cache", "false");
 	settings->setDefault("mesh_generation_interval", "0");
 	settings->setDefault("mesh_generation_threads", "0");
-	settings->setDefault("meshgen_block_cache_size", "20");
-	settings->setDefault("enable_vbo", "true");
 	settings->setDefault("free_move", "false");
 	settings->setDefault("pitch_move", "false");
 	settings->setDefault("fast_move", "false");
@@ -90,7 +94,7 @@ void set_default_settings()
 	settings->setDefault("keymap_cmd_local", ".");
 	settings->setDefault("keymap_minimap", "KEY_KEY_V");
 	settings->setDefault("keymap_console", "KEY_F10");
-#if HAVE_TOUCHSCREENGUI
+#if ENABLE_TOUCH
 	// See https://github.com/minetest/minetest/issues/12792
 	settings->setDefault("keymap_rangeselect", "KEY_KEY_R");
 #else
@@ -192,7 +196,11 @@ void set_default_settings()
 	settings->setDefault("screen_h", "600");
 	settings->setDefault("window_maximized", "false");
 	settings->setDefault("autosave_screensize", "true");
+#ifdef ENABLE_TOUCH
+	settings->setDefault("fullscreen", "true");
+#else
 	settings->setDefault("fullscreen", "false");
+#endif
 	settings->setDefault("vsync", "false");
 	settings->setDefault("fov", "72");
 	settings->setDefault("leaves_style", "fancy");
@@ -207,7 +215,7 @@ void set_default_settings()
 	settings->setDefault("lighting_boost_spread", "0.2");
 	settings->setDefault("texture_path", "");
 	settings->setDefault("shader_path", "");
-	settings->setDefault("video_driver", "webgl1");
+	settings->setDefault("video_driver", "ogles2");
 	settings->setDefault("cinematic", "false");
 	settings->setDefault("camera_smoothing", "0.0");
 	settings->setDefault("cinematic_camera_smoothing", "0.7");
@@ -249,6 +257,7 @@ void set_default_settings()
 	settings->setDefault("minimap_double_scan_height", "true");
 
 	// Effects
+	settings->setDefault("enable_post_processing", "false");
 	settings->setDefault("directional_colored_fog", "true");
 	settings->setDefault("inventory_items_animations", "false");
 	settings->setDefault("mip_map", "false");
@@ -297,7 +306,7 @@ void set_default_settings()
 	settings->setDefault("aux1_descends", "false");
 	settings->setDefault("doubletap_jump", "false");
 	settings->setDefault("always_fly_fast", "true");
-#ifdef HAVE_TOUCHSCREENGUI
+#ifdef ENABLE_TOUCH
 	settings->setDefault("autojump", "true");
 #else
 	settings->setDefault("autojump", "false");
@@ -396,7 +405,7 @@ void set_default_settings()
 	// This causes frametime jitter on client side, or does it?
 	settings->setDefault("max_block_send_distance", "12");
 	settings->setDefault("block_send_optimize_distance", "4");
-	settings->setDefault("block_cull_optimize_distance", "20");
+	settings->setDefault("block_cull_optimize_distance", "25");
 	settings->setDefault("server_side_occlusion_culling", "true");
 	settings->setDefault("csm_restriction_flags", "62");
 	settings->setDefault("csm_restriction_noderange", "0");
@@ -476,12 +485,12 @@ void set_default_settings()
 	settings->setDefault("keymap_sneak", "KEY_SHIFT");
 #endif
 
-#ifdef HAVE_TOUCHSCREENGUI
 	settings->setDefault("touchscreen_threshold", "20");
 	settings->setDefault("touchscreen_sensitivity", "0.2");
 	settings->setDefault("touch_use_crosshair", "false");
 	settings->setDefault("fixed_virtual_joystick", "false");
 	settings->setDefault("virtual_joystick_triggers_aux1", "false");
+#ifdef ENABLE_TOUCH
 	settings->setDefault("clickable_chat_weblinks", "false");
 #else
 	settings->setDefault("clickable_chat_weblinks", "true");
@@ -490,7 +499,6 @@ void set_default_settings()
 #ifdef __ANDROID__
 	settings->setDefault("screen_w", "0");
 	settings->setDefault("screen_h", "0");
-	settings->setDefault("fullscreen", "true");
 	settings->setDefault("performance_tradeoffs", "true");
 	settings->setDefault("max_simultaneous_block_sends_per_client", "10");
 	settings->setDefault("emergequeue_limit_diskonly", "16");
@@ -502,6 +510,7 @@ void set_default_settings()
 	settings->setDefault("active_block_range", "2");
 	settings->setDefault("viewing_range", "50");
 	settings->setDefault("leaves_style", "simple");
+	settings->setDefault("enable_post_processing", "false");
 	settings->setDefault("debanding", "false");
 	settings->setDefault("curl_verify_cert", "false");
 

@@ -47,13 +47,13 @@ end
 
 
 local change_keys = {
-	query_text = "Change Keys",
+	query_text = "Controls",
 	requires = {
 		keyboard_mouse = true,
 	},
 	get_formspec = function(self, avail_w)
 		local btn_w = math.min(avail_w, 3)
-		return ("button[0,0;%f,0.8;btn_change_keys;%s]"):format(btn_w, fgettext("Change Keys")), 0.8
+		return ("button[0,0;%f,0.8;btn_change_keys;%s]"):format(btn_w, fgettext("Controls")), 0.8
 	end,
 	on_submit = function(self, fields)
 		if fields.btn_change_keys then
@@ -312,12 +312,12 @@ local function check_requirements(name, requires)
 	end
 
 	local video_driver = core.get_active_driver()
-	local shaders_support = video_driver == "opengl" or video_driver == "ogles2"
+	local shaders_support = video_driver == "opengl" or video_driver == "opengl3" or video_driver == "ogles2"
 	local special = {
 		android = PLATFORM == "Android",
 		desktop = PLATFORM ~= "Android",
-		touchscreen_gui = TOUCHSCREEN_GUI,
-		keyboard_mouse = not TOUCHSCREEN_GUI,
+		touchscreen_gui = core.settings:get_bool("enable_touch"),
+		keyboard_mouse = not core.settings:get_bool("enable_touch"),
 		shaders_support = shaders_support,
 		shaders = core.settings:get_bool("enable_shaders") and shaders_support,
 		opengl = video_driver == "opengl",
@@ -449,13 +449,14 @@ local function get_formspec(dialogdata)
 
 	local extra_h = 1 -- not included in tabsize.height
 	local tabsize = {
-		width = TOUCHSCREEN_GUI and 16.5 or 15.5,
-		height = TOUCHSCREEN_GUI and (10 - extra_h) or 12,
+		width = core.settings:get_bool("enable_touch") and 16.5 or 15.5,
+		height = core.settings:get_bool("enable_touch") and (10 - extra_h) or 12,
 	}
 
-	local scrollbar_w = TOUCHSCREEN_GUI and 0.6 or 0.4
+	local scrollbar_w = core.settings:get_bool("enable_touch") and 0.6 or 0.4
 
-	local left_pane_width = TOUCHSCREEN_GUI and 4.5 or 4.25
+	local left_pane_width = core.settings:get_bool("enable_touch") and 4.5 or 4.25
+	local left_pane_padding = 0.25
 	local search_width = left_pane_width + scrollbar_w - (0.75 * 2)
 
 	local back_w = 3
@@ -468,7 +469,7 @@ local function get_formspec(dialogdata)
 	local fs = {
 		"formspec_version[6]",
 		"size[", tostring(tabsize.width), ",", tostring(tabsize.height + extra_h), "]",
-		TOUCHSCREEN_GUI and "padding[0.01,0.01]" or "",
+		core.settings:get_bool("enable_touch") and "padding[0.01,0.01]" or "",
 		"bgcolor[#0000]",
 
 		-- HACK: this is needed to allow resubmitting the same formspec
@@ -516,9 +517,9 @@ local function get_formspec(dialogdata)
 			y = y + 0.82
 		end
 		fs[#fs + 1] = ("box[0,%f;%f,0.8;%s]"):format(
-			y, left_pane_width, other_page.id == page_id and "#467832FF" or "#3339")
+			y, left_pane_width-left_pane_padding, other_page.id == page_id and "#467832FF" or "#3339")
 		fs[#fs + 1] = ("button[0,%f;%f,0.8;page_%s;%s]")
-			:format(y, left_pane_width, other_page.id, fgettext(other_page.title))
+			:format(y, left_pane_width-left_pane_padding, other_page.id, fgettext(other_page.title))
 		y = y + 0.82
 	end
 
@@ -608,6 +609,16 @@ local function get_formspec(dialogdata)
 end
 
 
+-- On Android, closing the app via the "Recents screen" won't result in a clean
+-- exit, discarding any setting changes made by the user.
+-- To avoid that, we write the settings file in more cases on Android.
+function write_settings_early()
+	if PLATFORM == "Android" then
+		core.settings:write()
+	end
+end
+
+
 local function buttonhandler(this, fields)
 	local dialogdata = this.data
 	dialogdata.leftscroll = core.explode_scrollbar_event(fields.leftscroll).value or dialogdata.leftscroll
@@ -622,17 +633,31 @@ local function buttonhandler(this, fields)
 	if fields.show_technical_names ~= nil then
 		local value = core.is_yes(fields.show_technical_names)
 		core.settings:set_bool("show_technical_names", value)
+		write_settings_early()
+
 		return true
 	end
 
 	if fields.show_advanced ~= nil then
 		local value = core.is_yes(fields.show_advanced)
 		core.settings:set_bool("show_advanced", value)
+		write_settings_early()
+	end
 
+	-- enable_touch is a checkbox in a setting component. We handle this
+	-- setting differently so we can hide/show pages using the next if-statement
+	if fields.enable_touch ~= nil then
+		local value = core.is_yes(fields.enable_touch)
+		core.settings:set_bool("enable_touch", value)
+		write_settings_early()
+	end
+
+	if fields.show_advanced ~= nil or fields.enable_touch ~= nil then
 		local suggested_page_id = update_filtered_pages(dialogdata.query)
 
+		dialogdata.components = nil
+
 		if not filtered_page_by_id[dialogdata.page_id] then
-			dialogdata.components = nil
 			dialogdata.leftscroll = 0
 			dialogdata.rightscroll = 0
 
@@ -672,12 +697,15 @@ local function buttonhandler(this, fields)
 
 	for i, comp in ipairs(dialogdata.components) do
 		if comp.on_submit and comp:on_submit(fields, this) then
+			write_settings_early()
+
 			-- Clear components so they regenerate
 			dialogdata.components = nil
 			return true
 		end
 		if comp.setting and fields["reset_" .. i] then
 			core.settings:remove(comp.setting.name)
+			write_settings_early()
 
 			-- Clear components so they regenerate
 			dialogdata.components = nil

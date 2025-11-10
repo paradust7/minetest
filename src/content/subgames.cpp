@@ -30,7 +30,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "util/string.h"
 
 #ifndef SERVER
-#include "client/tile.h" // getImagePath
+#include "client/texturepaths.h"
 #endif
 
 // The maximum number of identical world names allowed
@@ -78,8 +78,21 @@ struct GameFindPath
 
 std::string getSubgamePathEnv()
 {
+	static bool has_warned = false;
 	char *subgame_path = getenv("MINETEST_SUBGAME_PATH");
-	return subgame_path ? std::string(subgame_path) : "";
+	if (subgame_path && !has_warned) {
+		warningstream << "MINETEST_SUBGAME_PATH is deprecated, use MINETEST_GAME_PATH instead."
+				<< std::endl;
+		has_warned = true;
+	}
+
+	char *game_path = getenv("MINETEST_GAME_PATH");
+
+	if (game_path)
+		return std::string(game_path);
+	else if (subgame_path)
+		return std::string(subgame_path);
+	return "";
 }
 
 SubgameSpec findSubgame(const std::string &id)
@@ -227,9 +240,9 @@ std::set<std::string> getAvailableGameIds()
 
 			// Add it to result
 			const char *ends[] = {"_game", NULL};
-			std::string shorter = removeStringEnd(dln.name, ends);
+			auto shorter = removeStringEnd(dln.name, ends);
 			if (!shorter.empty())
-				gameids.insert(shorter);
+				gameids.emplace(shorter);
 			else
 				gameids.insert(dln.name);
 		}
@@ -428,12 +441,12 @@ void loadGameConfAndInitWorld(const std::string &path, const std::string &name,
 		std::unordered_set<std::string> disallowed_mapgens;
 		if (gameconf.exists("disallowed_mapgens")) {
 			for (const auto &s : split(gameconf.get("disallowed_mapgens"), ',')) {
-				disallowed_mapgens.insert(trim(s));
+				disallowed_mapgens.emplace(trim(s));
 			}
 		}
 		if (gameconf.exists("allowed_mapgens")) {
 			for (const auto &s : split(gameconf.get("allowed_mapgens"), ',')) {
-				allowed_mapgens.insert(trim(s));
+				allowed_mapgens.emplace(trim(s));
 			}
 		}
 		// Use the first acceptable mapgen

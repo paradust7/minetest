@@ -33,12 +33,12 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <IGUICheckBox.h>
 #include <IGUIComboBox.h>
 #include <IGUIEditBox.h>
-#include <IGUIStaticText.h>
 #include <IGUIFont.h>
 #include <IGUITabControl.h>
+#include <IGUIImage.h>
+#include <IAnimatedMeshSceneNode.h>
 #include "client/renderingengine.h"
 #include "log.h"
-#include "client/tile.h" // ITextureSource
 #include "client/hud.h" // drawItemStack
 #include "filesys.h"
 #include "gettime.h"
@@ -315,13 +315,11 @@ void GUIFormSpecMenu::parseSize(parserData* data, const std::string &element)
 		data->invsize.Y = MYMAX(0, stof(parts[1]));
 
 		lockSize(false);
-#ifndef HAVE_TOUCHSCREENGUI
-		if (parts.size() == 3) {
+		if (!g_settings->getBool("enable_touch") && parts.size() == 3) {
 			if (parts[2] == "true") {
 				lockSize(true,v2u32(800,600));
 			}
 		}
-#endif
 		data->explicit_size = true;
 		return;
 	}
@@ -754,7 +752,7 @@ void GUIFormSpecMenu::parseScrollBarOptions(parserData* data, const std::string 
 			data->scrollbar_options.thumb_size = value <= 0 ? 1 : value;
 			continue;
 		} else if (options[0] == "arrows") {
-			std::string value = trim(options[1]);
+			auto value = trim(options[1]);
 			if (value == "hide")
 				data->scrollbar_options.arrow_visiblity = GUIScrollBar::HIDE;
 			else if (value == "show")
@@ -978,14 +976,18 @@ void GUIFormSpecMenu::parseItemImage(parserData* data, const std::string &elemen
 void GUIFormSpecMenu::parseButton(parserData* data, const std::string &element,
 		const std::string &type)
 {
+	int expected_parts = (type == "button_url" || type == "button_url_exit") ? 5 : 4;
 	std::vector<std::string> parts;
-	if (!precheckElement("button", element, 4, 4, parts))
+	if (!precheckElement("button", element, expected_parts, expected_parts, parts))
 		return;
 
 	std::vector<std::string> v_pos = split(parts[0],',');
 	std::vector<std::string> v_geom = split(parts[1],',');
 	std::string name = parts[2];
 	std::string label = parts[3];
+	std::string url;
+	if (type == "button_url" || type == "button_url_exit")
+		url = parts[4];
 
 	MY_CHECKPOS("button",0);
 	MY_CHECKGEOM("button",1);
@@ -1020,8 +1022,10 @@ void GUIFormSpecMenu::parseButton(parserData* data, const std::string &element,
 		258 + m_fields.size()
 	);
 	spec.ftype = f_Button;
-	if(type == "button_exit")
+	if (type == "button_exit" || type == "button_url_exit")
 		spec.is_exit = true;
+	if (type == "button_url" || type == "button_url_exit")
+		spec.url = url;
 
 	GUIButton *e = GUIButton::addButton(Environment, rect, m_tsrc,
 			data->current_parent, spec.fid, spec.flabel.c_str());
@@ -2448,8 +2452,8 @@ bool GUIFormSpecMenu::parseSizeDirect(parserData* data, const std::string &eleme
 	if (parts.size() < 2)
 		return false;
 
-	std::string type = trim(parts[0]);
-	std::string description = trim(parts[1]);
+	auto type = trim(parts[0]);
+	std::string description(trim(parts[1]));
 
 	if (type != "size" && type != "invsize")
 		return false;
@@ -2472,8 +2476,8 @@ bool GUIFormSpecMenu::parsePositionDirect(parserData *data, const std::string &e
 	if (parts.size() != 2)
 		return false;
 
-	std::string type = trim(parts[0]);
-	std::string description = trim(parts[1]);
+	auto type = trim(parts[0]);
+	std::string description(trim(parts[1]));
 
 	if (type != "position")
 		return false;
@@ -2511,8 +2515,8 @@ bool GUIFormSpecMenu::parseAnchorDirect(parserData *data, const std::string &ele
 	if (parts.size() != 2)
 		return false;
 
-	std::string type = trim(parts[0]);
-	std::string description = trim(parts[1]);
+	auto type = trim(parts[0]);
+	std::string description(trim(parts[1]));
 
 	if (type != "anchor")
 		return false;
@@ -2551,8 +2555,8 @@ bool GUIFormSpecMenu::parsePaddingDirect(parserData *data, const std::string &el
 	if (parts.size() != 2)
 		return false;
 
-	std::string type = trim(parts[0]);
-	std::string description = trim(parts[1]);
+	auto type = trim(parts[0]);
+	std::string description(trim(parts[1]));
 
 	if (type != "padding")
 		return false;
@@ -2623,7 +2627,7 @@ bool GUIFormSpecMenu::parseStyle(parserData *data, const std::string &element, b
 
 	std::vector<std::string> selectors = split(parts[0], ',');
 	for (size_t sel = 0; sel < selectors.size(); sel++) {
-		std::string selector = trim(selectors[sel]);
+		std::string selector(trim(selectors[sel]));
 
 		// Copy the style properties to a new StyleSpec
 		// This allows a separate state mask per-selector
@@ -2899,7 +2903,7 @@ void GUIFormSpecMenu::parseElement(parserData* data, const std::string &element)
 		return;
 	}
 
-	if (type == "button" || type == "button_exit") {
+	if (type == "button" || type == "button_exit" || type == "button_url" || type == "button_url_exit") {
 		parseButton(data, description, type);
 		return;
 	}
@@ -3215,7 +3219,7 @@ void GUIFormSpecMenu::regenerateGui(v2u32 screensize)
 	mydata.real_coordinates = m_formspec_version >= 2;
 	for (; i < elements.size(); i++) {
 		std::vector<std::string> parts = split(elements[i], '[');
-		std::string name = trim(parts[0]);
+		auto name = trim(parts[0]);
 		if (name != "real_coordinates" || parts.size() != 2)
 			break; // Invalid format
 
@@ -3283,14 +3287,15 @@ void GUIFormSpecMenu::regenerateGui(v2u32 screensize)
 
 			s32 min_screen_dim = std::min(padded_screensize.X, padded_screensize.Y);
 
-#ifdef HAVE_TOUCHSCREENGUI
-			// In Android, the preferred imgsize should be larger to accommodate the
-			// smaller screensize.
-			double prefer_imgsize = min_screen_dim / 10 * gui_scaling;
-#else
-			// Desktop computers have more space, so try to fit 15 coordinates.
-			double prefer_imgsize = min_screen_dim / 15 * gui_scaling;
-#endif
+			double prefer_imgsize;
+			if (g_settings->getBool("enable_touch")) {
+				// The preferred imgsize should be larger to accommodate the
+				// smaller screensize.
+				prefer_imgsize = min_screen_dim / 10 * gui_scaling;
+			} else {
+				// Desktop computers have more space, so try to fit 15 coordinates.
+				prefer_imgsize = min_screen_dim / 15 * gui_scaling;
+			}
 			// Try to use the preferred imgsize, but if that's bigger than the maximum
 			// size, use the maximum size.
 			use_imgsize = std::min(prefer_imgsize,
@@ -3497,46 +3502,58 @@ void GUIFormSpecMenu::legacySortElements(std::list<IGUIElement *>::iterator from
 }
 
 #ifdef __ANDROID__
-bool GUIFormSpecMenu::getAndroidUIInput()
+void GUIFormSpecMenu::getAndroidUIInput()
 {
-	if (!hasAndroidUIInput())
-		return false;
+	porting::AndroidDialogState dialogState = getAndroidUIInputState();
+	if (dialogState == porting::DIALOG_SHOWN) {
+		return;
+	} else if (dialogState == porting::DIALOG_CANCELED) {
+		m_jni_field_name.clear();
+		return;
+	}
 
-	// still waiting
-	if (porting::getInputDialogState() == -1)
-		return true;
+	porting::AndroidDialogType dialog_type = porting::getLastInputDialogType();
 
 	std::string fieldname = m_jni_field_name;
 	m_jni_field_name.clear();
 
 	for (const FieldSpec &field : m_fields) {
 		if (field.fname != fieldname)
-			continue;
+			continue; // Iterate until found
 
 		IGUIElement *element = getElementFromId(field.fid, true);
 
-		if (!element || element->getType() != irr::gui::EGUIET_EDIT_BOX)
-			return false;
+		if (!element)
+			return;
 
-		gui::IGUIEditBox *editbox = (gui::IGUIEditBox *)element;
-		std::string text = porting::getInputDialogValue();
-		editbox->setText(utf8_to_wide(text).c_str());
+		auto element_type = element->getType();
+		if (dialog_type == porting::TEXT_INPUT && element_type == irr::gui::EGUIET_EDIT_BOX) {
+			gui::IGUIEditBox *editbox = (gui::IGUIEditBox *)element;
+			std::string text = porting::getInputDialogMessage();
+			editbox->setText(utf8_to_wide(text).c_str());
 
-		bool enter_after_edit = false;
-		auto iter = field_enter_after_edit.find(fieldname);
-		if (iter != field_enter_after_edit.end()) {
-			enter_after_edit = iter->second;
+			bool enter_after_edit = false;
+			auto iter = field_enter_after_edit.find(fieldname);
+			if (iter != field_enter_after_edit.end()) {
+				enter_after_edit = iter->second;
+			}
+			if (enter_after_edit && editbox->getParent()) {
+				SEvent enter;
+				enter.EventType = EET_GUI_EVENT;
+				enter.GUIEvent.Caller = editbox;
+				enter.GUIEvent.Element = nullptr;
+				enter.GUIEvent.EventType = gui::EGET_EDITBOX_ENTER;
+				editbox->getParent()->OnEvent(enter);
+			}
+		} else if (dialog_type == porting::SELECTION_INPUT &&
+				element_type == irr::gui::EGUIET_COMBO_BOX) {
+			auto dropdown = (gui::IGUIComboBox *) element;
+			int selected = porting::getInputDialogSelection();
+			dropdown->setAndSendSelected(selected);
 		}
-		if (enter_after_edit && editbox->getParent()) {
-			SEvent enter;
-			enter.EventType = EET_GUI_EVENT;
-			enter.GUIEvent.Caller = editbox;
-			enter.GUIEvent.Element = nullptr;
-			enter.GUIEvent.EventType = gui::EGET_EDITBOX_ENTER;
-			editbox->getParent()->OnEvent(enter);
-		}
+
+		return; // Early-return after found
 	}
-	return false;
 }
 #endif
 
@@ -4957,6 +4974,17 @@ bool GUIFormSpecMenu::OnEvent(const SEvent& event)
 						m_sound_manager->playSound(0, SoundSpec(s.sound, 1.0f));
 
 					s.send = true;
+
+					if (!s.url.empty()) {
+						if (m_client) {
+							// in game
+							g_gamecallback->showOpenURLDialog(s.url);
+						} else {
+							// main menu
+							porting::open_url(s.url);
+						}
+					}
+
 					if (s.is_exit) {
 						if (m_allowclose) {
 							acceptInput(quit_mode_accept);

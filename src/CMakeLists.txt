@@ -47,7 +47,7 @@ option(ENABLE_CURL "Enable cURL support for fetching media" TRUE)
 set(USE_CURL FALSE)
 
 if(ENABLE_CURL)
-	find_package(CURL)
+	find_package(CURL 7.28.0)
 	if (CURL_FOUND)
 		message(STATUS "cURL support enabled.")
 		set(USE_CURL TRUE)
@@ -109,9 +109,10 @@ if(BUILD_CLIENT AND ENABLE_SOUND)
 	endif()
 endif()
 
-option(ENABLE_TOUCH "Enable Touchscreen support" FALSE)
+option(ENABLE_TOUCH "Enable touchscreen by default" FALSE)
 if(ENABLE_TOUCH)
-	add_definitions(-DHAVE_TOUCHSCREENGUI)
+	message(STATUS "Touchscreen support enabled by default.")
+	add_definitions(-DENABLE_TOUCH)
 endif()
 
 if(BUILD_CLIENT)
@@ -326,6 +327,9 @@ if(HAVE_LINK_ATOMIC)
 	set(PLATFORM_LIBS ${PLATFORM_LIBS} "-latomic")
 endif()
 
+include(CheckSymbolExists)
+check_symbol_exists(strlcpy "string.h" HAVE_STRLCPY)
+
 check_include_files(endian.h HAVE_ENDIAN_H)
 
 configure_file(
@@ -363,9 +367,8 @@ set(common_SRCS
 	${mapgen_SRCS}
 	${server_SRCS}
 	${content_SRCS}
-	ban.cpp
 	chat.cpp
-	clientiface.cpp
+	clientdynamicinfo.cpp
 	collision.cpp
 	content_mapnode.cpp
 	content_nodemeta.cpp
@@ -411,12 +414,11 @@ set(common_SRCS
 	raycast.cpp
 	reflowscan.cpp
 	remoteplayer.cpp
-	rollback.cpp
 	rollback_interface.cpp
 	serialization.cpp
 	server.cpp
 	serverenvironment.cpp
-	serverlist.cpp
+	servermap.cpp
 	settings.cpp
 	staticobject.cpp
 	terminal_chat_console.cpp
@@ -694,7 +696,6 @@ endif()
 # Set some optimizations and tweaks
 
 include(CheckCSourceCompiles)
-include(CheckSymbolExists)
 
 set(CMAKE_REQUIRED_INCLUDES ${LUA_INCLUDE_DIR})
 if(USE_LUAJIT)
@@ -774,7 +775,9 @@ else()
 	endif()
 
 	if(MINGW)
-		set(OTHER_FLAGS "${OTHER_FLAGS} -mthreads -fexceptions")
+		if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+			set(OTHER_FLAGS "${OTHER_FLAGS} -mthreads")
+		endif()
 		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_WIN32_WINNT=0x0601 -DWIN32_LEAN_AND_MEAN")
 	endif()
 
@@ -814,7 +817,7 @@ else()
 	endif()
 
 	if(MINGW)
-		set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -mwindows")
+		set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-mwindows")
 	endif()
 endif()
 
@@ -880,10 +883,6 @@ if(WIN32)
 		if(BUILD_CLIENT AND USE_GETTEXT AND GETTEXT_DLL)
 			install(FILES ${GETTEXT_DLL} DESTINATION ${BINDIR})
 		endif()
-	endif()
-
-	if(BUILD_CLIENT AND IRRLICHT_DLL)
-		install(FILES ${IRRLICHT_DLL} DESTINATION ${BINDIR})
 	endif()
 endif()
 

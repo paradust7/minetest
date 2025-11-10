@@ -39,10 +39,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "wieldmesh.h"
 #include "client/renderingengine.h"
 #include "client/minimap.h"
-
-#ifdef HAVE_TOUCHSCREENGUI
 #include "gui/touchscreengui.h"
-#endif
 
 #define OBJECT_CROSSHAIR_LINE_SIZE 8
 #define CROSSHAIR_LINE_SIZE 10
@@ -100,7 +97,7 @@ Hud::Hud(Client *client, LocalPlayer *player,
 
 	if (g_settings->getBool("enable_shaders")) {
 		IShaderSource *shdrsrc = client->getShaderSource();
-		u16 shader_id = shdrsrc->getShader(
+		auto shader_id = shdrsrc->getShader(
 			m_mode == HIGHLIGHT_HALO ? "selection_shader" : "default_shader", TILE_MATERIAL_ALPHA);
 		m_selection_material.MaterialType = shdrsrc->getShaderInfo(shader_id).material;
 	} else {
@@ -138,6 +135,7 @@ Hud::Hud(Client *client, LocalPlayer *player,
 
 	m_rotation_mesh_buffer.getMaterial().Lighting = false;
 	m_rotation_mesh_buffer.getMaterial().MaterialType = video::EMT_TRANSPARENT_ALPHA_CHANNEL;
+	m_rotation_mesh_buffer.setHardwareMappingHint(scene::EHM_STATIC);
 }
 
 Hud::~Hud()
@@ -292,10 +290,8 @@ void Hud::drawItems(v2s32 upperleftpos, v2s32 screen_offset, s32 itemcount,
 
 		drawItem(mainlist->getItem(i), item_rect, (i + 1) == selectitem);
 
-#ifdef HAVE_TOUCHSCREENGUI
 		if (is_hotbar && g_touchscreengui)
 			g_touchscreengui->registerHotbarRect(i, item_rect);
-#endif
 	}
 }
 
@@ -339,6 +335,14 @@ void Hud::drawLuaElements(const v3s16 &camera_offset)
 	// Reorder elements by z_index
 	std::vector<HudElement*> elems;
 	elems.reserve(player->maxHudId());
+
+	// Add builtin minimap if the server doesn't send it.
+	HudElement minimap;
+	if (client->getProtoVersion() < 44 && (player->hud_flags & HUD_FLAG_MINIMAP_VISIBLE)) {
+		minimap = {HUD_ELEM_MINIMAP, v2f(1, 0), "", v2f(), "", 0 , 0, 0, v2f(-1, 1),
+				v2f(-10, 10), v3f(), v2s32(256, 256), 0, "", 0};
+		elems.push_back(&minimap);
+	}
 
 	for (size_t i = 0; i != player->maxHudId(); i++) {
 		HudElement *e = player->getHud(i);
@@ -416,7 +420,9 @@ void Hud::drawLuaElements(const v3s16 &camera_offset)
 										 (e->number >> 0)  & 0xFF);
 				std::wstring text = unescape_translate(utf8_to_wide(e->name));
 				const std::string &unit = e->text;
-				// waypoints reuse the item field to store precision, item = precision + 1
+				// Waypoints reuse the item field to store precision,
+				// item = precision + 1 and item = 0 <=> precision = 10 for backwards compatibility.
+				// Also see `push_hud_element`.
 				u32 item = e->item;
 				float precision = (item == 0) ? 10.0f : (item - 1.f);
 				bool draw_precision = precision > 0;
@@ -739,10 +745,8 @@ void Hud::drawStatbar(v2s32 pos, u16 corner, u16 drawdir,
 
 void Hud::drawHotbar(u16 playeritem)
 {
-#ifdef HAVE_TOUCHSCREENGUI
 	if (g_touchscreengui)
 		g_touchscreengui->resetHotbarRects();
-#endif
 
 	InventoryList *mainlist = inventory->getList("main");
 	if (mainlist == NULL) {
@@ -1096,21 +1100,23 @@ void drawItemStack(
 		video::SColor basecolor =
 			client->idef()->getItemstackColor(item, client);
 
-		u32 mc = mesh->getMeshBufferCount();
+		const u32 mc = mesh->getMeshBufferCount();
+		if (mc > imesh->buffer_colors.size())
+			imesh->buffer_colors.resize(mc);
 		for (u32 j = 0; j < mc; ++j) {
 			scene::IMeshBuffer *buf = mesh->getMeshBuffer(j);
 			video::SColor c = basecolor;
 
-			if (imesh->buffer_colors.size() > j) {
-				ItemPartColor *p = &imesh->buffer_colors[j];
-				if (p->override_base)
-					c = p->color;
-			}
+			auto &p = imesh->buffer_colors[j];
+			p.applyOverride(c);
 
-			if (imesh->needs_shading)
-				colorizeMeshBuffer(buf, &c);
-			else
-				setMeshBufferColor(buf, c);
+			if (p.needColorize(c)) {
+				buf->setDirty(scene::EBT_VERTEX);
+				if (imesh->needs_shading)
+					colorizeMeshBuffer(buf, &c);
+				else
+					setMeshBufferColor(buf, c);
+			}
 
 			video::SMaterial &material = buf->getMaterial();
 			material.MaterialType = video::EMT_TRANSPARENT_ALPHA_CHANNEL_REF;
@@ -1175,17 +1181,26 @@ void drawItemStack(
 			(1 - wear) * progressrect.LowerRightCorner.X;
 
 		// Compute progressbar color
+		// default scheme:
 		//   wear = 0.0: green
 		//   wear = 0.5: yellow
 		//   wear = 1.0: red
-		video::SColor color(255, 255, 255, 255);
-		int wear_i = MYMIN(std::floor(wear * 600), 511);
-		wear_i = MYMIN(wear_i + 10, 511);
 
-		if (wear_i <= 255)
-			color.set(255, wear_i, 255, 0);
-		else
-			color.set(255, 255, 511 - wear_i, 0);
+		video::SColor color;
+		auto barParams = item.getWearBarParams(client->idef());
+		if (barParams.has_value()) {
+			f32 durabilityPercent = 1.0 - wear;
+			color = barParams->getWearBarColor(durabilityPercent);
+		} else {
+			color = video::SColor(255, 255, 255, 255);
+			int wear_i = MYMIN(std::floor(wear * 600), 511);
+			wear_i = MYMIN(wear_i + 10, 511);
+
+			if (wear_i <= 255)
+				color.set(255, wear_i, 255, 0);
+			else
+				color.set(255, 255, 511 - wear_i, 0);
+		}
 
 		core::rect<s32> progressrect2 = progressrect;
 		progressrect2.LowerRightCorner.X = progressmid;

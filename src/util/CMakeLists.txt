@@ -1,6 +1,7 @@
 set(UTIL_SRCS
 	${CMAKE_CURRENT_SOURCE_DIR}/areastore.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/auth.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/colorize.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/base64.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/directiontables.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/enriched_string.cpp
@@ -8,6 +9,7 @@ set(UTIL_SRCS
 	${CMAKE_CURRENT_SOURCE_DIR}/metricsbackend.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/numeric.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/pointedthing.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/pointabilities.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/quicktune.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/serialize.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/sha1.cpp
