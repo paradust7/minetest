@@ -102,23 +102,13 @@ var Module = {
         // Parse progress if available
         var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
         if (m) {
-            var current = parseInt(m[2]);
-            var total = parseInt(m[4]);
-            loadingProgressBar.style.width = (current / total * 100) + '%';
-        } else {
-            loadingProgressBar.style.width = '100%';
-        }
-        
-        // Auto-hide after 10 seconds if stuck (emergency fallback)
-        setTimeout(function() {
-            if (loadingScreen && !loadingScreen.classList.contains('hidden')) {
-                console.warn('Loading screen still visible after 10s, force hiding...');
-                loadingScreen.classList.add('hidden');
-                if (controlsInfo) {
-                    controlsInfo.classList.remove('hidden');
-                }
+            var current = parseFloat(m[2]);
+            var total = parseFloat(m[4]);
+            if (total > 0) {
+                loadingProgressBar.style.width = (current / total * 100) + '%';
             }
-        }, 10000);
+        }
+        // Don't change progress bar if there's no progress info - let it stay at current value
     },
     totalDependencies: 0,
     monitorRunDependencies: function(left) {

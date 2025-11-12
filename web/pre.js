@@ -164,15 +164,53 @@ if (isMainThread) {
     });
 
     // Disable right-click context menu globally for game area
-    document.addEventListener('DOMContentLoaded', function() {
+    // This needs to work in both locked and unlocked pointer modes
+    function preventContextMenu(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+    }
+    
+    function attachContextMenuPrevention() {
         var canvas = document.getElementById('canvas');
         if (canvas) {
-            canvas.addEventListener('contextmenu', function(e) {
-                e.preventDefault();
-                return false;
+            // Prevent context menu on canvas (capture phase to catch it early)
+            canvas.addEventListener('contextmenu', preventContextMenu, true);
+            
+            // Also prevent on mousedown for right button (extra safety)
+            canvas.addEventListener('mousedown', function(e) {
+                if (e.button === 2) { // Right mouse button
+                    e.preventDefault();
+                }
+            }, true);
+            
+            // Monitor pointer lock changes to ensure context menu stays disabled
+            document.addEventListener('pointerlockchange', function() {
+                console.log('Pointer lock changed. Locked:', !!document.pointerLockElement);
             });
+            
+            console.log('Right-click context menu prevention attached to canvas');
+            return true;
         }
-    });
+        return false;
+    }
+    
+    // Try to attach immediately
+    if (!attachContextMenuPrevention()) {
+        // If canvas doesn't exist yet, wait for DOMContentLoaded
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', attachContextMenuPrevention);
+        } else {
+            // DOM already loaded, try polling a few times
+            var attempts = 0;
+            var pollInterval = setInterval(function() {
+                attempts++;
+                if (attachContextMenuPrevention() || attempts > 10) {
+                    clearInterval(pollInterval);
+                }
+            }, 100);
+        }
+    }
 
     // Mobile/touch detection
     var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
