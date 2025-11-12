@@ -171,6 +171,13 @@ public:
 		if (m_signal.wait(wait_time_max_ms)) {
 			MutexAutoLock lock(m_mutex);
 
+#ifdef __EMSCRIPTEN__
+			// Emscripten without pthreads: semaphore may be unreliable
+			// Add safety check to prevent crash
+			if (m_queue.empty()) {
+				throw ItemNotFoundException("MutexedQueue: queue is empty (Emscripten safety check)");
+			}
+#endif
 			T t = std::move(m_queue.front());
 			m_queue.pop_front();
 			return t;

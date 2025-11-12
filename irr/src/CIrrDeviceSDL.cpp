@@ -570,7 +570,31 @@ bool CIrrDeviceSDL::createWindowWithContext()
 		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 0);
 	}
 
-	SDL_CreateWindowAndRenderer(0, 0, SDL_Flags, &Window, &Renderer); // 0,0 will use the canvas size
+	Window = SDL_CreateWindow("", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, Width, Height, SDL_Flags);
+	if (!Window) {
+		os::Printer::log("Could not create window", SDL_GetError(), ELL_WARNING);
+		return false;
+	}
+
+	Context = SDL_GL_CreateContext(Window);
+	if (!Context) {
+		os::Printer::log("Could not create context", SDL_GetError(), ELL_WARNING);
+		SDL_DestroyWindow(Window);
+		Window = nullptr;
+		return false;
+	}
+
+	updateSizeAndScale();
+	if (ScaleX != 1.0f || ScaleY != 1.0f) {
+		// The given window size is in pixels, not in screen coordinates.
+		// We can only do the conversion now since we didn't know the scale before.
+		SDL_SetWindowSize(Window,
+				static_cast<int>(CreationParams.WindowSize.Width / ScaleX),
+				static_cast<int>(CreationParams.WindowSize.Height / ScaleY));
+		// Re-center, otherwise large, non-maximized windows go offscreen.
+		SDL_SetWindowPosition(Window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+		updateSizeAndScale();
+	}
 
 	logAttributes();
 
@@ -730,6 +754,11 @@ bool CIrrDeviceSDL::run()
 			}
 			irrevent.MouseInput.X = MouseX;
 			irrevent.MouseInput.Y = MouseY;
+
+#ifdef __EMSCRIPTEN__
+			irrevent.MouseInput.XRel = MouseXRel;
+			irrevent.MouseInput.YRel = MouseYRel;
+#endif
 
 			irrevent.MouseInput.ButtonStates = MouseButtonStates;
 			irrevent.MouseInput.Shift = (keymod & KMOD_SHIFT) != 0;

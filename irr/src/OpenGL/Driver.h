@@ -44,8 +44,13 @@ public:
 
 	struct SHWBufferLink_opengl : public SHWBufferLink
 	{
-		SHWBufferLink_opengl(const scene::IVertexBuffer *vb) : SHWBufferLink(vb) {}
-		SHWBufferLink_opengl(const scene::IIndexBuffer *ib) : SHWBufferLink(ib) {}
+		// WebGL-safe: Initialize VBO with correct target for vertex data
+		SHWBufferLink_opengl(const scene::IVertexBuffer *vb) 
+			: SHWBufferLink(vb), Vbo(GL_ARRAY_BUFFER) {}
+		
+		// WebGL-safe: Initialize VBO with correct target for index data
+		SHWBufferLink_opengl(const scene::IIndexBuffer *ib) 
+			: SHWBufferLink(ib), Vbo(GL_ELEMENT_ARRAY_BUFFER) {}
 
 		OpenGLVBO Vbo;
 	};
@@ -303,7 +308,7 @@ protected:
 	void drawElements(GLenum primitiveType, const VertexType &vertexType, const void *vertices, int vertexCount, const u16 *indices, int indexCount);
 	void drawElements(GLenum primitiveType, const VertexType &vertexType, uintptr_t vertices, uintptr_t indices, int indexCount);
 
-	void drawGeneric(const void *vertices, const void *indexList, u32 primitiveCount,
+	void drawGeneric(const void *vertices, u32 vertexCount, const void *indexList, u32 primitiveCount,
 		E_VERTEX_TYPE vType, scene::E_PRIMITIVE_TYPE pType, E_INDEX_TYPE iType);
 
 	void beginDraw(const VertexType &vertexType, uintptr_t verticesBase);
@@ -360,7 +365,12 @@ private:
 
 	bool EnableErrorTest;
 
+#ifdef __EMSCRIPTEN__
+	// WebGL-safe: QuadIndexVBO is used for index data, must use GL_ELEMENT_ARRAY_BUFFER
+	OpenGLVBO QuadIndexVBO{GL_ELEMENT_ARRAY_BUFFER};
+#else
 	OpenGLVBO QuadIndexVBO;
+#endif
 	void initQuadsIndices(u32 max_vertex_count = 65536);
 
 	void debugCb(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar *message);

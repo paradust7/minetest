@@ -2087,8 +2087,12 @@ void Game::updateCameraOrientation(CameraOrientation *cam, float dtime)
 		cam->camera_yaw   += g_touchcontrols->getYawChange()   * sens_scale;
 		cam->camera_pitch += g_touchcontrols->getPitchChange() * sens_scale;
 	} else {
+#ifndef __EMSCRIPTEN__
 		v2s32 center(driver->getScreenSize().Width / 2, driver->getScreenSize().Height / 2);
 		v2s32 dist = input->getMousePos() - center;
+#else
+		v2s32 dist = input->getMouseMovement();
+#endif
 
 		if (m_invert_mouse || camera->getCameraMode() == CAMERA_MODE_THIRD_FRONT) {
 			dist.Y = -dist.Y;
@@ -2098,8 +2102,10 @@ void Game::updateCameraOrientation(CameraOrientation *cam, float dtime)
 		cam->camera_yaw   -= dist.X * m_cache_mouse_sensitivity * sens_scale;
 		cam->camera_pitch += dist.Y * m_cache_mouse_sensitivity * sens_scale;
 
+#ifndef __EMSCRIPTEN__
 		if (dist.X != 0 || dist.Y != 0)
 			input->setMousePos(center.X, center.Y);
+#endif
 	}
 
 	if (m_cache_enable_joysticks) {
