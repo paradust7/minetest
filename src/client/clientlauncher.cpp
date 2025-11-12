@@ -89,6 +89,10 @@ void preinit_sound(void) {
 #endif
 }
 
+#ifdef __EMSCRIPTEN__
+std::unique_ptr<IWritableShaderSource> g_clouds_ssrc;
+#endif
+
 void ClientLauncher::run(std::function<void(bool)> resolve)
 {
 	/* This function is called when a client must be started.
@@ -129,10 +133,10 @@ void ClientLauncher::run(std::function<void(bool)> resolve)
 	// Create the menu clouds
 	// This is only global so it can be used by RenderingEngine::draw_load_screen().
 	assert(!g_menucloudsmgr && !g_menuclouds);
-	std::unique_ptr<IWritableShaderSource> ssrc(createShaderSource());
-	ssrc->addShaderUniformSetterFactory(std::make_unique<FogShaderUniformSetterFactory>());
+	g_clouds_ssrc.reset(createShaderSource());
+	g_clouds_ssrc->addShaderUniformSetterFactory(std::make_unique<FogShaderUniformSetterFactory>());
 	g_menucloudsmgr = m_rendering_engine->get_scene_manager()->createNewSceneManager();
-	g_menuclouds = new Clouds(g_menucloudsmgr, ssrc.get(), -1, rand());
+	g_menuclouds = new Clouds(g_menucloudsmgr, g_clouds_ssrc.get(), -1, rand());
 	g_menuclouds->setHeight(100.0f);
 	g_menuclouds->update(v3f(0, 0, 0), video::SColor(255, 240, 240, 255));
 	scene::ICameraSceneNode* camera;
@@ -280,6 +284,7 @@ void ClientLauncher::run_cleanup(std::function<void(bool)> resolve) {
 	assert(g_menuclouds->getReferenceCount() == 1);
 	g_menuclouds->drop();
 	g_menuclouds = nullptr;
+	g_clouds_ssrc.reset();
 	resolve(retval);
 	return;
 }
