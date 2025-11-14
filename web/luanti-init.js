@@ -14,7 +14,7 @@ var Module = {
         }, false);
         return canvas;
     })(),
-    arguments: [],
+    arguments: ["--info"],
     printErr: function(text) {
         console.error('stderr:', text);
         var errorText = document.getElementById('error-text');
@@ -33,28 +33,16 @@ var Module = {
             var module = mod || this || Module;
             var userDataDir = '/userdata';
             
-            // Set environment variable
+            // Set environment variable (safe to do in preRun)
             if (module.ENV) {
                 module.ENV.MINETEST_USER_PATH = userDataDir;
                 console.log('preRun: Set MINETEST_USER_PATH to:', userDataDir);
             }
             
-            // Create /userdata directory if it doesn't exist
-            if (module.FS) {
-                try {
-                    if (!module.FS.analyzePath(userDataDir).exists) {
-                        module.FS.mkdir(userDataDir);
-                        console.log('preRun: Created', userDataDir);
-                    }
-                    
-                    // IMPORTANT: Change working directory to /userdata
-                    // With RUN_IN_PLACE=TRUE, Luanti uses cwd as the user data directory
-                    module.FS.chdir(userDataDir);
-                    console.log('preRun: Changed working directory to:', module.FS.cwd());
-                } catch (e) {
-                    console.error('preRun: Failed to setup userdata directory:', e);
-                }
-            }
+            // NOTE: With WASMFS, we CANNOT use FS operations here in preRun!
+            // WASMFS native functions are not initialized until onRuntimeInitialized
+            // All FS operations moved to onRuntimeInitialized instead
+            console.log('preRun: Filesystem operations deferred to onRuntimeInitialized (WASMFS requirement)');
         }
     ],
     postRun: [
@@ -96,7 +84,10 @@ var Module = {
             }
             return;
         }
-        console.log('Status:', text);
+        if (typeof text !== 'string' || (
+            !text.startsWith('Loading dependencies:') && !text.startsWith('Downloading data...'))) {
+            console.log('Status:', text);
+        }
         loadingStatus.textContent = text;
         
         // Parse progress if available
@@ -116,108 +107,171 @@ var Module = {
         Module.setStatus(left ? 'Loading dependencies: ' + (this.totalDependencies - left) + '/' + this.totalDependencies : 'All downloads complete.');
     },
     onRuntimeInitialized: function() {
-        console.log('***** RUNTIME INITIALIZED *****');
-        console.log('Canvas element exists:', !!document.getElementById('canvas'));
-        console.log('Canvas dimensions:', canvas.width, 'x', canvas.height);
-        console.log('Creating virtual filesystem directories...');
+        Module.printErr('***** RUNTIME INITIALIZED *****');
+        console.error('***** RUNTIME INITIALIZED *****');
+        
+        // Trigger canvas resize now that GL context is ready
+        if (typeof window.scheduleResize === 'function') {
+            try { window.scheduleResize(); } catch (e) { console.warn('Resize failed:', e); }
+        }
+        
+        Module.printErr('Canvas element exists: ' + !!document.getElementById('canvas'));
+        Module.printErr('Creating virtual filesystem directories...');
+        Module.printErr('this.FS available: ' + !!this.FS);
+        Module.printErr('Module.FS available: ' + !!Module.FS);
         
         // IMPORTANT: With MODULARIZE=1, FS is on 'this' (the Module instance)
-        var FS = this.FS;
+        var FS = this.FS || Module.FS;
         
-        // Create directories and symlinks needed by Luanti
+        if (!FS) {
+            Module.printErr('CRITICAL ERROR: FS object not available in onRuntimeInitialized!');
+            alert('CRITICAL: Filesystem not available!');
+            return;
+        }
+        
+        Module.printErr('FS object acquired, proceeding with filesystem setup...');
+        
+        // Create writable directories for Luanti
+        // With WASMFS=1, files are preloaded directly to /userdata, so no symlinks needed
         try {
-            // DON'T change directory here - we already set it to /userdata in preRun!
             var userDataDir = '/userdata';
             
-            // Create symlinks to preloaded read-only assets
-            // With RUN_IN_PLACE, Luanti looks for assets relative to cwd (/userdata)
-            // But our assets are preloaded at the root
-            var symlinks = [
-                { src: '/builtin', dst: userDataDir + '/builtin' },
-                { src: '/fonts', dst: userDataDir + '/fonts' },
-                { src: '/games', dst: userDataDir + '/games' },
-                { src: '/textures', dst: userDataDir + '/textures' }
-            ];
-            
-            symlinks.forEach(function(link) {
-                try {
-                    if (!FS.analyzePath(link.dst).exists) {
-                        FS.symlink(link.src, link.dst);
-                        console.log('Created symlink:', link.dst, '->', link.src);
-                    }
-                } catch (e) {
-                    console.warn('Could not create symlink', link.dst, ':', e.message);
-                }
-            });
-            
-            // Create writable subdirectories
-            // Note: /client needs to be a real directory, not a symlink, so we can write to it
-            var dirsToCreate = [
-                userDataDir + '/cache',           // Cache subdirectory
-                userDataDir + '/worlds',          // Saved worlds
-                userDataDir + '/client',          // Client-side data (writable)
-                userDataDir + '/client/serverlist', // Server list cache
-                userDataDir + '/mods'             // User mods
-            ];
-            
-            dirsToCreate.forEach(function(dir) {
-                try {
-                    // Check parent exists first
-                    var parts = dir.split('/').filter(Boolean);
-                    var current = '/';
-                    parts.forEach(function(part) {
-                        current += (current === '/' ? '' : '/') + part;
-                        if (!FS.analyzePath(current).exists) {
-                            FS.mkdir(current);
-                            console.log('Created directory:', current);
-                        }
-                    });
-                } catch (e) {
-                    console.warn('Could not create directory', dir, ':', e.message);
-                }
-            });
-            
-            // Now create symlinks inside /userdata/client to shaders (preloaded at /client/shaders)
+            // CRITICAL: Create /userdata and set it as working directory
+            // This must happen FIRST, before any other FS operations
+            // With WASMFS, we can only do this after runtime initialization
+            // Note: Preloading to /userdata/* might have already created /userdata
+            Module.printErr('Step 1: Creating /userdata directory...');
             try {
-                if (FS.analyzePath('/client/shaders').exists && !FS.analyzePath(userDataDir + '/client/shaders').exists) {
-                    FS.symlink('/client/shaders', userDataDir + '/client/shaders');
-                    console.log('Created symlink:', userDataDir + '/client/shaders', '-> /client/shaders');
-                }
+                FS.mkdir(userDataDir);
+                Module.printErr('Created ' + userDataDir);
             } catch (e) {
-                console.warn('Could not create client shaders symlink:', e.message);
+                // Directory might already exist (created by preload), that's OK
+                Module.printErr(userDataDir + ' already exists (expected with preload)');
             }
             
-                console.log('Virtual filesystem setup complete');
-                console.log('Current directory:', FS.cwd());
-                console.log('Root contents:', FS.readdir('/'));
+            // IMPORTANT: Change working directory to /userdata
+            // With RUN_IN_PLACE=TRUE, Luanti uses cwd as the user data directory
+            Module.printErr('Step 2: Changing working directory to /userdata...');
+            try {
+                FS.chdir(userDataDir);
+                Module.printErr('Changed working directory to: ' + FS.cwd());
+            } catch (e) {
+                Module.printErr('CRITICAL ERROR: Failed to chdir to ' + userDataDir + ': ' + e);
+                alert('CRITICAL: Cannot change to /userdata directory!');
+                throw e;
+            }
+            
+            // Verify preloaded directories exist
+            // Note: With WASMFS, FS.analyzePath() seems problematic, so we use readdir instead
+            Module.printErr('Step 3: Verifying preloaded assets...');
+            try {
+                var entries = FS.readdir(userDataDir);
+                Module.printErr('Contents of ' + userDataDir + ': ' + JSON.stringify(entries));
                 
-                // Debug font loading
-                console.log('Checking fonts directory:');
-                try {
-                    var fontFiles = FS.readdir('/fonts');
-                    console.log('  /fonts contains:', fontFiles.length, 'entries');
-                    console.log('  Files:', fontFiles.filter(f => f !== '.' && f !== '..'));
-                    var userdataFonts = FS.readdir('/userdata/fonts');
-                    console.log('  /userdata/fonts contains:', userdataFonts.length, 'entries');
-                } catch (e) {
-                    console.error('  Font directory check failed:', e);
+                var preloadedDirs = ['builtin', 'fonts', 'games', 'textures', 'client'];
+                var missingDirs = [];
+                preloadedDirs.forEach(function(dir) {
+                    if (entries.indexOf(dir) !== -1) {
+                        Module.printErr('  ✓ ' + dir + ' exists');
+                    } else {
+                        Module.printErr('  ✗ ' + dir + ' NOT FOUND - preload may have failed');
+                        missingDirs.push(dir);
+                    }
+                });
+                
+                if (missingDirs.length > 0) {
+                    Module.printErr('CRITICAL ERROR: Missing required directories: ' + missingDirs.join(', '));
+                    alert('CRITICAL: Missing game files!\nMissing: ' + missingDirs.join(', ') + '\n\nFiles were not preloaded correctly.');
                 }
+            } catch (e) {
+                Module.printErr('CRITICAL ERROR: Could not verify preloaded assets: ' + e.message);
+                alert('CRITICAL: Cannot read /userdata directory!');
+            }
+            
+            Module.printErr('Step 4: Preparing writable directories (will set permissions next)...');
+            Module.printErr('Current directory: ' + FS.cwd());
+            Module.printErr('Root contents: ' + JSON.stringify(FS.readdir('/')));
+            
+            // CRITICAL FIX FOR WASMFS: Set permissions on writable directories
+            // WASMFS creates directories with r-x permissions, but we need rwx for writing
+            Module.printErr('Setting permissions on writable directories...');
+            var writableDirs = [
+                '/userdata',
+                '/userdata/cache',
+                '/userdata/cache/cdb',
+                '/userdata/worlds',
+                '/userdata/mods',
+                '/userdata/client',
+                '/userdata/client/serverlist'
+            ];
+            
+            writableDirs.forEach(function(dir) {
+                try {
+                    // First create if doesn't exist
+                    try {
+                        FS.mkdir(dir);
+                        Module.printErr('  Created: ' + dir);
+                    } catch (mkdirErr) {
+                        // Already exists, that's OK
+                    }
+                    
+                    // Now set permissions to rwx (0o777)
+                    FS.chmod(dir, 0o777);
+                    Module.printErr('  chmod 0o777: ' + dir);
+                } catch (e) {
+                    Module.printErr('  ERROR setting permissions on ' + dir + ': ' + e);
+                }
+            });
+
+            // Recursively add write permissions to all files and subdirectories in /userdata/worlds
+            Module.printErr('Step 7: Recursively adding write permissions to /userdata/worlds...');
+            try {
+                FS.chmod('/userdata/worlds', 0o777);
+                Module.printErr('  chmod 0o777: /userdata/worlds');
+                const subdirs = FS.readdir('/userdata/worlds');
+                subdirs.forEach(function(subdir) {
+                    if (subdir === '.' || subdir === '..') return;
+                    FS.chmod('/userdata/worlds/' + subdir, 0o777);
+                    Module.printErr('  chmod 0o777: /userdata/worlds/' + subdir);
+                    const items = FS.readdir('/userdata/worlds/' + subdir);
+                    items.forEach(function(item) {
+                        if (item === '.' || item === '..') return;
+                        FS.chmod('/userdata/worlds/' + subdir + '/' + item, 0o777);
+                        Module.printErr('  chmod 0o777: /userdata/worlds/' + subdir + '/' + item);
+                    });
+                });
+            } catch (e) {
+                Module.printErr('  ERROR setting permissions on /userdata/worlds: ' + e.message);
+            }
+            
+            // Debug font loading
+            Module.printErr('Step 5: Verifying fonts...');
+            try {
+                var userdataFonts = FS.readdir('/userdata/fonts');
+                Module.printErr('  /userdata/fonts contains: ' + userdataFonts.length + ' entries');
+                Module.printErr('  Files: ' + JSON.stringify(userdataFonts.filter(f => f !== '.' && f !== '..')));
+            } catch (e) {
+                Module.printErr('  Font directory check failed: ' + e);
+            }
             
             // Test write permission
+            Module.printErr('Step 6: Testing write permission...');
             try {
                 FS.writeFile('/test_write.txt', 'test');
                 FS.unlink('/test_write.txt');
-                console.log('Write permission: OK');
+                Module.printErr('Write permission: OK');
             } catch (e) {
-                console.error('Write permission test FAILED:', e);
+                Module.printErr('Write permission test FAILED: ' + e);
             }
         } catch (e) {
-            console.error('Failed to set up filesystem:', e);
+            Module.printErr('CRITICAL ERROR: Failed to set up filesystem: ' + e);
+            alert('CRITICAL: Filesystem setup failed!\n\n' + e);
+            throw e;
         }
         
-        console.log('onRuntimeInitialized complete, about to call main()');
+        Module.printErr('===== onRuntimeInitialized complete! =====');
+        Module.printErr('About to call main()...');
         Module.setStatus('Starting Luanti...');
-        console.log('Returning from onRuntimeInitialized, main() starts now...');
         
         // Monitor runtime after main() completes (minimal logging)
         Module.postRun.push(function() {
@@ -279,6 +333,7 @@ Module.setStatus('Downloading Luanti...');
 (function() {
 	// Debounce to avoid rapid resizes thrashing GL context
 	var resizeScheduled = false;
+	
 	function resizeCanvasToContainer() {
 		if (!Module || !Module.canvas) return;
 		var canvas = Module.canvas;
@@ -314,6 +369,9 @@ Module.setStatus('Downloading Luanti...');
 		});
 	}
 	
+	// Make scheduleResize globally accessible for onRuntimeInitialized
+	window.scheduleResize = scheduleResize;
+	
 	// Observe container size changes
 	try {
 		var container = document.getElementById('game-container') || (Module && Module.canvas ? Module.canvas.parentElement : null);
@@ -333,14 +391,8 @@ Module.setStatus('Downloading Luanti...');
 	// Initial sizing on load
 	scheduleResize();
 	
-	// Also size once more right after runtime init (when GL context is set up)
-	var originalOnRuntimeInitialized = Module.onRuntimeInitialized;
-	Module.onRuntimeInitialized = function() {
-		try { scheduleResize(); } catch (e) {}
-		if (typeof originalOnRuntimeInitialized === 'function') {
-			return originalOnRuntimeInitialized.apply(this, arguments);
-		}
-	};
+	// Note: Don't wrap Module.onRuntimeInitialized here - it breaks MODULARIZE=1
+	// Instead, we call scheduleResize() inside onRuntimeInitialized directly
 })();
 
 // Initialize Luanti after luanti.js loads

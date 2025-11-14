@@ -133,10 +133,17 @@ set(EMSCRIPTEN_COMMON_FLAGS
     "-sUSE_SDL=2"
     
     # Filesystem
-    "-sFORCE_FILESYSTEM=1"
+    "-sWASMFS=1"
+    "-sFORCE_FILESYSTEM"
+
+    # Malloc
+    "-sMALLOC=mimalloc"
     
     # Networking
     "-sFETCH=1"
+
+    # Environment: Default is with node support, we can omit that
+    # "-sENVIRONMENT=['web','webview','worker']"
     
     # Socket emulation: Using custom JavaScript proxy (socket-proxy.js + socket-library.js)
     # Stage 1: Localhost loopback for single-player
@@ -156,27 +163,25 @@ set(EMSCRIPTEN_COMMON_FLAGS
     # Without this, the game loop blocks the JavaScript thread = frozen browser
     "-sASYNCIFY=1"
     "-sASYNCIFY_STACK_SIZE=65536"  # Increased for deeper call stacks
-    "-sASYNCIFY_ADVISE=1"  # Warn about functions needing asyncification
+    # "-sASYNCIFY_ADVISE=1"  # Warn about functions needing asyncification
     # "-sASYNCIFY_ONLY=[\"_main\",\"_invoke_ii\",\"_invoke_vi\",\"_invoke_iiiiiiii\",\"_invoke_iiiiii\",\"_invoke_iiii\",\"_invoke_viiii\",\"_emscripten_sleep\"]"
     
     # Threading support (required for server thread + network threads)
     # Enables Web Workers for true multithreading
     "-pthread"
-    "-sPTHREAD_POOL_SIZE=16"  # Pre-create 16 worker threads (server + client network threads + emerge + overhead)
-    # Note: NOT using PROXY_TO_PTHREAD - main() runs on main thread for WebGL compatibility
-    # Server runs in one thread, network threads in others
+    "-sPTHREAD_POOL_SIZE=24"  # Pre-create 16 worker threads (server + client network threads + emerge + overhead)
     
-    # SDL2 Emscripten integration
-    "-sOFFSCREENCANVAS_SUPPORT=0"  # Don't use OffscreenCanvas (not widely supported)
-    
-    # CRITICAL: Tell SDL to use emscripten_set_main_loop_timing for proper FPS limiting
-    # This makes SDL respect vsync and use requestAnimationFrame
-    "-sDEFAULT_TO_CXX=1"  # C++ support for SDL
-
+    # CRITICAL: PROXY_TO_PTHREAD moves main() off the main thread to a worker
+    # This prevents blocking the main thread on filesystem operations (WASMFS locks)
+    # Combined with OffscreenCanvas, allows rendering from worker thread
     # "-sPROXY_TO_PTHREAD=1"
     # "-sOFFSCREENCANVAS_SUPPORT=1"
     # "-sOFFSCREENCANVASES_TO_PTHREAD=\"#canvas\""
     # "-sOFFSCREEN_FRAMEBUFFER=1"
+    
+    # CRITICAL: Tell SDL to use emscripten_set_main_loop_timing for proper FPS limiting
+    # This makes SDL respect vsync and use requestAnimationFrame
+    "-sDEFAULT_TO_CXX=1"  # C++ support for SDL
 )
 
 # Additional compile flags for SDL2
@@ -186,11 +191,14 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DEMSCRIPTEN_SDL2_MAIN_LOOP")
 # These flags should ONLY be applied to the final executable, not CMake tests
 set(EMSCRIPTEN_FINAL_EXE_FLAGS
     # Preload game data (can't be used during CMake tests)
-    "--preload-file=${CMAKE_SOURCE_DIR}/builtin@/builtin"
-    "--preload-file=${CMAKE_SOURCE_DIR}/games@/games"
-    "--preload-file=${CMAKE_SOURCE_DIR}/textures@/textures"
-    "--preload-file=${CMAKE_SOURCE_DIR}/fonts@/fonts"
-    "--preload-file=${CMAKE_SOURCE_DIR}/client@/client"
+    # With WASMFS=1, we preload directly to /userdata where Luanti expects them
+    "--preload-file=${CMAKE_SOURCE_DIR}/builtin@/userdata/builtin"
+    "--preload-file=${CMAKE_SOURCE_DIR}/games@/userdata/games"
+    "--preload-file=${CMAKE_SOURCE_DIR}/textures@/userdata/textures"
+    "--preload-file=${CMAKE_SOURCE_DIR}/fonts@/userdata/fonts"
+    "--preload-file=${CMAKE_SOURCE_DIR}/client@/userdata/client"
+    "--preload-file=${CMAKE_SOURCE_DIR}/worlds@/userdata/worlds"
+    "--preload-file=${CMAKE_SOURCE_DIR}/web/cache@/userdata/cache"
     
     # JavaScript/WASM settings
     "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','FS','ENV']"
