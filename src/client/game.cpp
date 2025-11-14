@@ -585,12 +585,17 @@ public:
 protected:
 
 	// Basic initialisation
-	bool init(const std::string &map_dir, const std::string &address,
-			u16 port, const SubgameSpec &gamespec);
+	void init(const std::string &map_dir, const std::string &address,
+			u16 port, const SubgameSpec &gamespec,
+			std::function<void(bool,BaseException*)> resolve);
 
 	bool initSound();
-	bool createServer(const std::string &map_dir,
-			const SubgameSpec &gamespec, u16 port);
+	void createServer(const std::string &map_dir,
+			const SubgameSpec &gamespec, u16 port,
+			std::function<void(bool,BaseException*)> resolve);
+	void createServer_loop(std::function<void(bool,BaseException*)> resolve);
+	std::unique_ptr<LambdaThread> createServer_start_thread;
+	bool createServer_success;
 	void copyServerClientCache();
 
 	// Client creation
@@ -1002,36 +1007,34 @@ extern void do_cache_warmup();
 void Game::startup_do_init(const GameStartData *start_data,
                            std::function<void(bool,BaseException*)> resolve)
 {
-	try { // CATCHALL
-
 	// This could be done in main(), but is instead here so that it happens
 	// after the loading screen is visible (instead of a blank screen)
 	do_cache_warmup();
 
-	if (!init(start_data->world_spec.path, start_data->address,
-			start_data->socket_port, start_data->game_spec)) {
-		resolve(false, nullptr);
-		return;
-	}
-
-	// CATCHALL
-        } catch (BaseException &exc) {
-		resolve(false, exc.copy());
-		return;
-	}
-
-	createClient(start_data, [this, resolve](bool success, BaseException *exc) {
+	init(start_data->world_spec.path, start_data->address,
+			start_data->socket_port, start_data->game_spec,
+			[this, start_data, resolve](bool success, BaseException *exc) {
 		if (exc) {
 			resolve(false, exc);
 			return;
-		}
-		if (!success) {
+		} else if (!success) {
 			resolve(false, nullptr);
-		} else {
-			m_rendering_engine->initialize(client, hud);
-			m_game_formspec.init(client, m_rendering_engine, input);
-			resolve(true, nullptr);
+			return;
 		}
+
+		createClient(start_data, [this, resolve](bool success, BaseException *exc) {
+			if (exc) {
+				resolve(false, exc);
+				return;
+			}
+			if (!success) {
+				resolve(false, nullptr);
+			} else {
+				m_rendering_engine->initialize(client, hud);
+				m_game_formspec.init(client, m_rendering_engine, input);
+				resolve(true, nullptr);
+			}
+		});
 	});
 }
 
@@ -1256,11 +1259,12 @@ void Game::shutdown()
  ****************************************************************************/
 /****************************************************************************/
 
-bool Game::init(
+void Game::init(
 		const std::string &map_dir,
 		const std::string &address,
 		u16 port,
-		const SubgameSpec &gamespec)
+		const SubgameSpec &gamespec,
+		std::function<void(bool,BaseException*)> resolve)
 {
 	// Pulled up one level
 	//texture_src = createTextureSource();
@@ -1278,19 +1282,31 @@ bool Game::init(
 	quicktune = new QuicktuneShortcutter();
 
 	if (!(texture_src && shader_src && itemdef_manager && nodedef_manager
-			&& eventmgr && quicktune))
-		return false;
+			&& eventmgr && quicktune)) {
+		resolve(false, nullptr);
+		return;
+	}
 
-	if (!initSound())
-		return false;
+	if (!initSound()) {
+		resolve(false, nullptr);
+		return;
+	}
 
 	// Create a server if not connecting to an existing one
 	if (address.empty()) {
-		if (!createServer(map_dir, gamespec, port))
-			return false;
+		createServer(map_dir, gamespec, port, [resolve](bool success, BaseException *exc) {
+			if (exc) {
+				resolve(false, exc);
+				return;
+			}
+			resolve(success, nullptr);
+			return;
+		});
+		return;
 	}
 
-	return true;
+	resolve(true, nullptr);
+	return;
 }
 
 bool Game::initSound()
@@ -1321,11 +1337,13 @@ bool Game::initSound()
 	return true;
 }
 
-bool Game::createServer(const std::string &map_dir,
-		const SubgameSpec &gamespec, u16 port)
+void Game::createServer(const std::string &map_dir,
+		const SubgameSpec &gamespec, u16 port,
+		std::function<void(bool,BaseException*)> resolve)
 {
 	showOverlayMessage(N_("Creating server..."), 0, 5);
 
+#ifndef __EMSCRIPTEN__
 	std::string bind_str;
 	if (simple_singleplayer_mode) {
 		// Make the simple singleplayer server only accept connections from localhost,
@@ -1334,9 +1352,11 @@ bool Game::createServer(const std::string &map_dir,
 	} else {
 		bind_str = g_settings->get("bind_address");
 	}
+#endif
 
 	Address bind_addr(0, 0, 0, 0, port);
 
+#ifndef __EMSCRIPTEN__
 	if (g_settings->getBool("ipv6_server"))
 		bind_addr.setAddress(static_cast<IPv6AddressBytes*>(nullptr));
 	try {
@@ -1352,36 +1372,50 @@ bool Game::createServer(const std::string &map_dir,
 		errorstream << *error_message << std::endl;
 		return false;
 	}
-
+#endif
 	server = new Server(map_dir, gamespec, simple_singleplayer_mode, bind_addr,
 			false, nullptr, error_message);
 
-	auto start_thread = runInThread([=] {
+	createServer_start_thread = runInThread([=] {
 		server->start();
 		copyServerClientCache();
 	}, "ServerStart");
 
 	input->clear();
-	bool success = true;
 
-	FpsControl fps_control;
 	fps_control.reset();
 
-	while (start_thread->isRunning()) {
-		if (!m_rendering_engine->run() || input->cancelPressed())
-			success = false;
-		f32 dtime;
-		fps_control.limit(device, &dtime);
+	createServer_success = true;
+	createServer_loop(resolve);
+}
 
-		if (success)
-			showOverlayMessage(N_("Creating server..."), dtime, 5);
-		else
-			showOverlayMessage(N_("Shutting down..."), dtime, 0, &m_shutdown_progress);
+void Game::createServer_loop(std::function<void(bool,BaseException*)> resolve)
+{
+
+	if (!createServer_start_thread->isRunning()) {
+		try {
+			createServer_start_thread->rethrow();
+		} catch (BaseException &exc) {
+			createServer_start_thread.reset();
+			resolve(false, exc.copy());
+			return;
+		}
+		createServer_start_thread.reset();
+		resolve(createServer_success, nullptr);
+		return;
 	}
+	if (!m_rendering_engine->run() || input->cancelPressed())
+		createServer_success = false;
 
-	start_thread->rethrow();
+	f32 dtime;
+	fps_control.limit(device, &dtime);
 
-	return success;
+	if (createServer_success)
+		showOverlayMessage(N_("Creating server..."), dtime, 5);
+	else
+		showOverlayMessage(N_("Shutting down..."), dtime, 0, &m_shutdown_progress);
+
+	MainLoop::NextFrame([this, resolve]() { createServer_loop(resolve); });
 }
 
 void Game::copyServerClientCache()
