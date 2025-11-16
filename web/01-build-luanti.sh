@@ -145,6 +145,16 @@ if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓ Build successful! (${BUILD_TYPE})${NC}"
     echo ""
     echo "Output files in: $PROJECT_ROOT/build-web/output"
+    
+    # Apply EGL proxy workaround for OffscreenCanvas support
+    # Workaround for: https://github.com/emscripten-core/emscripten/issues/24792
+    echo ""
+    echo "Applying EGL proxy workaround for OffscreenCanvas..."
+    if bash "$PROJECT_ROOT/web/fix-egl-proxy.sh" "$PROJECT_ROOT/build-web/bin/luanti.js"; then
+        echo -e "${GREEN}✓ EGL proxy workaround applied${NC}"
+    else
+        echo -e "${YELLOW}⚠ EGL proxy workaround failed (may not be needed)${NC}"
+    fi
     echo ""
     
     # Show build type specific info

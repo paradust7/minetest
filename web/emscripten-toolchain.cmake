@@ -169,15 +169,23 @@ set(EMSCRIPTEN_COMMON_FLAGS
     # Threading support (required for server thread + network threads)
     # Enables Web Workers for true multithreading
     "-pthread"
-    "-sPTHREAD_POOL_SIZE=24"  # Pre-create 16 worker threads (server + client network threads + emerge + overhead)
+    "-sPTHREAD_POOL_SIZE=20"  # Pre-create 16 worker threads (server + client network threads + emerge + overhead)
     
     # CRITICAL: PROXY_TO_PTHREAD moves main() off the main thread to a worker
     # This prevents blocking the main thread on filesystem operations (WASMFS locks)
     # Combined with OffscreenCanvas, allows rendering from worker thread
-    # "-sPROXY_TO_PTHREAD=1"
-    # "-sOFFSCREENCANVAS_SUPPORT=1"
+    "-sPROXY_TO_PTHREAD=1"
+    "-sOFFSCREENCANVAS_SUPPORT=1"
     # "-sOFFSCREENCANVASES_TO_PTHREAD=\"#canvas\""
-    # "-sOFFSCREEN_FRAMEBUFFER=1"
+
+    # Explicitly disable the old offscreen framebuffer mechanism
+    # Setting this to 0 ensures EGL operations stay on the worker thread
+    "-sOFFSCREEN_FRAMEBUFFER=0"
+    
+    # CRITICAL: Disable GL context proxying back to main thread
+    # By default, Emscripten proxies GL context creation to the main thread even with PROXY_TO_PTHREAD
+    # This must be disabled when using OffscreenCanvas, otherwise getContext() fails on transferred canvas
+    # "-sGL_WORKAROUND_SAFARI_GETCONTEXT_BUG=0"
     
     # CRITICAL: Tell SDL to use emscripten_set_main_loop_timing for proper FPS limiting
     # This makes SDL respect vsync and use requestAnimationFrame
@@ -284,7 +292,7 @@ set(ENABLE_OPENGL3 OFF CACHE BOOL "Enable OpenGL 3" FORCE)
 set(ENABLE_GLES2 ON CACHE BOOL "Enable OpenGL ES 2" FORCE)
 
 message(STATUS "=== Emscripten/WebAssembly Configuration ===")
-message(STATUS "  Initial memory: 256MB, Maximum: 2GB")
+message(STATUS "  Initial memory: 256MB, Maximum: 4GB")
 message(STATUS "  WebGL 2.0 enabled")
 message(STATUS "  SDL2 enabled via Emscripten")
 message(STATUS "  Build type: ${CMAKE_BUILD_TYPE}")

@@ -544,11 +544,14 @@ bool CIrrDeviceSDL::createWindowWithContext()
 	SDL_GL_ResetAttributes();
 
 #ifdef _IRR_EMSCRIPTEN_PLATFORM_
+	// Use the new emscripten_*_canvas_element_size API which supports OffscreenCanvas
+	// The old emscripten_set/get_canvas_size API is deprecated and doesn't work with
+	// OFFSCREENCANVASES_TO_PTHREAD (throws "Cannot resize canvas after transferControlToOffscreen")
 	if (Width != 0 || Height != 0)
-		emscripten_set_canvas_size(Width, Height);
+		emscripten_set_canvas_element_size("#canvas", Width, Height);
 	else {
-		int w, h, fs;
-		emscripten_get_canvas_size(&w, &h, &fs);
+		int w, h;
+		emscripten_get_canvas_element_size("#canvas", &w, &h);
 		Width = w;
 		Height = h;
 	}

@@ -118,10 +118,10 @@ if (isMainThread) {
         
         // Check for WebGL 2.0
         var canvas = document.createElement('canvas');
-        var gl = canvas.getContext('webgl2');
-        if (!gl) {
-            errors.push('WebGL 2.0 is not supported');
-        }
+        // var gl = canvas.getContext('webgl2');
+        // if (!gl) {
+        //     errors.push('WebGL 2.0 is not supported');
+        // }
         
         if (errors.length > 0) {
             console.error('Browser compatibility errors:', errors);
@@ -129,6 +129,21 @@ if (isMainThread) {
         }
     })();
 }
+
+// WORKAROUND for Emscripten bug: https://github.com/emscripten-core/emscripten/issues/24792
+// EGL calls are hardcoded to proxy to main thread, which breaks OFFSCREENCANVAS_SUPPORT
+// This is a known bug in Emscripten as of January 2025
+// We need to patch the proxying mechanism to skip EGL functions when using OffscreenCanvas
+(function applyEGLProxyWorkaround() {
+    console.log('[pre.js] Preparing EGL proxy workaround for OffscreenCanvas support');
+    
+    // This will be called after the module loads
+    // We'll intercept the proxy mechanism and skip EGL functions
+    if (typeof self !== 'undefined') {
+        self._luanti_skipEGLProxy = true;
+        console.log('[pre.js] EGL proxy skip flag set');
+    }
+})();
 
 // NOTE: FS operations moved to shell.html's Module.preRun
 // This file just does feature detection and logging

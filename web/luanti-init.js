@@ -329,35 +329,38 @@ console.log('Module.arguments:', Module.arguments);
 // Initial status
 Module.setStatus('Downloading Luanti...');
 
-// Resize handling: keep canvas resolution in sync with its container (and DPR)
+// Resize handling: keep canvas CSS size in sync with its container
+// 
+// IMPORTANT: With OFFSCREENCANVAS_SUPPORT + OFFSCREENCANVASES_TO_PTHREAD:
+// - The HTMLCanvasElement becomes a "placeholder" after being transferred to OffscreenCanvas
+// - The OffscreenCanvas lives in the worker thread and can ONLY be resized from that thread
+// - From JavaScript (main thread), we can ONLY set the CSS size (display size)
+// - The C/C++ code (running in the worker) detects CSS size changes and resizes the backing store
+// 
+// This is the correct architecture:
+//   Main Thread (JS):   Sets canvas.style.width/height → Controls display size
+//   Worker Thread (C++): Reads CSS size, resizes OffscreenCanvas → Controls render resolution
 (function() {
-	// Debounce to avoid rapid resizes thrashing GL context
+	// Debounce to avoid rapid resizes
 	var resizeScheduled = false;
 	
 	function resizeCanvasToContainer() {
 		if (!Module || !Module.canvas) return;
 		var canvas = Module.canvas;
 		var container = document.getElementById('game-container') || canvas.parentElement || document.body;
-		var dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
 		var displayWidth = Math.max(1, Math.floor(container.clientWidth));
 		var displayHeight = Math.max(1, Math.floor(container.clientHeight));
 		
-		// Set CSS size to match container
+		// Set CSS size to match container - this controls the display size in the browser
+		// This works for both regular canvas AND placeholder canvas after OffscreenCanvas transfer
 		canvas.style.width = displayWidth + 'px';
 		canvas.style.height = displayHeight + 'px';
 		
-		// Set backing store size to container * DPR for crisp rendering
-		var targetWidth = Math.max(1, displayWidth * dpr);
-		var targetHeight = Math.max(1, displayHeight * dpr);
-		
-		if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-			if (typeof Module.setCanvasSize === 'function') {
-				Module.setCanvasSize(targetWidth, targetHeight, true);
-			} else {
-				canvas.width = targetWidth;
-				canvas.height = targetHeight;
-			}
-		}
+		// NOTE: We do NOT set canvas.width/height or call any resize APIs here!
+		// With OffscreenCanvas, the backing store size MUST be set from the worker thread.
+		// The game's render loop (running in the worker) will detect the CSS size change
+		// and update the OffscreenCanvas dimensions accordingly using emscripten_set_canvas_element_size()
+		// or via SDL/Irrlicht's automatic canvas size handling.
 	}
 	
 	function scheduleResize() {
