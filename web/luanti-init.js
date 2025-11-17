@@ -43,6 +43,40 @@ var Module = {
             // WASMFS native functions are not initialized until onRuntimeInitialized
             // All FS operations moved to onRuntimeInitialized instead
             console.log('preRun: Filesystem operations deferred to onRuntimeInitialized (WASMFS requirement)');
+
+            // Prevent default key behavior
+            function preventKeyDefault(e) {
+                // Only prevent defaults for keys that cause unwanted browser actions
+                // Allow normal typing keys to work in text fields
+                
+                // Special handling for F11: Let browser handle fullscreen, but block game from seeing it
+                if (e.key === 'F11') {
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    // Do NOT call preventDefault() - let browser toggle fullscreen
+                    return;
+                }
+                
+                // Prevent other function keys (F1-F12)
+                if (e.key && e.key.startsWith('F') && e.key.length > 1 && e.key.length <= 3) {
+                    e.preventDefault();
+                    return;
+                }
+                
+                // Prevent browser shortcuts (Ctrl/Cmd + key)
+                if (e.ctrlKey || e.metaKey) {
+                    // Allow common text editing shortcuts
+                    const allowedKeys = ['a', 'c', 'v', 'x', 'z', 'y'];
+                    if (!allowedKeys.includes(e.key?.toLowerCase())) {
+                        e.preventDefault();
+                        return;
+                    }
+                }
+            }
+
+            window.addEventListener('keydown', preventKeyDefault, true);
+            window.addEventListener('keyup', preventKeyDefault, true);
+            window.addEventListener('keypress', preventKeyDefault, true);
         }
     ],
     postRun: [

@@ -185,27 +185,6 @@ if (isMainThread) {
         e.stopPropagation();
         return false;
     }
-
-    function preventKeyDefault(e) {
-        // Only prevent defaults for keys that cause unwanted browser actions
-        // Allow normal typing keys to work in text fields
-        
-        // Prevent function keys (F1-F12)
-        if (e.key && e.key.startsWith('F') && e.key.length > 1 && e.key.length <= 3 && e.key !== 'F11') {
-            e.preventDefault();
-            return;
-        }
-        
-        // Prevent browser shortcuts (Ctrl/Cmd + key)
-        if (e.ctrlKey || e.metaKey) {
-            // Allow common text editing shortcuts
-            const allowedKeys = ['a', 'c', 'v', 'x', 'z', 'y'];
-            if (!allowedKeys.includes(e.key?.toLowerCase())) {
-                e.preventDefault();
-                return;
-            }
-        }
-    }
     
     function attachContextMenuPrevention() {
         var canvas = document.getElementById('canvas');
@@ -224,10 +203,6 @@ if (isMainThread) {
             document.addEventListener('pointerlockchange', function() {
                 console.log('Pointer lock changed. Locked:', !!document.pointerLockElement);
             });
-
-            document.addEventListener('keydown', preventKeyDefault);
-            document.addEventListener('keyup', preventKeyDefault);
-            document.addEventListener('keypress', preventKeyDefault);
 
             console.log('Right-click context menu prevention attached to canvas');
             return true;
