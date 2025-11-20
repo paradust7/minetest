@@ -168,6 +168,10 @@ COpenGL3DriverBase::COpenGL3DriverBase(const SIrrlichtCreationParameters &params
 COpenGL3DriverBase::~COpenGL3DriverBase()
 {
 	QuadIndexVBO.destroy();
+#ifdef __EMSCRIPTEN__
+	DynamicVertexVBO.destroy();
+	DynamicIndexVBO.destroy();
+#endif
 
 	deleteMaterialRenders();
 
@@ -893,17 +897,14 @@ void COpenGL3DriverBase::draw2DImageBatch(const video::ITexture *texture,
 #ifdef __EMSCRIPTEN__
 	// WebGL requires vertex data in a VBO when using indexed drawing
 	// Create a temporary VBO for the vertex data
-	GLuint tempVBO = 0;
-	GL.GenBuffers(1, &tempVBO);
-	GL.BindBuffer(GL_ARRAY_BUFFER, tempVBO);
-	GL.BufferData(GL_ARRAY_BUFFER, vtx.size() * sizeof(S3DVertex), vtx.data(), GL_STREAM_DRAW);
+	DynamicVertexVBO.upload(vtx.data(), vtx.size() * sizeof(S3DVertex), 0, GL_STREAM_DRAW);
+	GL.BindBuffer(GL_ARRAY_BUFFER, DynamicVertexVBO.getName());
 	
 	GL.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, QuadIndexVBO.getName());
 	drawElements(GL_TRIANGLES, vt2DImage, nullptr, vtx.size(), 0, 6 * drawCount);
 	
 	GL.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	GL.BindBuffer(GL_ARRAY_BUFFER, 0);
-	GL.DeleteBuffers(1, &tempVBO);
 #else
 	// Native OpenGL supports client-side vertex arrays with indexed drawing
 	GL.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, QuadIndexVBO.getName());
@@ -995,17 +996,14 @@ void COpenGL3DriverBase::drawArrays(GLenum primitiveType, const VertexType &vert
 	// Only create temporary VBO if vertices is not nullptr (client-side data)
 	// If vertices is nullptr, a VBO is already bound
 	if (vertices != nullptr) {
-		GLuint tempVBO = 0;
-		GL.GenBuffers(1, &tempVBO);
-		GL.BindBuffer(GL_ARRAY_BUFFER, tempVBO);
-		GL.BufferData(GL_ARRAY_BUFFER, vertexCount * vertexType.VertexSize, vertices, GL_STREAM_DRAW);
+		DynamicVertexVBO.upload(vertices, vertexCount * vertexType.VertexSize, 0, GL_STREAM_DRAW);
+		GL.BindBuffer(GL_ARRAY_BUFFER, DynamicVertexVBO.getName());
 		
 		beginDraw(vertexType, 0);
 		GL.DrawArrays(primitiveType, 0, vertexCount);
 		endDraw(vertexType);
 		
 		GL.BindBuffer(GL_ARRAY_BUFFER, 0);
-		GL.DeleteBuffers(1, &tempVBO);
 	} else {
 		// VBO already bound
 		beginDraw(vertexType, 0);
@@ -1026,32 +1024,25 @@ void COpenGL3DriverBase::drawElements(GLenum primitiveType, const VertexType &ve
 	// Only create temporary VBOs if data is client-side (pointers not nullptr)
 	// If nullptr, VBOs are already bound
 	if (vertices != nullptr || indices != nullptr) {
-		GLuint tempVertexVBO = 0;
-		GLuint tempIndexVBO = 0;
-		
 		if (vertices != nullptr) {
-			GL.GenBuffers(1, &tempVertexVBO);
-			GL.BindBuffer(GL_ARRAY_BUFFER, tempVertexVBO);
-			GL.BufferData(GL_ARRAY_BUFFER, vertexCount * vertexType.VertexSize, vertices, GL_STREAM_DRAW);
+			DynamicVertexVBO.upload(vertices, vertexCount * vertexType.VertexSize, 0, GL_STREAM_DRAW);
+			GL.BindBuffer(GL_ARRAY_BUFFER, DynamicVertexVBO.getName());
 		}
 		
 		if (indices != nullptr) {
-			GL.GenBuffers(1, &tempIndexVBO);
-			GL.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, tempIndexVBO);
-			GL.BufferData(GL_ELEMENT_ARRAY_BUFFER, indexCount * sizeof(u16), indices, GL_STREAM_DRAW);
+			DynamicIndexVBO.upload(indices, indexCount * sizeof(u16), 0, GL_STREAM_DRAW);
+			GL.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, DynamicIndexVBO.getName());
 		}
 		
 		beginDraw(vertexType, 0);
 		GL.DrawRangeElements(primitiveType, 0, vertexCount - 1, indexCount, GL_UNSIGNED_SHORT, 0);
 		endDraw(vertexType);
 		
-		if (tempVertexVBO) {
+		if (vertices != nullptr) {
 			GL.BindBuffer(GL_ARRAY_BUFFER, 0);
-			GL.DeleteBuffers(1, &tempVertexVBO);
 		}
-		if (tempIndexVBO) {
+		if (indices != nullptr) {
 			GL.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-			GL.DeleteBuffers(1, &tempIndexVBO);
 		}
 	} else {
 		// VBOs already bound
@@ -1076,9 +1067,6 @@ void COpenGL3DriverBase::drawGeneric(const void *vertices, u32 vertexCount, cons
 	// WebGL requires vertex and index data in VBOs when using indexed drawing
 	// Only create temporary VBOs if data is client-side (pointers not nullptr)
 	// If nullptr, VBOs are already bound from hardware buffers
-	
-	GLuint tempVertexVBO = 0;
-	GLuint tempIndexVBO = 0;
 	
 	// Calculate index count for bounds checking and buffer sizing
 	u32 indexCount = 0;
@@ -1120,9 +1108,8 @@ void COpenGL3DriverBase::drawGeneric(const void *vertices, u32 vertexCount, cons
 	
 	// Create temporary VBO for vertex data if needed
 	if (vertices != nullptr) {
-		GL.GenBuffers(1, &tempVertexVBO);
-		GL.BindBuffer(GL_ARRAY_BUFFER, tempVertexVBO);
-		GL.BufferData(GL_ARRAY_BUFFER, vertexCount * vTypeDesc.VertexSize, vertices, GL_STREAM_DRAW);
+		DynamicVertexVBO.upload(vertices, vertexCount * vTypeDesc.VertexSize, 0, GL_STREAM_DRAW);
+		GL.BindBuffer(GL_ARRAY_BUFFER, DynamicVertexVBO.getName());
 		// os::Printer::log("drawGeneric: Created temp vertex VBO (client-side data)", ELL_DEBUG);
 	} else {
 		// os::Printer::log("drawGeneric: Using existing vertex VBO (hardware buffer)", ELL_DEBUG);
@@ -1132,11 +1119,9 @@ void COpenGL3DriverBase::drawGeneric(const void *vertices, u32 vertexCount, cons
 	
 	// Create temporary VBO for index data if needed
 	if (usesIndices && indexList != nullptr) {
-		GL.GenBuffers(1, &tempIndexVBO);
-		GL.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, tempIndexVBO);
-		
 		size_t indexSize = (iType == EIT_16BIT) ? sizeof(u16) : sizeof(u32);
-		GL.BufferData(GL_ELEMENT_ARRAY_BUFFER, indexCount * indexSize, indexList, GL_STREAM_DRAW);
+		DynamicIndexVBO.upload(indexList, indexCount * indexSize, 0, GL_STREAM_DRAW);
+		GL.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, DynamicIndexVBO.getName());
 		// os::Printer::log("drawGeneric: Created temp index VBO (client-side data)", ELL_DEBUG);
 	} else if (usesIndices) {
 		// os::Printer::log("drawGeneric: Using existing index VBO (hardware buffer)", ELL_DEBUG);
@@ -1211,13 +1196,11 @@ void COpenGL3DriverBase::drawGeneric(const void *vertices, u32 vertexCount, cons
 	
 #ifdef __EMSCRIPTEN__
 	// Clean up temporary VBOs if we created them
-	if (tempVertexVBO) {
+	if (vertices != nullptr) {
 		GL.BindBuffer(GL_ARRAY_BUFFER, 0);
-		GL.DeleteBuffers(1, &tempVertexVBO);
 	}
-	if (tempIndexVBO) {
+	if (indexList != nullptr) {
 		GL.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-		GL.DeleteBuffers(1, &tempIndexVBO);
 	}
 #endif
 }

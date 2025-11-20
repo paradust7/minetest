@@ -209,7 +209,7 @@ set(EMSCRIPTEN_FINAL_EXE_FLAGS
     "--preload-file=${CMAKE_SOURCE_DIR}/web/cache@/userdata/cache"
     
     # JavaScript/WASM settings
-    "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','FS','ENV']"
+    "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','FS','ENV','GL']"
     "-sEXPORTED_FUNCTIONS=['_main']"
     "-sMODULARIZE=1"
     "-sEXPORT_NAME='LuantiModule'"

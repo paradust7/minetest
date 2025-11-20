@@ -368,6 +368,9 @@ private:
 #ifdef __EMSCRIPTEN__
 	// WebGL-safe: QuadIndexVBO is used for index data, must use GL_ELEMENT_ARRAY_BUFFER
 	OpenGLVBO QuadIndexVBO{GL_ELEMENT_ARRAY_BUFFER};
+	// WebGL-safe: Persistent VBOs for client-side arrays to avoid GenBuffers/DeleteBuffers churn
+	OpenGLVBO DynamicVertexVBO{GL_ARRAY_BUFFER};
+	OpenGLVBO DynamicIndexVBO{GL_ELEMENT_ARRAY_BUFFER};
 #else
 	OpenGLVBO QuadIndexVBO;
 #endif
