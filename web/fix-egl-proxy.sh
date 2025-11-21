@@ -30,10 +30,12 @@ cp "$LUANTI_JS" "$LUANTI_JS.backup"
 # Replace the proxy line with a comment
 
 # Count occurrences before patching
-PATCH_COUNT=$(grep -o -E 'function\s+_egl[a-zA-Z0-9_]+\([^)]*\)\{if\s*\(ENVIRONMENT_IS_PTHREAD\)[^;]+;' "$LUANTI_JS" | wc -l || echo "0")
+PATCH_COUNT=$(perl -0777 -ne 'my $c = () = /(function\s+_egl[a-zA-Z0-9_]+\([^)]*\)\s*\{\s*if\s*\(ENVIRONMENT_IS_PTHREAD\)[^;]+;)/gs; print $c;' "$LUANTI_JS")
+[ -z "$PATCH_COUNT" ] && PATCH_COUNT=0
 
 # Apply the patch: comment out the if(ENVIRONMENT_IS_PTHREAD) block in all _egl functions
-perl -i -p0e 's/(function\s+_egl[a-zA-Z0-9_]+\([^)]*\))\{(if\s*\(ENVIRONMENT_IS_PTHREAD\)[^;]+;)/$1\{\/*$2*\//gs' "$LUANTI_JS"
+# Updated regex to handle multiline function definitions (non-minified code)
+perl -i -0777 -pe 's/(function\s+_egl[a-zA-Z0-9_]+\([^)]*\)\s*\{\s*)(if\s*\(ENVIRONMENT_IS_PTHREAD\)[^;]+;)/$1\/*$2*\//gs' "$LUANTI_JS"
 
 echo "Patched $PATCH_COUNT EGL function(s)"
 
