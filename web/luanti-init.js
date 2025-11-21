@@ -14,7 +14,7 @@ var Module = {
         }, false);
         return canvas;
     })(),
-    arguments: ["--info"],
+    arguments: [],
     printErr: function(text) {
         console.error('stderr:', text);
         var errorText = document.getElementById('error-text');

@@ -206,7 +206,6 @@ set(EMSCRIPTEN_FINAL_EXE_FLAGS
     "--preload-file=${CMAKE_SOURCE_DIR}/fonts@/userdata/fonts"
     "--preload-file=${CMAKE_SOURCE_DIR}/client@/userdata/client"
     "--preload-file=${CMAKE_SOURCE_DIR}/worlds@/userdata/worlds"
-    "--preload-file=${CMAKE_SOURCE_DIR}/web/cache@/userdata/cache"
     
     # JavaScript/WASM settings
     "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','FS','ENV','GL']"
