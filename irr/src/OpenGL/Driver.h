@@ -313,8 +313,11 @@ protected:
 	void beginDraw(const VertexType &vertexType, uintptr_t verticesBase, int vertexCount);
 	void endDraw(const VertexType &vertexType);
 
-	GLuint tempVBO = 0;
-	GLuint tempIBO = 0;
+	OpenGLVBO tempVBO;
+	bool tempVBOBound;
+
+	OpenGLVBO tempIBO;
+	bool tempIBOBound;
 
 	COpenGL3CacheHandler *CacheHandler;
 	core::stringc Name;

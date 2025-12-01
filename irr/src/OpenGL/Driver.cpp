@@ -145,7 +145,10 @@ void COpenGL3DriverBase::debugCb(GLenum source, GLenum type, GLuint id, GLenum s
 }
 
 COpenGL3DriverBase::COpenGL3DriverBase(const SIrrlichtCreationParameters &params, io::IFileSystem *io, IContextManager *contextManager) :
-		CNullDriver(io, params.WindowSize), COpenGL3ExtensionHandler(), CacheHandler(0),
+		CNullDriver(io, params.WindowSize), COpenGL3ExtensionHandler(),
+		tempVBO(GL_ARRAY_BUFFER), tempVBOBound(false),
+		tempIBO(GL_ELEMENT_ARRAY_BUFFER), tempIBOBound(false),
+		CacheHandler(0),
 		Params(params), ResetRenderStates(true), LockRenderStateMode(false), AntiAlias(params.AntiAlias),
 		MaterialRenderer2DActive(0), MaterialRenderer2DTexture(0), MaterialRenderer2DNoTexture(0),
 		CurrentRenderMode(ERM_NONE), Transformation3DChanged(true),
@@ -169,6 +172,8 @@ COpenGL3DriverBase::COpenGL3DriverBase(const SIrrlichtCreationParameters &params
 COpenGL3DriverBase::~COpenGL3DriverBase()
 {
 	QuadIndexVBO.destroy();
+	tempVBO.destroy();
+	tempIBO.destroy();
 
 	deleteMaterialRenders();
 
@@ -1036,11 +1041,11 @@ void COpenGL3DriverBase::drawGeneric(const void *vertices, int vertexCount, cons
 		break;
 	}
 
-	if (tempIBO) abort();
+	if (tempIBOBound) abort();
 	if (indexList && indexCount) {
-                GL.GenBuffers(1, &tempIBO);
-                GL.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, tempIBO);
-                GL.BufferData(GL_ELEMENT_ARRAY_BUFFER, indexWidth * indexCount, indexList, GL_STREAM_DRAW);
+		tempIBO.upload(reinterpret_cast<const void*>(indexList), indexWidth * indexCount, 0, GL_STREAM_DRAW);
+		GL.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, tempIBO.getName());
+		tempIBOBound = true;
 		indexList = nullptr;
 	}
 #endif
@@ -1073,10 +1078,9 @@ void COpenGL3DriverBase::drawGeneric(const void *vertices, int vertexCount, cons
 	}
 
 #ifdef __EMSCRIPTEN__
-	if (tempIBO) {
+	if (tempIBOBound) {
 		GL.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-		GL.DeleteBuffers(1, &tempIBO);
-		tempIBO = 0;
+		tempIBOBound = false;
 	}
 #endif
 
@@ -1086,14 +1090,12 @@ void COpenGL3DriverBase::drawGeneric(const void *vertices, int vertexCount, cons
 void COpenGL3DriverBase::beginDraw(const VertexType &vertexType, uintptr_t verticesBase, int vertexCount)
 {
 #ifdef __EMSCRIPTEN__
-	if (tempVBO != 0) {
-		abort();
-	}
 	if (verticesBase != 0) {
-                GL.GenBuffers(1, &tempVBO);
-                GL.BindBuffer(GL_ARRAY_BUFFER, tempVBO);
-                GL.BufferData(GL_ARRAY_BUFFER, vertexCount * vertexType.VertexSize, (const void*)verticesBase, GL_STREAM_DRAW);
+		if (tempVBOBound) abort();
+		tempVBO.upload(reinterpret_cast<void*>(verticesBase), vertexCount * vertexType.VertexSize, 0, GL_STREAM_DRAW);
+		GL.BindBuffer(GL_ARRAY_BUFFER, tempVBO.getName());
 		verticesBase = 0;
+		tempVBOBound = true;
 	}
 #endif
 	for (auto &attr : vertexType) {
@@ -1117,10 +1119,9 @@ void COpenGL3DriverBase::endDraw(const VertexType &vertexType)
 	for (auto &attr : vertexType)
 		GL.DisableVertexAttribArray(attr.Index);
 #ifdef __EMSCRIPTEN__
-	if (tempVBO != 0) {
-                GL.BindBuffer(GL_ARRAY_BUFFER, 0);
-                GL.DeleteBuffers(1, &tempVBO);
-		tempVBO = 0;
+	if (tempVBOBound) {
+		GL.BindBuffer(GL_ARRAY_BUFFER, 0);
+		tempVBOBound = false;
 	}
 #endif
 }
