@@ -168,12 +168,14 @@ public:
 		//! Sets the new position of the cursor.
 		void setPosition(s32 x, s32 y) override
 		{
+#if 0
 #ifndef __ANDROID__
 			// On Android, this somehow results in a camera jump when enabling
 			// relative mouse mode and it isn't supported anyway.
 			SDL_WarpMouseInWindow(Device->Window,
 					static_cast<int>(x / Device->ScaleX),
 					static_cast<int>(y / Device->ScaleY));
+#endif
 #endif
 
 			if (SDL_GetRelativeMouseMode()) {
@@ -206,6 +208,7 @@ public:
 
 		virtual void setRelativeMode(bool relative) override
 		{
+#if 0
 			// Only change it when necessary, as it flushes mouse motion when enabled
 			if (relative != static_cast<bool>(SDL_GetRelativeMouseMode())) {
 				if (relative)
@@ -213,6 +216,7 @@ public:
 				else
 					SDL_SetRelativeMouseMode(SDL_FALSE);
 			}
+#endif
 		}
 
 		void setActiveIcon(gui::ECURSOR_ICON iconId) override
