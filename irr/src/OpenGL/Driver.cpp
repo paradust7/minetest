@@ -146,8 +146,8 @@ void COpenGL3DriverBase::debugCb(GLenum source, GLenum type, GLuint id, GLenum s
 
 COpenGL3DriverBase::COpenGL3DriverBase(const SIrrlichtCreationParameters &params, io::IFileSystem *io, IContextManager *contextManager) :
 		CNullDriver(io, params.WindowSize), COpenGL3ExtensionHandler(),
-		tempVBO(GL_ARRAY_BUFFER), tempVBOBound(false),
-		tempIBO(GL_ELEMENT_ARRAY_BUFFER), tempIBOBound(false),
+		tempVBOIndex(0), tempVBOBound(false),
+		tempIBOIndex(0), tempIBOBound(false),
 		CacheHandler(0),
 		Params(params), ResetRenderStates(true), LockRenderStateMode(false), AntiAlias(params.AntiAlias),
 		MaterialRenderer2DActive(0), MaterialRenderer2DTexture(0), MaterialRenderer2DNoTexture(0),
@@ -172,8 +172,10 @@ COpenGL3DriverBase::COpenGL3DriverBase(const SIrrlichtCreationParameters &params
 COpenGL3DriverBase::~COpenGL3DriverBase()
 {
 	QuadIndexVBO.destroy();
-	tempVBO.destroy();
-	tempIBO.destroy();
+	for (auto &vbo : tempVBO)
+		vbo.destroy();
+	for (auto &ibo : tempIBO)
+		ibo.destroy();
 
 	deleteMaterialRenders();
 
@@ -455,6 +457,9 @@ bool COpenGL3DriverBase::endScene()
 	CNullDriver::endScene();
 
 	GL.Flush();
+
+	tempVBOIndex = 0;
+	tempIBOIndex = 0;
 
 	if (ContextManager)
 		return ContextManager->swapBuffers();
@@ -1043,8 +1048,11 @@ void COpenGL3DriverBase::drawGeneric(const void *vertices, int vertexCount, cons
 
 	if (tempIBOBound) abort();
 	if (indexList && indexCount) {
-		tempIBO.upload(reinterpret_cast<const void*>(indexList), indexWidth * indexCount, 0, GL_STREAM_DRAW);
-		GL.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, tempIBO.getName());
+		while (tempIBO.size() <= tempIBOIndex)
+			tempIBO.emplace_back(GL_ELEMENT_ARRAY_BUFFER);
+		tempIBO[tempIBOIndex].upload(reinterpret_cast<const void*>(indexList), indexWidth * indexCount, 0, GL_STREAM_DRAW);
+		GL.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, tempIBO[tempIBOIndex].getName());
+		tempIBOIndex += 1;
 		tempIBOBound = true;
 		indexList = nullptr;
 	}
@@ -1092,10 +1100,13 @@ void COpenGL3DriverBase::beginDraw(const VertexType &vertexType, uintptr_t verti
 #ifdef __EMSCRIPTEN__
 	if (verticesBase != 0) {
 		if (tempVBOBound) abort();
-		tempVBO.upload(reinterpret_cast<void*>(verticesBase), vertexCount * vertexType.VertexSize, 0, GL_STREAM_DRAW);
-		GL.BindBuffer(GL_ARRAY_BUFFER, tempVBO.getName());
-		verticesBase = 0;
+		while (tempVBO.size() <= tempVBOIndex)
+			tempVBO.emplace_back(GL_ARRAY_BUFFER);
+		tempVBO[tempVBOIndex].upload(reinterpret_cast<void*>(verticesBase), vertexCount * vertexType.VertexSize, 0, GL_STREAM_DRAW);
+		GL.BindBuffer(GL_ARRAY_BUFFER, tempVBO[tempVBOIndex].getName());
+		tempVBOIndex += 1;
 		tempVBOBound = true;
+		verticesBase = 0;
 	}
 #endif
 	for (auto &attr : vertexType) {

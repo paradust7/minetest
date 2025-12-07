@@ -313,10 +313,12 @@ protected:
 	void beginDraw(const VertexType &vertexType, uintptr_t verticesBase, int vertexCount);
 	void endDraw(const VertexType &vertexType);
 
-	OpenGLVBO tempVBO;
+	std::vector<OpenGLVBO> tempVBO;
+	size_t tempVBOIndex;
 	bool tempVBOBound;
 
-	OpenGLVBO tempIBO;
+	std::vector<OpenGLVBO> tempIBO;
+	size_t tempIBOIndex;
 	bool tempIBOBound;
 
 	COpenGL3CacheHandler *CacheHandler;
