@@ -110,6 +110,14 @@ if (isMainThread) {
         
         if (!window.WebAssembly) {
             errors.push('WebAssembly is not supported');
+        } else {
+            // Check for JSPI support (required by ASYNCIFY=2)
+            if (typeof WebAssembly.promising !== 'function') {
+                console.warn('[pre.js] WebAssembly.promising is NOT available. JSPI (ASYNCIFY=2) will fail!');
+                // We don't push to errors yet, just warn, but it's likely the cause
+            } else {
+                console.log('[pre.js] WebAssembly.promising is available (JSPI supported)');
+            }
         }
         
         if (!window.WebGLRenderingContext) {

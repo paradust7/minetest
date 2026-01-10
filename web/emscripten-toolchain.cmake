@@ -65,7 +65,7 @@ set(SDL2_LIBRARIES "${SDL2_LIBRARY}")
 # Freetype - Emscripten port
 set(FREETYPE_FOUND TRUE)
 set(FREETYPE_INCLUDE_DIRS "${EMSCRIPTEN_ROOT_PATH}/system/include/freetype2")
-set(FREETYPE_LIBRARY "freetype")
+set(FREETYPE_LIBRARY "EMSCRIPTEN_PORT")
 set(FREETYPE_LIBRARIES "${FREETYPE_LIBRARY}")
 
 # SQLite3 - built-in to Emscripten (handled by -sUSE_SQLITE3=1 at link time)
@@ -144,7 +144,7 @@ set(EMSCRIPTEN_COMMON_FLAGS
     # Note: NOT using PROXY_POSIX_SOCKETS - we implement our own socket layer
     
     # Debug and Error Reporting (reduced verbosity for performance)
-    "-sASSERTIONS=0"
+    "-sASSERTIONS=2"
     "-sSTACK_OVERFLOW_CHECK=0"
     "-sALLOW_UNIMPLEMENTED_SYSCALLS=1"
     "-sERROR_ON_UNDEFINED_SYMBOLS=0"
@@ -154,15 +154,18 @@ set(EMSCRIPTEN_COMMON_FLAGS
     
     # CRITICAL: ASYNCIFY allows synchronous main loops to yield to the browser
     # Without this, the game loop blocks the JavaScript thread = frozen browser
-    "-sASYNCIFY=1"
-    "-sASYNCIFY_STACK_SIZE=65536"  # Increased for deeper call stacks
-    "-sASYNCIFY_ADVISE=1"  # Warn about functions needing asyncification
+    "-sASYNCIFY=2"
+    "-sASYNCIFY_STACK_SIZE=131072"  # Increased for deeper call stacks
+    "-sJSPI_EXPORTS=['_main']"
+    "-sJSPI_IMPORTS=['emscripten_sleep','emscripten_set_main_loop_arg','emscripten_yield']"
+    # "-sJSPI_IMPORTS=['*']"
+    # "-sASYNCIFY_ADVISE=1"  # Warn about functions needing asyncification
     # "-sASYNCIFY_ONLY=[\"_main\",\"_invoke_ii\",\"_invoke_vi\",\"_invoke_iiiiiiii\",\"_invoke_iiiiii\",\"_invoke_iiii\",\"_invoke_viiii\",\"_emscripten_sleep\"]"
     
     # Threading support (required for server thread + network threads)
     # Enables Web Workers for true multithreading
     "-pthread"
-    "-sPTHREAD_POOL_SIZE=16"  # Pre-create 16 worker threads (server + client network threads + emerge + overhead)
+    "-sPTHREAD_POOL_SIZE=20"  # Pre-create 16 worker threads (server + client network threads + emerge + overhead)
     # Note: NOT using PROXY_TO_PTHREAD - main() runs on main thread for WebGL compatibility
     # Server runs in one thread, network threads in others
     
@@ -211,10 +214,10 @@ string(REPLACE ";" " " EMSCRIPTEN_COMMON_FLAGS_STR "${EMSCRIPTEN_COMMON_FLAGS}")
 # Add exception catching for proper error messages and stack traces
 # Add -L/usr/local/lib for zstd library and dummy port libraries (created in Dockerfile)
 # Add port flags at link time so Emscripten builds pthread-enabled versions
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${EMSCRIPTEN_COMMON_FLAGS_STR} -L/usr/local/lib -sDISABLE_EXCEPTION_CATCHING=0 -sNO_EXIT_RUNTIME=0 -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1 -sUSE_OGG=1 -sUSE_VORBIS=1")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${EMSCRIPTEN_COMMON_FLAGS_STR} -L/usr/local/lib -fwasm-exceptions -sNO_EXIT_RUNTIME=0 -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1 -sUSE_OGG=1 -sUSE_VORBIS=1")
 
 # Enable proper C++ exception handling (compile-time flag required!)
-set(EXCEPTION_FLAGS "-fexceptions")
+set(EXCEPTION_FLAGS "-fwasm-exceptions")
 
 # Emscripten port flags MUST be present during compilation for headers to work properly
 # Add -fexceptions for proper C++ exception handling across WASM boundaries

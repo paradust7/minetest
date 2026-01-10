@@ -6,7 +6,7 @@
 #
 # Then use with build-with-docker.sh script
 
-FROM emscripten/emsdk:4.0.18
+FROM emscripten/emsdk:4.0.22
 
 LABEL description="Luanti web build environment with Emscripten and Ninja"
 LABEL maintainer="Luanti contributors"

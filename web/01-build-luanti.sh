@@ -65,7 +65,7 @@ if ! docker image inspect luanti-web-builder:latest >/dev/null 2>&1; then
     echo ""
 fi
 
-echo -e "${YELLOW}Building Luanti with Emscripten 4.0.18...${NC}"
+echo -e "${YELLOW}Building Luanti with Emscripten 4.0.22...${NC}"
 echo "This may take a while on first build."
 echo ""
 
