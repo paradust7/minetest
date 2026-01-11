@@ -19,6 +19,10 @@
 #include "settings.h"
 #include "log.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #ifdef _WIN32
 #include <windows.h>
 #include <winsock2.h>
@@ -88,6 +92,7 @@ bool Address::operator==(const Address &other) const
 
 void Address::Resolve(const char *name, Address *fallback)
 {
+	fprintf(stderr, "[Address::Resolve] Entered for name: %s\n", name ? name : "NULL");
 	if (!name || name[0] == 0) {
 		if (m_addr_family == AF_INET)
 			setAddress(static_cast<u32>(0));
@@ -95,6 +100,7 @@ void Address::Resolve(const char *name, Address *fallback)
 			setAddress(static_cast<IPv6AddressBytes*>(nullptr));
 		if (fallback)
 			*fallback = Address();
+		fprintf(stderr, "[Address::Resolve] Empty name, returning\n");
 		return;
 	}
 
@@ -123,11 +129,17 @@ void Address::Resolve(const char *name, Address *fallback)
 	} else {
 		hints.ai_family = AF_INET;
 	}
+#ifdef __EMSCRIPTEN__
+	hints.ai_flags = 0;
+#else
 	hints.ai_flags = AI_ADDRCONFIG;
+#endif
 
+	EM_ASM({ console.log('[Address::Resolve] Calling getaddrinfo'); });
 	// Do getaddrinfo()
 	struct addrinfo *resolved = nullptr;
 	int e = getaddrinfo(name, nullptr, &hints, &resolved);
+	EM_ASM({ console.log('[Address::Resolve] getaddrinfo returned: ' + $0); }, e);
 	if (e != 0)
 		throw ResolveError(gai_strerror(e));
 	assert(resolved);
@@ -140,7 +152,9 @@ void Address::Resolve(const char *name, Address *fallback)
 			copy_from_ai(resolved->ai_next, fallback);
 	}
 
+	EM_ASM({ console.log('[Address::Resolve] Freeing addrinfo'); });
 	freeaddrinfo(resolved);
+	EM_ASM({ console.log('[Address::Resolve] Done'); });
 }
 
 // IP address -> textual representation

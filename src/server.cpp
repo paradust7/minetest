@@ -433,6 +433,7 @@ Server::~Server()
 
 void Server::init()
 {
+	fprintf(stderr, "[Server::init] Entered\n");
 	infostream << "Server created for gameid \"" << m_gamespec.id << "\"";
 	if (m_simple_singleplayer_mode)
 		infostream << " in simple singleplayer mode" << std::endl;
@@ -445,6 +446,7 @@ void Server::init()
 
 	// Create world if it doesn't exist
 	try {
+		fprintf(stderr, "[Server::init] Initializing world\n");
 		loadGameConfAndInitWorld(m_path_world,
 				fs::GetFilenameFromPath(m_path_world.c_str()),
 				m_gamespec, false);
@@ -453,16 +455,20 @@ void Server::init()
 	}
 
 	// Create emerge manager
+	fprintf(stderr, "[Server::init] Creating emerge manager\n");
 	m_emerge = std::make_unique<EmergeManager>(this, m_metrics_backend.get());
 
 	// Create ban manager
+	fprintf(stderr, "[Server::init] Creating ban manager\n");
 	std::string ban_path = m_path_world + DIR_DELIM "ipban.txt";
 	m_banmanager = new BanManager(ban_path);
 
 	// Create mod storage database and begin a save for later
+	fprintf(stderr, "[Server::init] Opening mod storage database\n");
 	m_mod_storage_database = openModStorageDatabase(m_path_world);
 	m_mod_storage_database->beginSave();
 
+	fprintf(stderr, "[Server::init] Creating mod manager\n");
 	m_modmgr = std::make_unique<ServerModManager>(m_path_world, m_gamespec);
 
 	// complain about mods with unsatisfied dependencies
@@ -477,6 +483,7 @@ void Server::init()
 	// Create the Map (loads map_meta.txt, overriding configured mapgen params)
 	std::unique_ptr<ServerMap> startup_server_map;
 	try {
+		fprintf(stderr, "[Server::init] Creating map\n");
 		startup_server_map = std::make_unique<ServerMap>(m_path_world, this,
 				m_emerge.get(), m_metrics_backend.get());
 	} catch (DatabaseException &e) {
@@ -486,6 +493,7 @@ void Server::init()
 	}
 
 	// Initialize scripting
+	fprintf(stderr, "[Server::init] Initializing Lua\n");
 	infostream << "Server: Initializing Lua" << std::endl;
 
 	m_script = std::make_unique<ServerScripting>(this);
@@ -493,14 +501,17 @@ void Server::init()
 	// Must be created before mod loading because we have some inventory creation
 	m_inventory_mgr = std::make_unique<ServerInventoryManager>();
 
+	fprintf(stderr, "[Server::init] Loading builtin\n");
 	m_script->loadBuiltin();
 
 	m_gamespec.checkAndLog();
+	fprintf(stderr, "[Server::init] Loading mods\n");
 	m_modmgr->loadMods(*m_script);
 
 	m_script->saveGlobals();
 
 	// Read Textures and calculate sha1 sums
+	fprintf(stderr, "[Server::init] Filling media cache\n");
 	fillMediaCache();
 
 	// Apply item aliases in the node definition manager
@@ -528,6 +539,7 @@ void Server::init()
 	m_craftdef->initHashes(this);
 
 	// Initialize Environment
+	fprintf(stderr, "[Server::init] Initializing environment\n");
 	m_env = new ServerEnvironment(std::move(startup_server_map),
 		this, m_metrics_backend.get());
 	m_env->init();
@@ -563,22 +575,28 @@ void Server::init()
 	m_max_chatmessage_length = g_settings->getU16("chat_message_max_size");
 	m_csm_restriction_flags = g_settings->getU64("csm_restriction_flags");
 	m_csm_restriction_noderange = g_settings->getU32("csm_restriction_noderange");
+	fprintf(stderr, "[Server::init] Done\n");
 }
 
 void Server::start()
 {
+	fprintf(stderr, "[Server::start] Entered\n");
 	init();
 
+	fprintf(stderr, "[Server::start] init() returned\n");
 	infostream << "Starting server thread..." << std::endl;
 
 	// Stop thread if already running
 	m_thread->stop();
 
 	// Initialize connection
+	fprintf(stderr, "[Server::start] Initializing connection (m_con->Serve)\n");
 	m_con->Serve(m_bind_addr);
 
 	// Start thread
+	fprintf(stderr, "[Server::start] Starting server thread (m_thread->start)\n");
 	m_thread->start();
+	fprintf(stderr, "[Server::start] Done\n");
 
 	// ASCII art for the win!
 	const char *art[] = {

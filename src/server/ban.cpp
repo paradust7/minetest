@@ -16,12 +16,19 @@
 BanManager::BanManager(const std::string &banfilepath):
 		m_banfilepath(banfilepath)
 {
+	fprintf(stderr, "[BanManager::BanManager] Entered\n");
 	try {
 		load();
+		fprintf(stderr, "[BanManager::BanManager] load() returned\n");
 	} catch(SerializationError &e) {
-		infostream << "BanManager: creating "
-				<< m_banfilepath << std::endl;
+		fprintf(stderr, "[BanManager::BanManager] Caught SerializationError: %s\n", e.what());
+		// infostream << "BanManager: creating "
+		//		<< m_banfilepath << std::endl;
+	} catch(...) {
+		fprintf(stderr, "[BanManager::BanManager] Caught unknown exception\n");
+		throw;
 	}
+	fprintf(stderr, "[BanManager::BanManager] Done\n");
 }
 
 BanManager::~BanManager()
@@ -31,13 +38,19 @@ BanManager::~BanManager()
 
 void BanManager::load()
 {
+	fprintf(stderr, "[BanManager::load] Entered\n");
 	MutexAutoLock lock(m_mutex);
+	fprintf(stderr, "[BanManager::load] Mutex locked\n");
 	infostream<<"BanManager: loading from "<<m_banfilepath<<std::endl;
+	fprintf(stderr, "[BanManager::load] Calling open_ifstream: %s\n", m_banfilepath.c_str());
 	auto is = open_ifstream(m_banfilepath.c_str(), false);
+	fprintf(stderr, "[BanManager::load] open_ifstream returned, good: %d\n", (int)is.good());
 	if (!is.good()) {
+		fprintf(stderr, "[BanManager::load] File not good, throwing SerializationError\n");
 		throw SerializationError("BanManager::load(): Couldn't open file");
 	}
 
+	fprintf(stderr, "[BanManager::load] Starting read loop\n");
 	while (!is.eof() && is.good()) {
 		std::string line;
 		std::getline(is, line, '\n');
@@ -49,6 +62,7 @@ void BanManager::load()
 		}
 	}
 	m_modified = false;
+	fprintf(stderr, "[BanManager::load] Done\n");
 }
 
 void BanManager::save()

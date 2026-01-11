@@ -1221,6 +1221,7 @@ bool Game::initSound()
 bool Game::createServer(const std::string &map_dir,
 		const SubgameSpec &gamespec, u16 port)
 {
+	fprintf(stderr, "[Game::createServer] Entered\n");
 	showOverlayMessage(N_("Creating server..."), 0, 5);
 
 	std::string bind_str;
@@ -1237,6 +1238,7 @@ bool Game::createServer(const std::string &map_dir,
 	if (g_settings->getBool("ipv6_server"))
 		bind_addr.setAddress(static_cast<IPv6AddressBytes*>(nullptr));
 	try {
+		fprintf(stderr, "[Game::createServer] Resolving bind address: %s\n", bind_str.c_str());
 		bind_addr.Resolve(bind_str.c_str());
 	} catch (const ResolveError &e) {
 		warningstream << "Resolving bind address \"" << bind_str
@@ -1250,11 +1252,15 @@ bool Game::createServer(const std::string &map_dir,
 		return false;
 	}
 
+	fprintf(stderr, "[Game::createServer] Creating Server object\n");
 	server = new Server(map_dir, gamespec, simple_singleplayer_mode, bind_addr,
 			false, nullptr, error_message);
 
+	fprintf(stderr, "[Game::createServer] Starting server thread\n");
 	auto start_thread = runInThread([=] {
+		fprintf(stderr, "[Game::createServer] Inside server thread lambda\n");
 		server->start();
+		fprintf(stderr, "[Game::createServer] server->start() returned\n");
 		copyServerClientCache();
 	}, "ServerStart");
 
@@ -1264,6 +1270,7 @@ bool Game::createServer(const std::string &map_dir,
 	FpsControl fps_control;
 	fps_control.reset();
 
+	fprintf(stderr, "[Game::createServer] Entering start_thread->isRunning() loop\n");
 	while (start_thread->isRunning()) {
 		if (!m_rendering_engine->run() || input->cancelPressed())
 			success = false;
@@ -1276,8 +1283,10 @@ bool Game::createServer(const std::string &map_dir,
 			showOverlayMessage(N_("Shutting down..."), dtime, 0, &m_shutdown_progress);
 	}
 
+	fprintf(stderr, "[Game::createServer] start_thread finished, success=%d\n", success);
 	start_thread->rethrow();
 
+	fprintf(stderr, "[Game::createServer] Returning %d\n", success);
 	return success;
 }
 

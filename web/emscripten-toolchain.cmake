@@ -145,7 +145,7 @@ set(EMSCRIPTEN_COMMON_FLAGS
     
     # Debug and Error Reporting (reduced verbosity for performance)
     "-sASSERTIONS=2"
-    "-sSTACK_OVERFLOW_CHECK=0"
+    "-sSTACK_OVERFLOW_CHECK=2"
     "-sALLOW_UNIMPLEMENTED_SYSCALLS=1"
     "-sERROR_ON_UNDEFINED_SYMBOLS=0"
     # "-sGL_DEBUG=1"  # Enable to debug GL issues
@@ -154,14 +154,26 @@ set(EMSCRIPTEN_COMMON_FLAGS
     
     # CRITICAL: ASYNCIFY allows synchronous main loops to yield to the browser
     # Without this, the game loop blocks the JavaScript thread = frozen browser
-    "-sASYNCIFY=2"
-    "-sASYNCIFY_STACK_SIZE=131072"  # Increased for deeper call stacks
-    "-sJSPI_EXPORTS=['_main']"
-    "-sJSPI_IMPORTS=['emscripten_sleep','emscripten_set_main_loop_arg','emscripten_yield']"
-    # "-sJSPI_IMPORTS=['*']"
-    # "-sASYNCIFY_ADVISE=1"  # Warn about functions needing asyncification
-    # "-sASYNCIFY_ONLY=[\"_main\",\"_invoke_ii\",\"_invoke_vi\",\"_invoke_iiiiiiii\",\"_invoke_iiiiii\",\"_invoke_iiii\",\"_invoke_viiii\",\"_emscripten_sleep\"]"
+    # "-sASYNCIFY=2"
+    # "-sASYNCIFY_STACK_SIZE=8388608"
+    # "-sJSPI_EXPORTS=['_main']"
+    # "-sJSPI_IMPORTS=['emscripten_sleep','emscripten_yield','emscripten_main_loop_helper','emscripten_asm_const_int','emscripten_asm_const_double','emscripten_asm_const_void','emscripten_scan_registers','getaddrinfo','emscripten_getaddrinfo']"
+    # "-sASYNCIFY_ADD=['_main','main','the_game','*ClientLauncher*run*','*Game*startup*','*Game*init*','*Game*createServer*','*Game*createClient*','*Address*Resolve*','*getaddrinfo*','*fps_control*limit*','*sleep_ms*']"
+    # "-sASYNCIFY_REMOVE=['__wasm_call_ctors','_emscripten_init_main_thread','emscripten_futex_wake','emscripten_runtime_init','*BanManager*','*Server*','*Connection*','*EmergeManager*','*Thread*','*Socket*','*fs*','*filesys*','*NetworkPacket*','*Settings*','*Inventory*','*Mod*','*Script*','*Env*']"
+    # "-sASYNCIFY_PROPAGATE_ADD=0"
+    # "-sASYNCIFY_ADVISE=1"
+    # "-sALLOW_BLOCKING_ON_MAIN_THREAD=1"
     
+    "-sASYNCIFY=2"
+    "-sASYNCIFY_STACK_SIZE=8388608"
+    "-sJSPI_EXPORTS=['_main']"
+    "-sJSPI_IMPORTS=['emscripten_sleep','emscripten_yield','emscripten_main_loop_helper','emscripten_asm_const_int','emscripten_asm_const_double','emscripten_asm_const_void','emscripten_scan_registers','getaddrinfo','emscripten_getaddrinfo']"
+    "-sASYNCIFY_ADD=['_main','main','the_game','*ClientLauncher*run*','*Game*startup*','*Game*init*','*Game*createServer*','*Game*createClient*','*fps_control*limit*','*sleep_ms*']"
+    "-sASYNCIFY_REMOVE=['__wasm_call_ctors','_emscripten_init_main_thread','emscripten_futex_wake','emscripten_runtime_init','*BanManager*','*Server*','*Connection*','*EmergeManager*','*Thread*','*Socket*','*fs*','*filesys*','*NetworkPacket*','*Settings*','*Inventory*','*Mod*','*Script*','*Env*','*lambda*','*$_*']"
+    "-sASYNCIFY_PROPAGATE_ADD=0"
+    "-sASYNCIFY_ADVISE=1"
+    "-sALLOW_BLOCKING_ON_MAIN_THREAD=1"
+
     # Threading support (required for server thread + network threads)
     # Enables Web Workers for true multithreading
     "-pthread"
@@ -202,6 +214,18 @@ set(EMSCRIPTEN_FINAL_EXE_FLAGS
     "-sEXPORT_NAME='LuantiModule'"
     "-sWEBSOCKET_URL=ws://localhost:30000"
     
+    # JSPI / Asyncify Settings (Applied to final executable)
+    "-sASYNCIFY=2"
+    "-sASYNCIFY_STACK_SIZE=8388608"
+    "-sJSPI_EXPORTS=['_main']"
+    # "-sJSPI_IMPORTS=['emscripten_sleep','emscripten_yield','emscripten_main_loop_helper','emscripten_asm_const_int','emscripten_asm_const_double','emscripten_asm_const_void','emscripten_scan_registers','getaddrinfo','emscripten_getaddrinfo']"
+    # "-sASYNCIFY_REMOVE=['__wasm_call_ctors','_emscripten_init_main_thread','emscripten_futex_wake','emscripten_runtime_init','*BanManager*','*Server*','*Connection*','*EmergeManager*','*Thread*','*Socket*','*fs*','*filesys*','*NetworkPacket*','*Settings*','*Inventory*','*Mod*','*Script*','*Env*']"
+    "-sASYNCIFY_ADVISE=1"
+    "-sJSPI_IMPORTS=['emscripten_sleep','emscripten_yield','emscripten_main_loop_helper','emscripten_asm_const_int','emscripten_asm_const_double','emscripten_asm_const_void','emscripten_scan_registers','getaddrinfo','emscripten_getaddrinfo']"
+    "-sASYNCIFY_ADD=['_main','main','the_game','*ClientLauncher*run*','*Game*startup*','*Game*init*','*Game*createServer*','*Game*createClient*','*fps_control*limit*','*sleep_ms*']"
+    "-sASYNCIFY_REMOVE=['__wasm_call_ctors','_emscripten_init_main_thread','emscripten_futex_wake','emscripten_runtime_init','*BanManager*','*Server*','*Connection*','*EmergeManager*','*Thread*','*Socket*','*fs*','*filesys*','*NetworkPacket*','*Settings*','*Inventory*','*Mod*','*Script*','*Env*','*lambda*','*$_*']"
+    "-sALLOW_BLOCKING_ON_MAIN_THREAD=1"
+    
     # Shell and JS files
     "--shell-file=${CMAKE_SOURCE_DIR}/web/shell.html"
     "--pre-js=${CMAKE_SOURCE_DIR}/web/pre.js"
@@ -241,8 +265,8 @@ set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG -flto -msimd128" CACHE STRING "" FORCE)
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -flto -msimd128" CACHE STRING "" FORCE)
 
 # Debug: No optimization, full debug symbols with source maps
-set(CMAKE_C_FLAGS_DEBUG "-O0 -g -gsource-map" CACHE STRING "" FORCE)
-set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -gsource-map" CACHE STRING "" FORCE)
+set(CMAKE_C_FLAGS_DEBUG "-O0 -g -gsource-map -msimd128" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -gsource-map -msimd128" CACHE STRING "" FORCE)
 
 # MinSizeRel: Optimize for smallest binary size
 set(CMAKE_C_FLAGS_MINSIZEREL "-Oz -DNDEBUG -flto" CACHE STRING "" FORCE)
