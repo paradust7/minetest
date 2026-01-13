@@ -7,6 +7,13 @@ console.log('Luanti Web - Pre-initialization');
 var isMainThread = typeof window !== 'undefined';
 var isWorker = typeof importScripts === 'function';
 
+// Capture device pixel ratio early on main thread (before any workers are created)
+// Workers don't have access to window, so we must capture this value here
+if (isMainThread) {
+	self._luantiDevicePixelRatio = window.devicePixelRatio || 1.0;
+	console.log('[pre.js] Captured devicePixelRatio on main thread:', self._luantiDevicePixelRatio);
+}
+
 // Initialize SharedArrayBuffer for socket proxy on MAIN THREAD ONLY
 // Workers will receive the buffer via postMessage when they are created
 if (isMainThread && typeof SharedArrayBuffer !== 'undefined') {
@@ -56,26 +63,27 @@ if (isMainThread && typeof SharedArrayBuffer !== 'undefined') {
     
     console.log('[pre.js] Shared socket buffer initialized and stored in self');
     
-    // Hook Worker constructor to pass SharedArrayBuffer AND packet queues to workers
-    // This ensures workers have access to the SAME packet queue object
-    var OriginalWorker = self.Worker;
-    self.Worker = function(scriptURL, options) {
-        console.log('[pre.js] Creating worker, will inject SharedArrayBuffer and packet queues');
-        var worker = new OriginalWorker(scriptURL, options);
-        
-        // Immediately send the SharedArrayBuffer AND packet queues reference to the worker
-        // Note: Regular objects can't be transferred, but we can use a workaround
-        // by storing the packet queues in a way that's accessible via Atomics.notify/wait
-        worker.postMessage({
-            cmd: '_luantiSocketInit',  // Use underscore prefix to avoid conflicts
-            sharedBuffer: self._luantiSocketSharedBuffer,
-            // We can't actually send the packet queues object reference across threads
-            // Each thread will need its own copy, but we'll use the SharedArrayBuffer
-            // to coordinate packet delivery
-        });
-        
-        return worker;
-    };
+	// Hook Worker constructor to pass SharedArrayBuffer AND packet queues to workers
+	// This ensures workers have access to the SAME packet queue object
+	var OriginalWorker = self.Worker;
+	self.Worker = function(scriptURL, options) {
+		console.log('[pre.js] Creating worker, will inject SharedArrayBuffer and devicePixelRatio');
+		var worker = new OriginalWorker(scriptURL, options);
+		
+		// Immediately send the SharedArrayBuffer AND device pixel ratio to the worker
+		// Note: Regular objects can't be transferred, but we can use a workaround
+		// by storing the packet queues in a way that's accessible via Atomics.notify/wait
+		worker.postMessage({
+			cmd: '_luantiSocketInit',  // Use underscore prefix to avoid conflicts
+			sharedBuffer: self._luantiSocketSharedBuffer,
+			devicePixelRatio: self._luantiDevicePixelRatio || 1.0,
+			// We can't actually send the packet queues object reference across threads
+			// Each thread will need its own copy, but we'll use the SharedArrayBuffer
+			// to coordinate packet delivery
+		});
+		
+		return worker;
+	};
     // Copy static properties from original Worker constructor
     for (var prop in OriginalWorker) {
         if (OriginalWorker.hasOwnProperty(prop)) {
@@ -86,20 +94,26 @@ if (isMainThread && typeof SharedArrayBuffer !== 'undefined') {
     console.log('[pre.js] Worker constructor hooked to inject SharedArrayBuffer');
 }
 
-// Worker thread: Receive the SharedArrayBuffer from main thread
+// Worker thread: Receive the SharedArrayBuffer and devicePixelRatio from main thread
 if (isWorker) {
-    console.log('[pre.js] Worker thread setting up SharedArrayBuffer listener');
-    
-    // Listen for our custom initialization message
-    // This will arrive before Emscripten's pthread initialization
-    self.addEventListener('message', function(e) {
-        if (e.data && e.data.cmd === '_luantiSocketInit' && e.data.sharedBuffer) {
-            console.log('[pre.js] Worker received SharedArrayBuffer via postMessage');
-            self._luantiSocketSharedBuffer = e.data.sharedBuffer;
-            self._luantiSocketSharedInt32 = new Int32Array(e.data.sharedBuffer);
-            console.log('[pre.js] SharedArrayBuffer initialized in worker');
-        }
-    });
+	console.log('[pre.js] Worker thread setting up SharedArrayBuffer and DPR listener');
+	
+	// Listen for our custom initialization message
+	// This will arrive before Emscripten's pthread initialization
+	self.addEventListener('message', function(e) {
+		if (e.data && e.data.cmd === '_luantiSocketInit') {
+			if (e.data.sharedBuffer) {
+				console.log('[pre.js] Worker received SharedArrayBuffer via postMessage');
+				self._luantiSocketSharedBuffer = e.data.sharedBuffer;
+				self._luantiSocketSharedInt32 = new Int32Array(e.data.sharedBuffer);
+				console.log('[pre.js] SharedArrayBuffer initialized in worker');
+			}
+			if (e.data.devicePixelRatio) {
+				console.log('[pre.js] Worker received devicePixelRatio:', e.data.devicePixelRatio);
+				self._luantiDevicePixelRatio = e.data.devicePixelRatio;
+			}
+		}
+	});
 }
 
 // Only run browser checks on main thread

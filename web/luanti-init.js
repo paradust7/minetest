@@ -3,9 +3,17 @@
 
 console.log('***** Luanti Web Init Script Loaded *****');
 
+// Capture device pixel ratio BEFORE workers are created
+// This must happen on the main thread, as workers don't have access to window
+// Store it in a way that's accessible to all threads
+self._luantiDevicePixelRatio = window.devicePixelRatio || 1.0;
+console.log('Captured devicePixelRatio:', self._luantiDevicePixelRatio);
+
 // Global Module configuration for Emscripten
 // This will be read by LuantiModule() when it loads
 var Module = {
+	// Store DPR in Module so it's available to worker threads
+	devicePixelRatio: self._luantiDevicePixelRatio,
     canvas: (function() {
         var canvas = document.getElementById('canvas');
         canvas.addEventListener('webglcontextlost', function(e) {
@@ -94,6 +102,14 @@ var Module = {
                     controlsInfoEl.classList.remove('hidden');
                 }
             }
+            
+            // Trigger another resize to ensure DPR is applied after main() starts
+            if (typeof window.scheduleResize === 'function') {
+                console.log('Triggering post-main resize for DPR');
+                setTimeout(function() {
+                    window.scheduleResize();
+                }, 50);
+            }
         }
     ],
     setStatus: function(text) {
@@ -145,8 +161,17 @@ var Module = {
         console.error('***** RUNTIME INITIALIZED *****');
         
         // Trigger canvas resize now that GL context is ready
+        // This ensures DPR scaling is applied correctly after initialization
         if (typeof window.scheduleResize === 'function') {
-            try { window.scheduleResize(); } catch (e) { console.warn('Resize failed:', e); }
+            try { 
+                window.scheduleResize(); 
+                // Force a second resize after a short delay to ensure SDL picks it up
+                setTimeout(function() {
+                    window.scheduleResize();
+                }, 100);
+            } catch (e) { 
+                console.warn('Resize failed:', e); 
+            }
         }
         
         Module.printErr('Canvas element exists: ' + !!document.getElementById('canvas'));
@@ -395,6 +420,19 @@ Module.setStatus('Downloading Luanti...');
 		// The game's render loop (running in the worker) will detect the CSS size change
 		// and update the OffscreenCanvas dimensions accordingly using emscripten_set_canvas_element_size()
 		// or via SDL/Irrlicht's automatic canvas size handling.
+		
+		// Update the device pixel ratio when window resizes (only on main thread)
+		// This is needed for proper high-DPI rendering on Retina displays
+		if (typeof window !== 'undefined') {
+			var currentDPR = window.devicePixelRatio || 1.0;
+			if (self._luantiDevicePixelRatio !== currentDPR) {
+				self._luantiDevicePixelRatio = currentDPR;
+				if (Module) {
+					Module.devicePixelRatio = currentDPR;
+				}
+				console.log('Updated devicePixelRatio:', currentDPR);
+			}
+		}
 	}
 	
 	function scheduleResize() {
@@ -425,7 +463,16 @@ Module.setStatus('Downloading Luanti...');
 	window.addEventListener('orientationchange', scheduleResize);
 	document.addEventListener('fullscreenchange', scheduleResize);
 	
-	// Initial sizing on load
+	// Initial sizing on load - do it immediately AND schedule it
+	// This ensures the CSS size is set before SDL initializes
+	try {
+		resizeCanvasToContainer();
+		console.log('Initial canvas resize complete');
+	} catch (e) {
+		console.warn('Initial resizeCanvasToContainer failed:', e);
+	}
+	
+	// Also schedule it for the next frame
 	scheduleResize();
 	
 	// Note: Don't wrap Module.onRuntimeInitialized here - it breaks MODULARIZE=1

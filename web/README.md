@@ -82,11 +82,14 @@ These can be adjusted in `emscripten-toolchain.cmake`.
 
 ### Preloaded Assets
 
-The following directories are preloaded into the virtual filesystem:
-- `/builtin` - Core Lua scripts
-- `/games` - Game definitions (including devtest)
-- `/textures` - Base texture pack
-- `/fonts` - Font files
+The following directories are preloaded into the virtual filesystem at `/userdata`:
+- `/userdata/builtin` - Core Lua scripts
+- `/userdata/games` - Game definitions (including devtest)
+- `/userdata/textures` - Base texture pack
+- `/userdata/fonts` - Font files
+- `/userdata/client` - Client configuration and shaders
+
+With `WASMFS=1`, files are preloaded directly to their target locations (no symlinks needed).
 
 ## Known Limitations
 
