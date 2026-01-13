@@ -320,6 +320,14 @@ struct SEvent
 		//! Y position of mouse cursor
 		s32 Y;
 
+#ifdef __EMSCRIPTEN__
+		//! X relative position of mouse cursor
+		s32 XRel;
+
+		//! Y relative position of mouse cursor
+		s32 YRel;
+#endif
+
 		//! mouse wheel delta, often 1.0 or -1.0, but can have other values < 0.f or > 0.f;
 		/** Only valid if event was EMIE_MOUSE_WHEEL */
 		f32 Wheel;

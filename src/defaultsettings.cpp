@@ -252,7 +252,12 @@ void set_default_settings()
 	settings->setDefault("window_maximized", "false");
 	settings->setDefault("autosave_screensize", "true");
 	settings->setDefault("fullscreen", bool_to_cstr(has_touch));
+	// Enable vsync for web builds to avoid 100% CPU usage
+#ifdef EMSCRIPTEN
+	settings->setDefault("vsync", "true");
+#else
 	settings->setDefault("vsync", "false");
+#endif
 	settings->setDefault("fov", "72");
 	settings->setDefault("leaves_style", "fancy");
 	settings->setDefault("connected_glass", "false");

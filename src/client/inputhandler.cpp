@@ -200,6 +200,12 @@ bool MyEventReceiver::OnEvent(const SEvent &event)
 	} else if (event.EventType == EET_MOUSE_INPUT_EVENT) {
 		// Handle mouse events
 		switch (event.MouseInput.Event) {
+#ifdef __EMSCRIPTEN__
+		case EMIE_MOUSE_MOVED:
+			relX += event.MouseInput.XRel;
+			relY += event.MouseInput.YRel;
+			break;
+#endif
 		case EMIE_LMOUSE_PRESSED_DOWN:
 			setKeyDown(LMBKey, true);
 			break;

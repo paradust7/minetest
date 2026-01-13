@@ -26,8 +26,12 @@ namespace con
 #undef DEBUG_CONNECTION_KBPS
 #endif
 
-// TODO: Clean this up.
+// TODO: Fix stringstream error of unreachable code
+#ifdef __EMSCRIPTEN__
+#define LOG(a)
+#else
 #define LOG(a) a
+#endif
 
 #define MAX_NEW_PEERS_PER_SEC 30
 
@@ -227,10 +231,10 @@ void ConnectionSendThread::runTimeouts(float dtime, u32 peer_packet_quota)
 			// break badly otherwise.
 			if (peer->isHalfOpen()) {
 				if (!timed_outs.empty()) {
-					dout_con << m_connection->getDesc() <<
+					LOG(dout_con << m_connection->getDesc() <<
 						"Skipping re-send of " << timed_outs.size() <<
 						" timed-out reliables to peer_id=" << udpPeer->id
-						<< " channel=" << ch << " (half-open)." << std::endl;
+						<< " channel=" << ch << " (half-open)." << std::endl);
 				}
 				continue;
 			}
@@ -247,9 +251,9 @@ void ConnectionSendThread::runTimeouts(float dtime, u32 peer_packet_quota)
 			channel.UpdateTimers(dtime);
 			auto ws_new = channel.getWindowSize();
 			if (ws_old != ws_new) {
-				dout_con << m_connection->getDesc() <<
+				LOG(dout_con << m_connection->getDesc() <<
 					"Window size adjusted to " << ws_new << " for peer_id="
-					<< udpPeer->id << " channel=" << ch << std::endl;
+					<< udpPeer->id << " channel=" << ch << std::endl);
 			}
 		}
 
@@ -279,18 +283,19 @@ void ConnectionSendThread::resendReliable(Channel &channel, const BufferedPacket
 
 	channel.UpdateBytesLost(k->size());
 
-	derr_con << m_connection->getDesc()
+	LOG(derr_con << m_connection->getDesc()
 		<< "RE-SENDING timed-out RELIABLE to "
-		<< k->address.serializeString();
-	if (resend_timeout >= 0)
-		derr_con << "(t/o=" << resend_timeout << "): ";
-	else
-		derr_con << "(force): ";
-	derr_con
+		<< k->address.serializeString());
+	if (resend_timeout >= 0) {
+		LOG(derr_con << "(t/o=" << resend_timeout << "): ");
+	} else {
+		LOG(derr_con << "(force): ");
+	}
+	LOG(derr_con
 		<< "count=" << k->resend_count
 		<< ", channel=" << ((int) channelnum & 0xff)
 		<< ", seqnum=" << seqnum
-		<< std::endl;
+		<< std::endl);
 
 	rawSend(k);
 
@@ -523,9 +528,9 @@ void ConnectionSendThread::serve(Address bind_address)
 
 void ConnectionSendThread::connect(Address address)
 {
-	dout_con << m_connection->getDesc() << " connecting to ";
-	address.print(dout_con);
-	dout_con << std::endl;
+	LOG(dout_con << m_connection->getDesc() << " connecting to ");
+	LOG(address.print(dout_con));
+	LOG(dout_con << std::endl);
 
 	UDPPeer *peer = m_connection->createServerPeer(address);
 
@@ -1161,8 +1166,8 @@ SharedBuffer<u8> ConnectionReceiveThread::processPacket(Channel *channel,
 	}
 
 	if (type >= PACKET_TYPE_MAX) {
-		derr_con << m_connection->getDesc() << "Got invalid type=" << ((int) type & 0xff)
-			<< std::endl;
+		LOG(derr_con << m_connection->getDesc() << "Got invalid type=" << ((int) type & 0xff)
+			<< std::endl);
 		throw InvalidIncomingDataException("Invalid packet type");
 	}
 
@@ -1267,7 +1272,7 @@ SharedBuffer<u8> ConnectionReceiveThread::handlePacketType_Control(Channel *chan
 			<< peer->id << std::endl);
 
 		if (!m_connection->deletePeer(peer->id, false)) {
-			derr_con << m_connection->getDesc() << "DISCO: Peer not found" << std::endl;
+			LOG(derr_con << m_connection->getDesc() << "DISCO: Peer not found" << std::endl);
 		}
 
 		throw ProcessedSilentlyException("Got a DISCO");

@@ -577,9 +577,10 @@ include_directories(SYSTEM
 	${GMP_INCLUDE_DIR}
 	${JSON_INCLUDE_DIR}
 	${LUA_BIT_INCLUDE_DIR}
-	# on Android, Luanti depends on SDL2 directly
+	# on Android and Emscripten, Luanti depends on SDL2 directly
 	# on other platforms, only IrrlichtMt depends on SDL2
 	"$<$<PLATFORM_ID:Android>:${SDL2_INCLUDE_DIRS}>"
+	"$<$<BOOL:${EMSCRIPTEN}>:${SDL2_INCLUDE_DIRS}>"
 )
 
 if(USE_GETTEXT)
@@ -714,6 +715,19 @@ if(BUILD_CLIENT)
 			# to work when Lua is statically linked (issue #10806)
 			ENABLE_EXPORTS 1
 		)
+	endif()
+
+	# Emscripten-specific configuration
+	if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+		set_target_properties(${PROJECT_NAME} PROPERTIES
+			# Output .html so Emscripten processes the shell file
+			OUTPUT_NAME "luanti"
+			SUFFIX ".html"
+		)
+		# Apply final Emscripten linker flags (preload files, shell, etc.)
+		if(DEFINED LUANTI_WEB_LINKER_FLAGS)
+			target_link_options(${PROJECT_NAME} PRIVATE ${LUANTI_WEB_LINKER_FLAGS})
+		endif()
 	endif()
 
 	if(USE_GETTEXT)

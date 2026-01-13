@@ -42,8 +42,17 @@
 
 	#define SLEEP_ACCURACY_US 200
 
-	#define sleep_ms(x) usleep((x)*1000)
-	#define sleep_us(x) usleep(x)
+	#ifdef __EMSCRIPTEN__
+		// Emscripten: Don't use emscripten_sleep() in game loop - it blocks the event loop!
+		// The browser's requestAnimationFrame will handle frame timing automatically.
+		// emscripten_sleep() is only safe for one-time delays outside the main loop.
+		#include <emscripten.h>
+		#define sleep_ms(x) do { (void)(x); } while(0)  // No-op: browser handles timing
+		#define sleep_us(x) do { (void)(x); } while(0)  // No-op: browser handles timing
+	#else
+		#define sleep_ms(x) usleep((x)*1000)
+		#define sleep_us(x) usleep(x)
+	#endif
 #endif
 
 #ifdef _MSC_VER
@@ -155,7 +164,7 @@ inline u64 getTimeNs() { return os_get_time(1000*1000*1000); }
 
 inline void os_get_clock(struct timespec *ts)
 {
-#if defined(CLOCK_MONOTONIC_RAW)
+#if defined(CLOCK_MONOTONIC_RAW) && !defined(__EMSCRIPTEN__)
 	clock_gettime(CLOCK_MONOTONIC_RAW, ts);
 #elif defined(_POSIX_MONOTONIC_CLOCK) && _POSIX_MONOTONIC_CLOCK > 0
 	clock_gettime(CLOCK_MONOTONIC, ts);
@@ -231,6 +240,11 @@ inline void preciseSleepUs(u64 sleep_time)
 {
 	if (sleep_time > 0)
 	{
+#ifdef __EMSCRIPTEN__
+		// On Emscripten, busy-waiting blocks the browser's event loop
+		// Just use regular sleep - vsync will handle frame timing
+		sleep_us(sleep_time);
+#else
 		u64 target_time = porting::getTimeUs() + sleep_time;
 		if (sleep_time > SLEEP_ACCURACY_US)
 			sleep_us(sleep_time - SLEEP_ACCURACY_US);
@@ -239,6 +253,7 @@ inline void preciseSleepUs(u64 sleep_time)
 		// The target - now > 0 construct will handle overflow gracefully (even though it should
 		// never happen)
 		while ((s64)(target_time - porting::getTimeUs()) > 0) {}
+#endif
 	}
 }
 

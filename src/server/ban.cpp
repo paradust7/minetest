@@ -19,8 +19,9 @@ BanManager::BanManager(const std::string &banfilepath):
 	try {
 		load();
 	} catch(SerializationError &e) {
-		infostream << "BanManager: creating "
-				<< m_banfilepath << std::endl;
+		// Todo: Fix stringstream error of unreachable code
+		// infostream << "BanManager: creating "
+		// 		<< m_banfilepath << std::endl;
 	}
 }
 

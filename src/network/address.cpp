@@ -10,6 +10,10 @@
 #include "network/networkexceptions.h"
 #include "settings.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #ifdef _WIN32
 #include <windows.h>
 #include <winsock2.h>
@@ -114,7 +118,11 @@ void Address::Resolve(const char *name, Address *fallback)
 	} else {
 		hints.ai_family = AF_INET;
 	}
+#ifdef __EMSCRIPTEN__
+	hints.ai_flags = 0;
+#else
 	hints.ai_flags = AI_ADDRCONFIG;
+#endif
 
 	// Do getaddrinfo()
 	struct addrinfo *resolved = nullptr;
@@ -137,10 +145,26 @@ void Address::Resolve(const char *name, Address *fallback)
 // IP address -> textual representation
 std::string Address::serializeString() const
 {
+#ifdef __EMSCRIPTEN__
+	// Emscripten: Manually format IP to avoid inet_ntop issues
+	char str[INET6_ADDRSTRLEN];
+	if (m_addr_family == AF_INET6) {
+		// IPv6 - just return localhost for now
+		return "::1";
+	} else if (m_addr_family == AF_INET) {
+		// IPv4 - manually format
+		unsigned char *bytes = (unsigned char*)&m_address.ipv4.s_addr;
+		snprintf(str, sizeof(str), "%u.%u.%u.%u", 
+			bytes[0], bytes[1], bytes[2], bytes[3]);
+		return str;
+	}
+	return "0.0.0.0";
+#else
 	char str[INET6_ADDRSTRLEN];
 	if (inet_ntop(m_addr_family, (void*) &m_address, str, sizeof(str)) == nullptr)
 		return "";
 	return str;
+#endif
 }
 
 bool Address::isAny() const

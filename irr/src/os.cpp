@@ -225,8 +225,17 @@ void Timer::initTimer()
 
 u32 Timer::getRealTime()
 {
+#ifdef __EMSCRIPTEN__
+	// Store base time on first call to avoid u32 overflow with Unix epoch timestamps
+	static double baseTime = emscripten_get_now();
+	
+	// Return milliseconds since initialization (this fits in u32 for ~49 days)
+	double time = emscripten_get_now();
+	return (u32)(time - baseTime);
+#else
 	double time = emscripten_get_now();
 	return (u32)(time);
+#endif
 }
 } // end namespace os
 
