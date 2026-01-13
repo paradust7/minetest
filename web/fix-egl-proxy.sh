@@ -5,7 +5,13 @@
 
 set -e
 
-LUANTI_JS="build-web/output/luanti.js"
+# Allow overriding the path to luanti.js
+LUANTI_JS="${1:-build-web/output/luanti.js}"
+
+# If it doesn't exist at the provided path, try output/luanti.js (relative to build-web)
+if [ ! -f "$LUANTI_JS" ] && [ -f "output/luanti.js" ]; then
+    LUANTI_JS="output/luanti.js"
+fi
 
 if [ ! -f "$LUANTI_JS" ]; then
     echo "Error: $LUANTI_JS not found"

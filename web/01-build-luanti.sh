@@ -65,7 +65,7 @@ if ! docker image inspect luanti-web-builder:latest >/dev/null 2>&1; then
     echo ""
 fi
 
-echo -e "${YELLOW}Building Luanti with Emscripten 4.0.18...${NC}"
+echo -e "${YELLOW}Building Luanti with Emscripten 4.0.22...${NC}"
 echo "This may take a while on first build."
 echo ""
 
@@ -138,6 +138,11 @@ docker run \
         echo ''
         echo '=== Build Complete ==='
         ls -lh /src/build-web/output/ | tail -n +2
+        
+        # Apply EGL proxy workaround
+        echo ''
+        echo '=== Applying EGL Workaround ==='
+        bash /src/web/fix-egl-proxy.sh
     "
 
 if [ $? -eq 0 ]; then
@@ -145,16 +150,6 @@ if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓ Build successful! (${BUILD_TYPE})${NC}"
     echo ""
     echo "Output files in: $PROJECT_ROOT/build-web/output"
-    
-    # Apply EGL proxy workaround for OffscreenCanvas support
-    # Workaround for: https://github.com/emscripten-core/emscripten/issues/24792
-    echo ""
-    echo "Applying EGL proxy workaround for OffscreenCanvas..."
-    if bash "$PROJECT_ROOT/web/fix-egl-proxy.sh" "$PROJECT_ROOT/build-web/output/luanti.js"; then
-        echo -e "${GREEN}✓ EGL proxy workaround applied${NC}"
-    else
-        echo -e "${YELLOW}⚠ EGL proxy workaround failed (may not be needed)${NC}"
-    fi
     echo ""
     
     # Show build type specific info

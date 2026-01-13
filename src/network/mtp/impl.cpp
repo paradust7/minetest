@@ -32,7 +32,11 @@ namespace con
 #endif
 
 // TODO: Clean this up.
+#ifdef __EMSCRIPTEN__
+#define LOG(a)
+#else
 #define LOG(a) a
+#endif
 
 #define PING_TIMEOUT 5.0f
 
@@ -1021,8 +1025,8 @@ void UDPPeer::reportRTT(float rtt)
 	setResendTimeout(timeout);
 
 	if (std::abs(timeout - timeout_old) >= 0.001f) {
-		dout_con << m_connection->getDesc() << " set resend timeout " << timeout
-			<< " (rtt=" << rtt_stat << ") for peer id: " << id << std::endl;
+		LOG(dout_con << m_connection->getDesc() << " set resend timeout " << timeout
+			<< " (rtt=" << rtt_stat << ") for peer id: " << id << std::endl);
 	}
 }
 
@@ -1143,7 +1147,7 @@ bool UDPPeer::processReliableSendCommand(
 	u16 packets_available = toadd.size();
 	/* we didn't get a single sequence number no need to fill queue */
 	if (!have_initial_sequence_number) {
-		dout_con << m_connection->getDesc() << " No sequence numbers available!" << std::endl;
+		LOG(dout_con << m_connection->getDesc() << " No sequence numbers available!" << std::endl);
 		return false;
 	}
 

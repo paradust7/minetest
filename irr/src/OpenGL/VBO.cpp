@@ -56,8 +56,10 @@ void OpenGLVBO::upload(const void *data, size_t size, size_t offset,
 
 void OpenGLVBO::destroy()
 {
-	if (m_name)
+	if (m_name) {
+		// Note: DeleteBuffers doesn't require the buffer to be bound to any specific target
 		GL.DeleteBuffers(1, &m_name);
+	}
 	m_name = 0;
 	m_size = 0;
 }

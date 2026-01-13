@@ -44,7 +44,7 @@ That's it! The Docker image is built automatically on first run.
 ### What These Scripts Do
 
 **`build-with-docker.sh`**:
-- Builds `luanti-web-builder` Docker image (includes Emscripten 4.0.18 + zstd)
+- Builds `luanti-web-builder` Docker image (includes Emscripten 4.0.22 + zstd)
 - Compiles Luanti to WebAssembly
 - Outputs to `build-web/output/`: `index.html`, `luanti.js`, `luanti.wasm`, `luanti.data`
 

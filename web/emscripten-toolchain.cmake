@@ -65,7 +65,7 @@ set(SDL2_LIBRARIES "${SDL2_LIBRARY}")
 # Freetype - Emscripten port
 set(FREETYPE_FOUND TRUE)
 set(FREETYPE_INCLUDE_DIRS "${EMSCRIPTEN_ROOT_PATH}/system/include/freetype2")
-set(FREETYPE_LIBRARY "freetype")
+set(FREETYPE_LIBRARY "EMSCRIPTEN_PORT")
 set(FREETYPE_LIBRARIES "${FREETYPE_LIBRARY}")
 
 # SQLite3 - built-in to Emscripten (handled by -sUSE_SQLITE3=1 at link time)
@@ -121,7 +121,8 @@ set(EMSCRIPTEN_COMMON_FLAGS
     "-sMAXIMUM_MEMORY=4GB"
     "-sALLOW_MEMORY_GROWTH=1"
     "-sALLOW_TABLE_GROWTH=1"
-    "-sSTACK_SIZE=5MB"
+    "-sSTACK_SIZE=10MB"
+    "-sDEFAULT_PTHREAD_STACK_SIZE=2097152"
     
     # WebGL / Graphics
     "-sFULL_ES3=1"
@@ -151,8 +152,8 @@ set(EMSCRIPTEN_COMMON_FLAGS
     # Note: NOT using PROXY_POSIX_SOCKETS - we implement our own socket layer
     
     # Debug and Error Reporting (reduced verbosity for performance)
-    "-sASSERTIONS=0"
-    "-sSTACK_OVERFLOW_CHECK=0"
+    "-sASSERTIONS=2"
+    "-sSTACK_OVERFLOW_CHECK=2"
     "-sALLOW_UNIMPLEMENTED_SYSCALLS=1"
     "-sERROR_ON_UNDEFINED_SYMBOLS=0"
     # "-sGL_DEBUG=1"  # Enable to debug GL issues
@@ -161,11 +162,16 @@ set(EMSCRIPTEN_COMMON_FLAGS
     
     # CRITICAL: ASYNCIFY allows synchronous main loops to yield to the browser
     # Without this, the game loop blocks the JavaScript thread = frozen browser
-    "-sASYNCIFY=1"
-    "-sASYNCIFY_STACK_SIZE=65536"  # Increased for deeper call stacks
-    # "-sASYNCIFY_ADVISE=1"  # Warn about functions needing asyncification
-    # "-sASYNCIFY_ONLY=[\"_main\",\"_invoke_ii\",\"_invoke_vi\",\"_invoke_iiiiiiii\",\"_invoke_iiiiii\",\"_invoke_iiii\",\"_invoke_viiii\",\"_emscripten_sleep\"]"
-    
+    "-sASYNCIFY=2"
+    "-sASYNCIFY_STACK_SIZE=8388608"
+    "-sJSPI_EXPORTS=['_main']"
+    "-sJSPI_IMPORTS=['emscripten_sleep','emscripten_yield','emscripten_main_loop_helper','emscripten_asm_const_int','emscripten_asm_const_double','emscripten_asm_const_void','emscripten_scan_registers','getaddrinfo','emscripten_getaddrinfo']"
+    "-sASYNCIFY_ADD=['_main','main','the_game','*ClientLauncher*run*','*Game*startup*','*Game*init*','*Game*createServer*','*Game*createClient*','*fps_control*limit*','*sleep_ms*']"
+    "-sASYNCIFY_REMOVE=['__wasm_call_ctors','_emscripten_init_main_thread','emscripten_futex_wake','emscripten_runtime_init','*BanManager*','*Server*','*Connection*','*EmergeManager*','*Thread*','*Socket*','*fs*','*filesys*','*NetworkPacket*','*Settings*','*Inventory*','*Mod*','*Script*','*Env*','*lambda*','*$_*']"
+    "-sASYNCIFY_PROPAGATE_ADD=0"
+    "-sASYNCIFY_ADVISE=1"
+    "-sALLOW_BLOCKING_ON_MAIN_THREAD=1"
+
     # Threading support (required for server thread + network threads)
     # Enables Web Workers for true multithreading
     "-pthread"
@@ -176,16 +182,12 @@ set(EMSCRIPTEN_COMMON_FLAGS
     # Combined with OffscreenCanvas, allows rendering from worker thread
     "-sPROXY_TO_PTHREAD=1"
     "-sOFFSCREENCANVAS_SUPPORT=1"
-    # "-sOFFSCREENCANVASES_TO_PTHREAD=\"#canvas\""
+    "-sOFFSCREENCANVASES_TO_PTHREAD=\"#canvas\""
 
     # Explicitly disable the old offscreen framebuffer mechanism
     # Setting this to 0 ensures EGL operations stay on the worker thread
     "-sOFFSCREEN_FRAMEBUFFER=0"
-    
-    # CRITICAL: Disable GL context proxying back to main thread
-    # By default, Emscripten proxies GL context creation to the main thread even with PROXY_TO_PTHREAD
-    # This must be disabled when using OffscreenCanvas, otherwise getContext() fails on transferred canvas
-    # "-sGL_WORKAROUND_SAFARI_GETCONTEXT_BUG=0"
+    "-sGL_WORKAROUND_SAFARI_GETCONTEXT_BUG=0"
     
     # CRITICAL: Tell SDL to use emscripten_set_main_loop_timing for proper FPS limiting
     # This makes SDL respect vsync and use requestAnimationFrame
@@ -214,6 +216,18 @@ set(EMSCRIPTEN_FINAL_EXE_FLAGS
     "-sEXPORT_NAME='LuantiModule'"
     "-sWEBSOCKET_URL=ws://localhost:30000"
     
+    # JSPI / Asyncify Settings (Applied to final executable)
+    "-sASYNCIFY=2"
+    "-sASYNCIFY_STACK_SIZE=8388608"
+    "-sJSPI_EXPORTS=['_main']"
+    # "-sJSPI_IMPORTS=['emscripten_sleep','emscripten_yield','emscripten_main_loop_helper','emscripten_asm_const_int','emscripten_asm_const_double','emscripten_asm_const_void','emscripten_scan_registers','getaddrinfo','emscripten_getaddrinfo']"
+    # "-sASYNCIFY_REMOVE=['__wasm_call_ctors','_emscripten_init_main_thread','emscripten_futex_wake','emscripten_runtime_init','*BanManager*','*Server*','*Connection*','*EmergeManager*','*Thread*','*Socket*','*fs*','*filesys*','*NetworkPacket*','*Settings*','*Inventory*','*Mod*','*Script*','*Env*']"
+    "-sASYNCIFY_ADVISE=1"
+    "-sJSPI_IMPORTS=['emscripten_sleep','emscripten_yield','emscripten_main_loop_helper','emscripten_asm_const_int','emscripten_asm_const_double','emscripten_asm_const_void','emscripten_scan_registers','getaddrinfo','emscripten_getaddrinfo']"
+    "-sASYNCIFY_ADD=['_main','main','the_game','*ClientLauncher*run*','*Game*startup*','*Game*init*','*Game*createServer*','*Game*createClient*','*fps_control*limit*','*sleep_ms*']"
+    "-sASYNCIFY_REMOVE=['__wasm_call_ctors','_emscripten_init_main_thread','emscripten_futex_wake','emscripten_runtime_init','*BanManager*','*Server*','*Connection*','*EmergeManager*','*Thread*','*Socket*','*fs*','*filesys*','*NetworkPacket*','*Settings*','*Inventory*','*Mod*','*Script*','*Env*','*lambda*','*$_*']"
+    "-sALLOW_BLOCKING_ON_MAIN_THREAD=1"
+    
     # Shell and JS files
     "--shell-file=${CMAKE_SOURCE_DIR}/web/shell.html"
     "--pre-js=${CMAKE_SOURCE_DIR}/web/pre.js"
@@ -226,10 +240,10 @@ string(REPLACE ";" " " EMSCRIPTEN_COMMON_FLAGS_STR "${EMSCRIPTEN_COMMON_FLAGS}")
 # Add exception catching for proper error messages and stack traces
 # Add -L/usr/local/lib for zstd library and dummy port libraries (created in Dockerfile)
 # Add port flags at link time so Emscripten builds pthread-enabled versions
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${EMSCRIPTEN_COMMON_FLAGS_STR} -L/usr/local/lib -sDISABLE_EXCEPTION_CATCHING=0 -sNO_EXIT_RUNTIME=0 -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1 -sUSE_OGG=1 -sUSE_VORBIS=1")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${EMSCRIPTEN_COMMON_FLAGS_STR} -L/usr/local/lib -fwasm-exceptions -sNO_EXIT_RUNTIME=0 -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1 -sUSE_OGG=1 -sUSE_VORBIS=1")
 
 # Enable proper C++ exception handling (compile-time flag required!)
-set(EXCEPTION_FLAGS "-fexceptions")
+set(EXCEPTION_FLAGS "-fwasm-exceptions")
 
 # Emscripten port flags MUST be present during compilation for headers to work properly
 # Add -fexceptions for proper C++ exception handling across WASM boundaries
@@ -253,8 +267,8 @@ set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG -flto -msimd128" CACHE STRING "" FORCE)
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -flto -msimd128" CACHE STRING "" FORCE)
 
 # Debug: No optimization, full debug symbols with source maps
-set(CMAKE_C_FLAGS_DEBUG "-O0 -g -gsource-map" CACHE STRING "" FORCE)
-set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -gsource-map" CACHE STRING "" FORCE)
+set(CMAKE_C_FLAGS_DEBUG "-O0 -g -gsource-map -msimd128" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -gsource-map -msimd128" CACHE STRING "" FORCE)
 
 # MinSizeRel: Optimize for smallest binary size
 set(CMAKE_C_FLAGS_MINSIZEREL "-Oz -DNDEBUG -flto" CACHE STRING "" FORCE)

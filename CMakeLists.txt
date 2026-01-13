@@ -174,7 +174,7 @@ endif()
 
 # Installation
 
-if(EMSCRIPTEN)
+if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 	# Web build paths - everything is relative in virtual filesystem
 	set(SHAREDIR ".")
 	set(BINDIR ".")

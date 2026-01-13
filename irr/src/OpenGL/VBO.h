@@ -30,11 +30,10 @@ public:
 
 	/// @return size of this buffer in bytes
 	size_t getSize() const { return m_size; }
-
-#ifdef __EMSCRIPTEN__
+	
 	/// @return GL buffer target (GL_ARRAY_BUFFER or GL_ELEMENT_ARRAY_BUFFER)
 	GLenum getTarget() const { return m_target; }
-#endif
+
 	/**
 	 * Upload buffer data to GL.
 	 *
