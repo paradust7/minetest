@@ -7,6 +7,12 @@ console.log('Luanti Web - Pre-initialization');
 var isMainThread = typeof window !== 'undefined';
 var isWorker = typeof importScripts === 'function';
 
+// Shared memory layout
+var SHARED_MEMORY_SIZE = 2 * 1024 * 1024; // 2MB
+
+// Indices for ring buffer implementation (int32 units)
+var FD_IDX = 0;
+
 // Capture device pixel ratio early on main thread (before any workers are created)
 // Workers don't have access to window, so we must capture this value here
 if (isMainThread) {
@@ -18,43 +24,12 @@ if (isMainThread) {
 // Workers will receive the buffer via postMessage when they are created
 if (isMainThread && typeof SharedArrayBuffer !== 'undefined') {
     console.log('[pre.js] Creating shared socket buffer on main thread');
-    var SOCKET_SHARED_MEMORY_SIZE = 1024 * 1024; // 1MB
-    var _luantiSocketSharedBuffer = new SharedArrayBuffer(SOCKET_SHARED_MEMORY_SIZE);
+    var _luantiSocketSharedBuffer = new SharedArrayBuffer(SHARED_MEMORY_SIZE);
     var _luantiSocketSharedInt32 = new Int32Array(_luantiSocketSharedBuffer);
     
-    // Initialize the buffer
-    var OFFSET_NEXT_FD = 0;
-    var OFFSET_LOCK = 1;
-    var OFFSET_PACKET_WRITE_IDX = 2;
-    var OFFSET_PACKET_READ_IDX = 3;
-    var OFFSET_PACKET_LOCK = 4;
-    var OFFSET_SOCKET_DATA = 5;
-    var MAX_SOCKETS = 32; // Reduced to make more room for packet buffer
-    var SOCKET_ENTRY_SIZE = 16;
-    var PACKET_BUFFER_START = OFFSET_SOCKET_DATA + (MAX_SOCKETS * SOCKET_ENTRY_SIZE);
-    var PACKET_ENTRY_SIZE = 520;
-    var MAX_PACKETS = Math.floor((SOCKET_SHARED_MEMORY_SIZE / 4 - PACKET_BUFFER_START) / PACKET_ENTRY_SIZE); // Calculate from available space
-    
-    console.log('[pre.js] Calculated MAX_PACKETS=' + MAX_PACKETS + ' from 1MB SharedArrayBuffer');
-    
     // Initialize control variables
-    Atomics.store(_luantiSocketSharedInt32, OFFSET_NEXT_FD, 100);
-    Atomics.store(_luantiSocketSharedInt32, OFFSET_LOCK, 0);
-    Atomics.store(_luantiSocketSharedInt32, OFFSET_PACKET_WRITE_IDX, 0);
-    Atomics.store(_luantiSocketSharedInt32, OFFSET_PACKET_READ_IDX, 0);
-    Atomics.store(_luantiSocketSharedInt32, OFFSET_PACKET_LOCK, 0);
-    
-    // Initialize socket entries
-    for (var i = 0; i < MAX_SOCKETS; i++) {
-        var offset = OFFSET_SOCKET_DATA + (i * SOCKET_ENTRY_SIZE);
-        Atomics.store(_luantiSocketSharedInt32, offset, -1);
-    }
-    
-    // Initialize packet buffer entries
-    for (var i = 0; i < MAX_PACKETS; i++) {
-        var offset = PACKET_BUFFER_START + (i * PACKET_ENTRY_SIZE);
-        Atomics.store(_luantiSocketSharedInt32, offset, 0); // valid flag = 0 (empty)
-    }
+    _luantiSocketSharedInt32.set(new Int32Array(32).fill(0));
+    _luantiSocketSharedInt32[FD_IDX] = 100;
     
     // Store in a global location accessible to worker initialization
     // We'll use 'self' which works in both window and worker contexts
@@ -74,7 +49,7 @@ if (isMainThread && typeof SharedArrayBuffer !== 'undefined') {
 		// Note: Regular objects can't be transferred, but we can use a workaround
 		// by storing the packet queues in a way that's accessible via Atomics.notify/wait
 		worker.postMessage({
-			cmd: '_luantiSocketInit',  // Use underscore prefix to avoid conflicts
+			customCmd: '_luantiSocketInit',  // Use underscore prefix to avoid conflicts
 			sharedBuffer: self._luantiSocketSharedBuffer,
 			devicePixelRatio: self._luantiDevicePixelRatio || 1.0,
 			// We can't actually send the packet queues object reference across threads
@@ -101,11 +76,10 @@ if (isWorker) {
 	// Listen for our custom initialization message
 	// This will arrive before Emscripten's pthread initialization
 	self.addEventListener('message', function(e) {
-		if (e.data && e.data.cmd === '_luantiSocketInit') {
+		if (e.data && e.data.customCmd === '_luantiSocketInit') {
 			if (e.data.sharedBuffer) {
 				console.log('[pre.js] Worker received SharedArrayBuffer via postMessage');
 				self._luantiSocketSharedBuffer = e.data.sharedBuffer;
-				self._luantiSocketSharedInt32 = new Int32Array(e.data.sharedBuffer);
 				console.log('[pre.js] SharedArrayBuffer initialized in worker');
 			}
 			if (e.data.devicePixelRatio) {
