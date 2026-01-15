@@ -34,6 +34,10 @@ cp "$OUTPUT_DIR/luanti.js" "$WWW_DIR/"
 cp "$OUTPUT_DIR/luanti.wasm" "$WWW_DIR/"
 cp "$OUTPUT_DIR/luanti.data" "$WWW_DIR/"
 
+if [ -f "$OUTPUT_DIR/luanti.wasm.map" ]; then
+    cp "$OUTPUT_DIR/luanti.wasm.map" "$WWW_DIR/"
+fi
+
 # Copy our custom initialization script (referenced in shell.html)
 echo "Copying luanti-init.js..."
 cp "$SCRIPT_DIR/luanti-init.js" "$WWW_DIR/"

@@ -134,6 +134,10 @@ docker run \
             cp bin/luanti.data /src/build-web/output/
             echo 'Copied luanti.data (preloaded assets)'
         fi
+        if [ -f bin/luanti.wasm.map ]; then
+            cp bin/luanti.wasm.map /src/build-web/output/
+            echo 'Copied luanti.wasm.map (preloaded assets)'
+        fi
         
         echo ''
         echo '=== Build Complete ==='
