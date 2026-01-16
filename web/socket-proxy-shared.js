@@ -19,9 +19,12 @@ if (typeof SharedArrayBuffer === 'undefined') {
 // Shared memory layout
 var SHARED_MEMORY_SIZE = 2 * 1024 * 1024; // 2MB
 var RESERVED_SLOTS = 32;
+var MAX_SOCKETS = 2;
+var SOCKET_ENTRY_SIZE = 5;
 
 // Indices for ring buffer implementation (int32 units)
-var FD_IDX = 0;
+// [0-15]: doorbells and ring buffer indices
+var SOCKET_FD_IDX = 0;
 var DOORBELL_SERVER_IDX = 1;
 var DOORBELL_CLIENT_IDX = 2;
 var DOORBELL_EXTERNAL_IDX = 3;
@@ -37,7 +40,19 @@ var EXTERNAL_TO_CLIENT_WRITE_IDX = 12;
 var EXTERNAL_TO_CLIENT_READ_IDX = 13;
 var CLIENT_TO_EXTERNAL_WRITE_IDX = 14;
 var CLIENT_TO_EXTERNAL_READ_IDX = 15;
-// [16-31]: reserved
+
+// [16]: socket management lock
+var MANAGE_SOCKET_LOCK_IDX = 16; // 0 = unlocked, 1 = locked
+// [17-26]: two slots for socket management data
+var SOCKET_DATA_ARRAY_IDX = 17;
+// Socket entry layout (in Int32 units):
+// [0]: fd (0 = not in use)
+// [1]: bound (0/1)
+// [2]: localPort (0 = not set)
+// [3]: localAddress (as 32-bit int, -1 = not set)
+// [4]: worker role (0 = unknown, 1 = client, 2 = server, 3 = external)
+
+// [27-31]: reserved
 
 // Packet entry layout (in Int32 units):
 // [0]: dest address (as 32-bit int)
@@ -116,7 +131,7 @@ function intToIp(num) {
 }
 
 // Helper: Write packet to ring buffer
-function writePacket(workerRole, destAddr, destPort, srcAddr, srcPort, data) {
+function writePacket(workerRole, destAddr, destPort, srcAddr, srcPort, data, fd) {
     var sharedInt32 = getSharedInt32();
     var sharedUint8 = getSharedUint8();
     var sharedDataView = getSharedDataView();
@@ -185,7 +200,7 @@ function writePacket(workerRole, destAddr, destPort, srcAddr, srcPort, data) {
     sharedDataView.setFloat64((writeOffset + 5) * 4, Date.now(), true); // 8 bytes per Float64, offset by 5 Int32s
     sharedUint8.set(data, (writeOffset + 7) * 4); // 4 bytes per Int32, offset by 5 Int32s
 
-    console.log('[SocketProxyShared] writePacket: wrote packet to ring buffer, writeOffset=' + writeOffset + ', data.length=' + data.length + ' (Worker Role: ' + workerRole + ')');
+    // console.log('[SocketProxyShared] writePacket: wrote packet to ring buffer, destAddr=' + destAddr + ', writeOffset=' + writeOffset + ', data.length=' + data.length + ', fd=' + fd + ' (Worker Role: ' + workerRole + ')');
 
     // Update write index
     var newWriteIdx = (loadedWriteIdx + MAX_PACKET_SIZE_INT32) % PER_SEGMENT_SIZE_INT32;
@@ -196,12 +211,13 @@ function writePacket(workerRole, destAddr, destPort, srcAddr, srcPort, data) {
     }
 
     Atomics.store(sharedInt32, writeIdxPos, newWriteIdx);
-    // Atomics.notify(sharedInt32, doorbellPos, 1);
+    Atomics.store(sharedInt32, doorbellPos, 1);
+    Atomics.notify(sharedInt32, doorbellPos, 1);
     return true;
 }
 
 // Helper: Read packet from ring buffer for specific address:port
-function readPacket(workerRole, buffer, maxLen) {
+function readPacket(workerRole, buffer, maxLen, fd) {
     var sharedInt32 = getSharedInt32();
     var sharedUint8 = getSharedUint8();
     var sharedDataView = getSharedDataView();
@@ -216,6 +232,7 @@ function readPacket(workerRole, buffer, maxLen) {
     var WRITE_IDX_2 = 0;
     var OFFSET_1 = 0;
     var OFFSET_2 = 0;
+    var DOORBELL_POS = 0;
     
     if (workerRole === 'client') {
         READ_IDX_1 = SERVER_TO_CLIENT_READ_IDX;
@@ -224,6 +241,7 @@ function readPacket(workerRole, buffer, maxLen) {
         WRITE_IDX_2 = EXTERNAL_TO_CLIENT_WRITE_IDX;
         OFFSET_1 = SERVER_TO_CLIENT_OFFSET;
         OFFSET_2 = EXTERNAL_TO_CLIENT_OFFSET;
+        DOORBELL_POS = DOORBELL_CLIENT_IDX;
     } else if (workerRole === 'server') {
         READ_IDX_1 = CLIENT_TO_SERVER_READ_IDX;
         READ_IDX_2 = EXTERNAL_TO_SERVER_READ_IDX;
@@ -231,6 +249,7 @@ function readPacket(workerRole, buffer, maxLen) {
         WRITE_IDX_2 = EXTERNAL_TO_SERVER_WRITE_IDX;
         OFFSET_1 = CLIENT_TO_SERVER_OFFSET;
         OFFSET_2 = EXTERNAL_TO_SERVER_OFFSET;
+        DOORBELL_POS = DOORBELL_SERVER_IDX;
     } else if (workerRole === 'external') {
         READ_IDX_1 = CLIENT_TO_EXTERNAL_READ_IDX;
         READ_IDX_2 = SERVER_TO_EXTERNAL_READ_IDX;
@@ -238,38 +257,54 @@ function readPacket(workerRole, buffer, maxLen) {
         WRITE_IDX_2 = SERVER_TO_EXTERNAL_WRITE_IDX;
         OFFSET_1 = CLIENT_TO_EXTERNAL_OFFSET;
         OFFSET_2 = SERVER_TO_EXTERNAL_OFFSET;
+        DOORBELL_POS = DOORBELL_EXTERNAL_IDX;
     } else {
         throw new Error('Invalid worker role');
-    }    
-
-    var readPos1 = Atomics.load(sharedInt32, READ_IDX_1);
-    var writePos1 = Atomics.load(sharedInt32, WRITE_IDX_1);
-    var readPos2 = Atomics.load(sharedInt32, READ_IDX_2);
-    var writePos2 = Atomics.load(sharedInt32, WRITE_IDX_2);
-    var creationTime1 = Infinity;
-    var creationTime2 = Infinity;
-
-    if (readPos1 !== writePos1) {
-        var readOffset = OFFSET_1 + readPos1;
-        creationTime1 = sharedDataView.getFloat64((readOffset + 5) * 4, true);
     }
-    if (readPos2 !== writePos2) {
-        var readOffset = OFFSET_2 + readPos2;
-        creationTime2 = sharedDataView.getFloat64((readOffset + 5) * 4, true);
-    }
-    if (creationTime1 < creationTime2) {
-        ringBufferOffset = OFFSET_1;
-        readIdxPos = READ_IDX_1;
-        readPos = readPos1;
-        console.log('[SocketProxyShared] readPacket: read packet from ring buffer 1, readPos=' + readPos + ' (Worker Role: ' + workerRole + ')');
-    } else if (creationTime2 < creationTime1) {
-        ringBufferOffset = OFFSET_2;
-        readIdxPos = READ_IDX_2;
-        readPos = readPos2;
-        console.log('[SocketProxyShared] readPacket: read packet from ring buffer 2, readPos=' + readPos + ' (Worker Role: ' + workerRole + ')');
-    } else {
-        console.log('[SocketProxyShared] readPacket: no packet found (Worker Role: ' + workerRole + ')');
-        return null;
+    
+    var waited = false;
+    while (true) {
+        var readPos1 = Atomics.load(sharedInt32, READ_IDX_1);
+        var writePos1 = Atomics.load(sharedInt32, WRITE_IDX_1);
+        var readPos2 = Atomics.load(sharedInt32, READ_IDX_2);
+        var writePos2 = Atomics.load(sharedInt32, WRITE_IDX_2);
+        var creationTime1 = Infinity;
+        var creationTime2 = Infinity;
+
+        if (readPos1 !== writePos1) {
+            var readOffset = OFFSET_1 + readPos1;
+            creationTime1 = sharedDataView.getFloat64((readOffset + 5) * 4, true);
+        }
+        if (readPos2 !== writePos2) {
+            var readOffset = OFFSET_2 + readPos2;
+            creationTime2 = sharedDataView.getFloat64((readOffset + 5) * 4, true);
+        }
+        if (creationTime1 < creationTime2) {
+            ringBufferOffset = OFFSET_1;
+            readIdxPos = READ_IDX_1;
+            readPos = readPos1;
+            // console.log('[SocketProxyShared] readPacket: read packet from ring buffer 1, readPos=' + readPos + ' (Worker Role: ' + workerRole + ')');
+            break;
+        } else if (creationTime2 < creationTime1) {
+            ringBufferOffset = OFFSET_2;
+            readIdxPos = READ_IDX_2;
+            readPos = readPos2;
+            // console.log('[SocketProxyShared] readPacket: read packet from ring buffer 2, readPos=' + readPos + ' (Worker Role: ' + workerRole + ')');
+            break;
+        } else {
+            // console.log('[SocketProxyShared] readPacket: no packet found, fd=' + fd + ' (Worker Role: ' + workerRole + ')');
+            if (!waited) {
+                var result = Atomics.wait(sharedInt32, DOORBELL_POS, 0, 500);
+                if (result === 'timedout') {
+                    return null;
+                }
+                Atomics.store(sharedInt32, DOORBELL_POS, 0);
+                waited = true;
+            }
+            else {
+                return null;
+            }
+        }
     }
 
     var readOffset = ringBufferOffset + readPos;
@@ -293,16 +328,79 @@ function readPacket(workerRole, buffer, maxLen) {
     };
 }
 
-var SocketProxy = {
-    domain: null,
-    type: null,
-    protocol: null,
-    fd: null,
-    bound: false,
-    address: null,
-    port: null,
-    workerRole: null, // client, server, external
+function acquireSocketManagementLock(timeoutMs = 200) {
+    var sharedInt32 = getSharedInt32();
+    var start = Date.now();
+    while (true) {
+        var oldValue = Atomics.compareExchange(sharedInt32, MANAGE_SOCKET_LOCK_IDX, 0, 1);
+        if (oldValue === 0) {
+            return true;
+        }
+        if (Date.now() - start > timeoutMs) {
+            break;
+        }
+        Atomics.wait(sharedInt32, MANAGE_SOCKET_LOCK_IDX, 1, 1);
+    }
+    return false;
+}
 
+function releaseSocketManagementLock() {
+    var sharedInt32 = getSharedInt32();
+    var oldValue = Atomics.compareExchange(sharedInt32, MANAGE_SOCKET_LOCK_IDX, 1, 0);
+    if (oldValue === 1) {
+        Atomics.notify(sharedInt32, MANAGE_SOCKET_LOCK_IDX, 1);
+        return true;
+    }
+    throw new Error('[SocketProxyShared] Failed to release socket management lock, expected 1, got ' + oldValue);
+}
+
+function findSocketIdxByFd(fd) {
+    var sharedInt32 = getSharedInt32();
+    for (var i = 0; i < MAX_SOCKETS; i++) {
+        var testIdx = SOCKET_DATA_ARRAY_IDX + (i * SOCKET_ENTRY_SIZE);
+        var foundFd = Atomics.load(sharedInt32, testIdx);
+        if (foundFd === fd) {
+            return testIdx;
+        }
+    }
+    return -1;
+}
+
+function intToWorkerRole(intVal) {
+    switch (intVal) {
+        case 0:
+            return 'unknown';
+        case 1:
+            return 'client';
+        case 2:
+            return 'server';
+        case 3:
+            return 'external';
+        default:
+            throw new Error('Invalid worker role: ' + intVal);
+    }
+}
+
+function workerRoleToInt(workerRole) {
+    switch (workerRole) {
+        case 'unknown':
+            return 0;
+        case 'client':
+            return 1;
+        case 'server':
+            return 2;
+        case 'external':
+            return 3;
+        default:
+            throw new Error('Invalid worker role: ' + workerRole);
+    }
+}
+
+var SocketProxy = {
+    fd: 0,
+    bound: false,
+    socketDataIdx: -1,
+    
     randomPort: function() {
         const minPort = 49152;
         const maxPort = 65535;
@@ -313,55 +411,143 @@ var SocketProxy = {
      * Create a new socket
      */
     socket: function(domain, type, protocol) {
+        var sharedInt32 = getSharedInt32();
+
         // Only support IPv4 UDP for now
         if (type !== 2) { // SOCK_DGRAM
             console.error('[SocketProxyShared] Only UDP supported');
             return -1;
         }
-        
-        // Allocate new FD
-        this.fd = Atomics.add(getSharedInt32(), FD_IDX, 1);
-        this.domain = domain;
-        this.type = type;
-        this.protocol = protocol;
 
-        console.log('[SocketProxyShared] socket() called: domain=' + domain + ', type=' + type + ', fd=' + this.fd);
-        
-        return this.fd;
+        if (!acquireSocketManagementLock()) {
+            console.error('[SocketProxyShared] Failed to acquire socket management lock');
+            return -1;
+        }
+
+        try {
+            this.socketDataIdx = findSocketIdxByFd(0);
+            if (this.socketDataIdx === -1) {
+                console.error('[SocketProxyShared] No free socket slots!');
+                return -1;
+            }
+
+            var newFd = Atomics.add(sharedInt32, SOCKET_FD_IDX, 1);
+
+            Atomics.store(sharedInt32, this.socketDataIdx, newFd);
+            Atomics.store(sharedInt32, this.socketDataIdx + 1, 0); // not bound
+            Atomics.store(sharedInt32, this.socketDataIdx + 2, 0); // localPort not set
+            Atomics.store(sharedInt32, this.socketDataIdx + 3, -1); // localAddress not set
+            Atomics.store(sharedInt32, this.socketDataIdx + 4, 0); // worker role unknown
+
+            this.fd = newFd;
+            this.bound = false;
+
+            console.log('[SocketProxyShared] socket() called: domain=' + domain + ', type=' + type + ', fd=' + this.fd);
+            return this.fd;
+        } finally {
+            releaseSocketManagementLock();
+        }
     },
     
     /**
      * Bind socket to address
      */
     bind: function(fd, address, port) {
-        console.log('[SocketProxyShared] bind() called: fd=' + fd + ', address=' + address + ', port=' + port);
+        var sharedInt32 = getSharedInt32();
 
-        if (this.fd !== null || this.bound) {
-            console.error('[SocketProxyShared] bind: Socket already bound');
+        if (fd === 0) {
+            throw new Error('[SocketProxyShared] bind: Invalid socket fd=0');
+        }
+
+        if (!acquireSocketManagementLock()) {
+            console.error('[SocketProxyShared] Failed to acquire socket management lock');
             return -1;
         }
-        
-        // Normalize addresses for localhost loopback
-        // Convert IPv6 ::1 to IPv4 127.0.0.1 for consistency
-        if (address === '::1' || address === '::') {
-            console.log('[SocketProxyShared] Normalizing IPv6 address ' + address + ' to 127.0.0.1');
+
+        try {
+            console.log('[SocketProxyShared] bind() called: fd=' + fd + ', address=' + address + ', port=' + port);
+
+            this.socketDataIdx = findSocketIdxByFd(fd);
+            if (this.socketDataIdx === -1) {
+                console.error('[SocketProxyShared] Invalid socket fd=' + fd);
+                return -1;
+            }
+
+            var wasBound = Atomics.compareExchange(sharedInt32, this.socketDataIdx + 1, 0, 1);
+            if (wasBound !== 0) {
+                console.error('[SocketProxyShared] bind: Socket already bound');
+                return -1;
+            }
+            
+            // Normalize address to localhost
             address = '127.0.0.1';
+            
+            // Port 0 means "assign any available port" - allocate an ephemeral port
+            if (port === 0) {
+                Atomics.store(sharedInt32, this.socketDataIdx + 4, workerRoleToInt('client'));
+                port = this.randomPort(); // Use random ephemeral port
+                console.log('[SocketProxyShared] Port 0 requested, assigning ephemeral port ' + port);
+            }
+            else {
+                Atomics.store(sharedInt32, this.socketDataIdx + 4, workerRoleToInt('server'));
+            }
+
+            Atomics.store(sharedInt32, this.socketDataIdx + 2, port);
+            Atomics.store(sharedInt32, this.socketDataIdx + 3, ipToInt(address));
+
+            this.fd = fd;
+            this.bound = true;
+            
+            return 0;
+
+        } finally {
+            releaseSocketManagementLock();
         }
-        
-        // Port 0 means "assign any available port" - allocate an ephemeral port
-        if (port === 0) {
-            this.workerRole = 'client';
-            port = this.randomPort(); // Use fd-based ephemeral port
-            console.log('[SocketProxyShared] Port 0 requested, assigning ephemeral port ' + port);
-        }
-        else {
-            this.workerRole = 'server';
+    },
+
+    loadSocketDataWithAutoBind: function(fd, autoBind = true) {
+        var sharedInt32 = getSharedInt32();
+        // Load socket data by fd
+        if (!acquireSocketManagementLock()) {
+            console.error('[SocketProxyShared] Failed to acquire socket management lock');
+            return -1;
         }
 
-        this.address = address;
-        this.port = port;
-        this.bound = true;
-        
+        try {
+            this.socketDataIdx = findSocketIdxByFd(fd);
+            if (this.socketDataIdx === -1) {
+                console.error('[SocketProxyShared] Invalid socket fd=' + fd);
+                return -1;
+            }
+            this.fd = fd;
+            var workerRole = Atomics.load(sharedInt32, this.socketDataIdx + 4);
+            var addressInt = Atomics.load(sharedInt32, this.socketDataIdx + 3);
+            var port = Atomics.load(sharedInt32, this.socketDataIdx + 2);
+            var bound = Atomics.load(sharedInt32, this.socketDataIdx + 1) === 1;
+            if (!bound && autoBind) {
+                // Auto-bind if not already bound
+                bound = true;
+                Atomics.store(sharedInt32, this.socketDataIdx + 1, 1);
+            }
+            if (addressInt === -1) {
+                addressInt = ipToInt('127.0.0.1');
+                Atomics.store(sharedInt32, this.socketDataIdx + 3, addressInt);
+            }
+            if (port === 0) {
+                port = this.randomPort();
+                Atomics.store(sharedInt32, this.socketDataIdx + 2, port);
+            }
+            if (workerRole === workerRoleToInt('unknown')) {
+                workerRole = workerRoleToInt('client');
+                Atomics.store(sharedInt32, this.socketDataIdx + 4, workerRole);
+            }
+
+            this.bound = bound;
+
+        } finally {
+            releaseSocketManagementLock();
+        }
+
         return 0;
     },
 
@@ -369,19 +555,26 @@ var SocketProxy = {
      * Send data to address
      */
     sendto: function(fd, data, destAddress, destPort) {
-        if (fd !== this.fd) {
-            console.warn('[SocketProxyShared] sendto: Invalid socket fd=' + fd + ', expected ' + this.fd);
+        var sharedInt32 = getSharedInt32();
+        if (fd !== this.fd && this.loadSocketDataWithAutoBind(fd) !== 0) {
+            console.error('[SocketProxyShared] Failed to auto-bind socket fd=' + fd);
+            return -1;
         }
 
-        if (!this.bound) {
-            this.workerRole = 'client';
-            this.address = '127.0.0.1';
-            this.port = this.randomPort();
-            this.bound = true;
-            console.log('[SocketProxyShared] Auto-binding unbound socket fd=' + this.fd + ' to 127.0.0.1:' + this.port);
+        if (this.socketDataIdx === -1 || sharedInt32[this.socketDataIdx] !== this.fd) {
+            console.error('[SocketProxyShared] Invalid socket fd=' + fd);
+            return -1;
         }
-
-        if (!writePacket(this.workerRole, destAddress, destPort, this.address, this.port, data)) {
+        
+        if (!writePacket(
+            intToWorkerRole(sharedInt32[this.socketDataIdx + 4]),
+            destAddress,
+            destPort,
+            intToIp(sharedInt32[this.socketDataIdx + 3]),
+            sharedInt32[this.socketDataIdx + 2],
+            data,
+            fd,
+        )) {
             console.error('[SocketProxyShared] Failed to write packet to ring buffer');
             return -1;
         }
@@ -394,39 +587,78 @@ var SocketProxy = {
      * Receive data from socket
      */
     recvfrom: function(fd, buffer, maxLen) {
-        if (!this.bound) {
-            // console.warn('[SocketProxyShared] recvfrom: Socket not bound, fd=' + fd + ', expected fd=' + this.fd);
-            return null;
+        var sharedInt32 = getSharedInt32();
+        if (fd !== this.fd && this.loadSocketDataWithAutoBind(fd, false) !== 0) {
+            console.error('[SocketProxyShared] Failed to auto-bind socket fd=' + fd);
+            return -1;
         }
 
-        if (fd !== this.fd) {
-            console.warn('[SocketProxyShared] recvfrom: Invalid socket fd=' + fd + ', expected ' + this.fd);
-            return null;
+        if (this.socketDataIdx === -1 || sharedInt32[this.socketDataIdx] !== this.fd) {
+            console.error('[SocketProxyShared] Invalid socket fd=' + fd);
+            return -1;
         }
 
         // Read packet from shared ring buffer
-        return readPacket(this.workerRole, buffer, maxLen);
+        return readPacket(intToWorkerRole(sharedInt32[this.socketDataIdx + 4]), buffer, maxLen, fd);
     },
     
     /**
      * Close socket
      */
     close: function(fd) {
-        if (fd !== this.fd) {
-            console.error('[SocketProxyShared] close: Invalid socket fd=' + fd + ', expected ' + this.fd);
+        var sharedInt32 = getSharedInt32();
+        console.log('[SocketProxyShared] Closing socket ' + fd);
+        if (!acquireSocketManagementLock()) {
+            console.error('[SocketProxyShared] Failed to acquire socket management lock');
             return -1;
         }
 
-        this.fd = null;
-        this.domain = null;
-        this.type = null;
-        this.protocol = null;
-        this.fd = null;
-        this.bound = false;
-        this.address = null;
-        this.port = null;
-        this.workerRole = null;
-        return 0;
+        try {
+            if (this.socketDataIdx === -1 || sharedInt32[this.socketDataIdx] !== fd) {
+                this.socketDataIdx = findSocketIdxByFd(fd);
+                if (this.socketDataIdx === -1) {
+                    console.error('[SocketProxyShared] close: Invalid socket fd=' + fd);
+                    return -1;
+                }
+            }
+
+            switch (intToWorkerRole(sharedInt32[this.socketDataIdx + 4])) {
+                case 'client':
+                    Atomics.store(sharedInt32, CLIENT_TO_SERVER_READ_IDX, 0);
+                    Atomics.store(sharedInt32, CLIENT_TO_SERVER_WRITE_IDX, 0);
+                    Atomics.store(sharedInt32, CLIENT_TO_EXTERNAL_READ_IDX, 0);
+                    Atomics.store(sharedInt32, CLIENT_TO_EXTERNAL_WRITE_IDX, 0);
+                    break;
+                case 'server':
+                    Atomics.store(sharedInt32, SERVER_TO_CLIENT_READ_IDX, 0);
+                    Atomics.store(sharedInt32, SERVER_TO_CLIENT_WRITE_IDX, 0);
+                    Atomics.store(sharedInt32, SERVER_TO_EXTERNAL_READ_IDX, 0);
+                    Atomics.store(sharedInt32, SERVER_TO_EXTERNAL_WRITE_IDX, 0);
+                    break;
+                case 'external':
+                    Atomics.store(sharedInt32, EXTERNAL_TO_CLIENT_READ_IDX, 0);
+                    Atomics.store(sharedInt32, EXTERNAL_TO_CLIENT_WRITE_IDX, 0);
+                    Atomics.store(sharedInt32, EXTERNAL_TO_SERVER_READ_IDX, 0);
+                    Atomics.store(sharedInt32, EXTERNAL_TO_SERVER_WRITE_IDX, 0);
+                    break;
+                default:
+                    console.warn('[SocketProxyShared] close: Invalid worker role "unknown", fd=' + fd)
+                    break;
+            }
+
+            Atomics.store(sharedInt32, this.socketDataIdx, 0);
+            Atomics.store(sharedInt32, this.socketDataIdx + 1, 0);
+            Atomics.store(sharedInt32, this.socketDataIdx + 2, 0);
+            Atomics.store(sharedInt32, this.socketDataIdx + 3, -1);
+            Atomics.store(sharedInt32, this.socketDataIdx + 4, 0);
+            
+            this.fd = 0;
+            this.bound = false;
+            this.socketDataIdx = -1;
+            return 0;
+        } finally {
+            releaseSocketManagementLock();
+        }
     }
 };
 
