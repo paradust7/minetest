@@ -72,6 +72,37 @@ LevelTarget info_target(g_logger, LL_INFO);
 LevelTarget verbose_target(g_logger, LL_VERBOSE);
 LevelTarget trace_target(g_logger, LL_TRACE);
 
+#ifdef __EMSCRIPTEN__
+// Emscripten/JSPI workaround: Use no-op streams to avoid problematic
+// thread_local static initialization that triggers mutex guards.
+// This prevents "trying to suspend without WebAssembly.promising" errors.
+
+// Null stream buffer that discards everything
+class NullStreamBuf : public std::streambuf {
+protected:
+	int overflow(int c) override { return c; }
+};
+
+static NullStreamBuf s_null_buf;
+static std::ostream s_null_ostream(&s_null_buf);
+
+NullLogStream::operator std::ostream&() {
+	return s_null_ostream;
+}
+
+NullLogStream dstream;
+NullLogStream rawstream;
+NullLogStream errorstream;
+NullLogStream warningstream;
+NullLogStream actionstream;
+NullLogStream infostream;
+NullLogStream verbosestream;
+NullLogStream tracestream;
+NullLogStream derr_con;
+NullLogStream dout_con;
+
+#else // !__EMSCRIPTEN__
+
 thread_local LogStream dstream(none_target);
 thread_local LogStream rawstream(none_target_raw);
 thread_local LogStream errorstream(error_target);
@@ -82,6 +113,8 @@ thread_local LogStream verbosestream(verbose_target);
 thread_local LogStream tracestream(trace_target);
 thread_local LogStream derr_con(verbose_target);
 thread_local LogStream dout_con(trace_target);
+
+#endif // __EMSCRIPTEN__
 
 // Android
 #ifdef __ANDROID__

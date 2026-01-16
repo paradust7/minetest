@@ -185,6 +185,37 @@ private:
  * by the mutex in g_logger.
 */
 
+#ifdef __EMSCRIPTEN__
+/*
+ * Emscripten/JSPI workaround: The thread_local LogStream objects trigger
+ * complex static initialization involving std::ostream and mutex guards.
+ * This causes "trying to suspend without WebAssembly.promising" errors
+ * because JSPI isn't ready during static initialization.
+ *
+ * Use a simple no-op stream that avoids all the problematic initialization.
+ */
+class NullLogStream {
+public:
+	template<typename T>
+	NullLogStream& operator<<(T&&) { return *this; }
+	NullLogStream& operator<<(std::ostream& (*)(std::ostream&)) { return *this; }
+	operator bool() const { return false; }
+	operator std::ostream&();  // Returns a static null stream
+};
+
+extern NullLogStream dstream;
+extern NullLogStream rawstream;
+extern NullLogStream errorstream;
+extern NullLogStream warningstream;
+extern NullLogStream actionstream;
+extern NullLogStream infostream;
+extern NullLogStream verbosestream;
+extern NullLogStream tracestream;
+extern NullLogStream derr_con;
+extern NullLogStream dout_con;
+
+#else // !__EMSCRIPTEN__
+
 extern thread_local LogStream dstream;
 extern thread_local LogStream rawstream;  // Writes directly to all LL_NONE log outputs with no prefix.
 extern thread_local LogStream errorstream;
@@ -196,6 +227,8 @@ extern thread_local LogStream tracestream;
 // TODO: Search/replace these with verbose/tracestream
 extern thread_local LogStream derr_con;
 extern thread_local LogStream dout_con;
+
+#endif // __EMSCRIPTEN__
 
 #define TRACESTREAM(x) do {	\
 	if (tracestream) { 	\

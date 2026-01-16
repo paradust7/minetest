@@ -162,6 +162,7 @@ set(EMSCRIPTEN_COMMON_FLAGS
     "-sOFFSCREENCANVAS_SUPPORT=1"
     "-sOFFSCREENCANVASES_TO_PTHREAD=\"#canvas\""
     "-sGL_WORKAROUND_SAFARI_GETCONTEXT_BUG=0"
+    "-sSUPPORT_LONGJMP=wasm"
     
     "-sENVIRONMENT=web,worker"
     "-sDEFAULT_TO_CXX=1"
@@ -199,12 +200,12 @@ set(EMSCRIPTEN_FINAL_EXE_FLAGS
 string(REPLACE ";" " " EMSCRIPTEN_COMMON_FLAGS_STR "${EMSCRIPTEN_COMMON_FLAGS}")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${EMSCRIPTEN_COMMON_FLAGS_STR} -L/usr/local/lib -fwasm-exceptions -sNO_EXIT_RUNTIME=0 -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1 -sUSE_OGG=1 -sUSE_VORBIS=1")
 
-# Enable proper C++ exception handling (compile-time flag required!)
+# Enable C++ exception handling
 set(EXCEPTION_FLAGS "-fwasm-exceptions")
 
-# Emscripten port flags MUST be present during compilation for headers to work properly
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread -mbulk-memory -mnontrapping-fptoint -I/usr/local/include -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1 -sUSE_OGG=1 -sUSE_VORBIS=1")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${EXCEPTION_FLAGS} -pthread -mbulk-memory -mnontrapping-fptoint -I/usr/local/include -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1 -sUSE_OGG=1 -sUSE_VORBIS=1")
+# CRITICAL: -sSUPPORT_LONGJMP must be in compile flags (not just linker flags)!
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${EXCEPTION_FLAGS} -pthread -mbulk-memory -mnontrapping-fptoint -sSUPPORT_LONGJMP=wasm -I/usr/local/include -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1 -sUSE_OGG=1 -sUSE_VORBIS=1")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${EXCEPTION_FLAGS} -pthread -mbulk-memory -mnontrapping-fptoint -sSUPPORT_LONGJMP=wasm -I/usr/local/include -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1 -sUSE_OGG=1 -sUSE_VORBIS=1")
 
 # Store final exe flags for later use (we'll apply them to the main target only)
 # Keep as a list (semicolon-separated) so CMake passes each flag separately
