@@ -123,7 +123,7 @@ set(EMSCRIPTEN TRUE)
 # Common flags (safe for CMake tests)
 set(EMSCRIPTEN_COMMON_FLAGS
     # Memory settings
-    "-sINITIAL_MEMORY=256MB"
+    "-sINITIAL_MEMORY=2GB"
     "-sMAXIMUM_MEMORY=4GB"
     "-sALLOW_MEMORY_GROWTH=1"
     "-sALLOW_TABLE_GROWTH=1"
