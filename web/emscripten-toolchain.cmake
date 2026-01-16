@@ -39,7 +39,6 @@ set(USE_SPATIAL TRUE CACHE BOOL "Use SpatialIndex")
 # PNG - Emscripten port (handled by -sUSE_LIBPNG=1 at link time)
 set(PNG_FOUND TRUE)
 set(PNG_PNG_INCLUDE_DIR "${EMSCRIPTEN_ROOT_PATH}/system/include")
-# Use dummy value - actual linking handled by -sUSE_LIBPNG=1
 set(PNG_LIBRARY "EMSCRIPTEN_PORT_PNG")
 set(PNG_LIBRARIES "EMSCRIPTEN_PORT_PNG")
 
@@ -77,28 +76,22 @@ set(FREETYPE_LIBRARIES "${FREETYPE_LIBRARY}")
 # SQLite3 - built-in to Emscripten (handled by -sUSE_SQLITE3=1 at link time)
 set(SQLITE3_FOUND TRUE)
 set(SQLITE3_INCLUDE_DIR "${EMSCRIPTEN_ROOT_PATH}/system/include")
-# Set to "sqlite3" for CMake, but Emscripten will handle it via port system
 set(SQLITE3_LIBRARY "sqlite3")
 set(SQLITE3_LIBRARIES "sqlite3")
 
-# OpenAL - Emscripten port (handled by -sUSE_OPENAL=1 at link time) <-- incorrect
-# Set as CACHE variables so find_package(OpenAL) will detect them
-#
+# OpenAL - Emscripten port (handled by -sUSE_OPENAL=1 at link time)
 set(OPENAL_FOUND TRUE CACHE BOOL "OpenAL found")
 set(OPENAL_INCLUDE_DIR "${EMSCRIPTEN_ROOT_PATH}/system/include" CACHE PATH "OpenAL include directory")
 set(OPENAL_LIBRARY "openal" CACHE STRING "OpenAL library")
 set(OPENAL_LIBRARIES "${OPENAL_LIBRARY}" CACHE STRING "OpenAL libraries")
 
 # Ogg - Emscripten port (handled by -sUSE_OGG=1 at link time)
-# Set as CACHE variables so find_package(Vorbis) will detect them
 set(OGG_FOUND TRUE CACHE BOOL "Ogg found")
 set(OGG_INCLUDE_DIR "${EMSCRIPTEN_ROOT_PATH}/system/include" CACHE PATH "Ogg include directory")
 set(OGG_LIBRARY "ogg" CACHE STRING "Ogg library")
 set(OGG_LIBRARIES "${OGG_LIBRARY}" CACHE STRING "Ogg libraries")
 
 # Vorbis - Emscripten port (handled by -sUSE_VORBIS=1 at link time)
-# Set as CACHE variables so find_package(Vorbis) will detect them
-# Note: Emscripten's libvorbis.a includes vorbisfile - no separate library needed
 set(VORBIS_FOUND TRUE CACHE BOOL "Vorbis found")
 set(VORBIS_INCLUDE_DIR "${EMSCRIPTEN_ROOT_PATH}/system/include" CACHE PATH "Vorbis include directory")
 set(VORBIS_LIBRARY "vorbis" CACHE STRING "Vorbis library")
@@ -128,7 +121,7 @@ set(EMSCRIPTEN_COMMON_FLAGS
     "-sALLOW_MEMORY_GROWTH=1"
     "-sALLOW_TABLE_GROWTH=1"
     "-sSTACK_SIZE=10MB"
-    "-sDEFAULT_PTHREAD_STACK_SIZE=2097152"
+    "-sDEFAULT_PTHREAD_STACK_SIZE=2MB"
     
     # WebGL / Graphics
     "-sFULL_ES3=1"
@@ -148,56 +141,30 @@ set(EMSCRIPTEN_COMMON_FLAGS
     
     # Networking
     "-sFETCH=1"
-
-    # Environment: Default is with node support, we can omit that
-    # "-sENVIRONMENT=['web','webview','worker']"
-    
-    # Socket emulation: Using custom JavaScript proxy (socket-proxy.js + socket-library.js)
-    # Stage 1: Localhost loopback for single-player
-    # Future: WebRTC DataChannels / WebTransport for multiplayer
-    # Note: NOT using PROXY_POSIX_SOCKETS - we implement our own socket layer
     
     # Debug and Error Reporting (reduced verbosity for performance)
     "-sASSERTIONS=0"
     "-sSTACK_OVERFLOW_CHECK=0"
     "-sALLOW_UNIMPLEMENTED_SYSCALLS=1"
     "-sERROR_ON_UNDEFINED_SYMBOLS=0"
-    # "-sGL_DEBUG=1"  # Enable to debug GL issues
-    # "-sGL_TRACK_ERRORS=1"  # Track GL errors
-    "-sRUNTIME_DEBUG=0"  # Disable runtime keepalive spam
+    "-sRUNTIME_DEBUG=0"
     
-    # CRITICAL: ASYNCIFY allows synchronous main loops to yield to the browser
-    # Without this, the game loop blocks the JavaScript thread = frozen browser
+    # Asyncify (JSPI) and Threading settings
     "-sASYNCIFY=2"
-    "-sASYNCIFY_STACK_SIZE=8388608"
+    "-sASYNCIFY_STACK_SIZE=8MB"
     "-sJSPI_EXPORTS=['_main']"
     "-sJSPI_IMPORTS=['emscripten_sleep','emscripten_yield','emscripten_main_loop_helper','emscripten_asm_const_int','emscripten_asm_const_double','emscripten_asm_const_void','emscripten_scan_registers','getaddrinfo','emscripten_getaddrinfo']"
-    "-sASYNCIFY_ADD=['_main','main','the_game','*ClientLauncher*run*','*Game*startup*','*Game*init*','*Game*createServer*','*Game*createClient*','*fps_control*limit*','*sleep_ms*']"
-    "-sASYNCIFY_REMOVE=['__wasm_call_ctors','_emscripten_init_main_thread','emscripten_futex_wake','emscripten_runtime_init','*BanManager*','*Server*','*Connection*','*EmergeManager*','*Thread*','*Socket*','*fs*','*filesys*','*NetworkPacket*','*Settings*','*Inventory*','*Mod*','*Script*','*Env*','*lambda*','*$_*']"
-    "-sASYNCIFY_PROPAGATE_ADD=0"
-    "-sASYNCIFY_ADVISE=1"
-    "-sALLOW_BLOCKING_ON_MAIN_THREAD=1"
-
-    # Threading support (required for server thread + network threads)
-    # Enables Web Workers for true multithreading
+    "-sALLOW_BLOCKING_ON_MAIN_THREAD=0"
     "-pthread"
-    "-sPTHREAD_POOL_SIZE=20"  # Pre-create 16 worker threads (server + client network threads + emerge + overhead)
-    
-    # CRITICAL: PROXY_TO_PTHREAD moves main() off the main thread to a worker
-    # This prevents blocking the main thread on filesystem operations (WASMFS locks)
-    # Combined with OffscreenCanvas, allows rendering from worker thread
+    "-sPTHREAD_POOL_SIZE=20"
     "-sPROXY_TO_PTHREAD=1"
+    "-sOFFSCREEN_FRAMEBUFFER=0"
     "-sOFFSCREENCANVAS_SUPPORT=1"
     "-sOFFSCREENCANVASES_TO_PTHREAD=\"#canvas\""
-
-    # Explicitly disable the old offscreen framebuffer mechanism
-    # Setting this to 0 ensures EGL operations stay on the worker thread
-    "-sOFFSCREEN_FRAMEBUFFER=0"
     "-sGL_WORKAROUND_SAFARI_GETCONTEXT_BUG=0"
     
-    # CRITICAL: Tell SDL to use emscripten_set_main_loop_timing for proper FPS limiting
-    # This makes SDL respect vsync and use requestAnimationFrame
-    "-sDEFAULT_TO_CXX=1"  # C++ support for SDL
+    "-sENVIRONMENT=web,worker"
+    "-sDEFAULT_TO_CXX=1"
 )
 
 # Additional compile flags for SDL2
@@ -220,19 +187,6 @@ set(EMSCRIPTEN_FINAL_EXE_FLAGS
     "-sEXPORTED_FUNCTIONS=['_main']"
     "-sMODULARIZE=1"
     "-sEXPORT_NAME='LuantiModule'"
-    "-sWEBSOCKET_URL=ws://localhost:30000"
-    
-    # JSPI / Asyncify Settings (Applied to final executable)
-    "-sASYNCIFY=2"
-    "-sASYNCIFY_STACK_SIZE=8388608"
-    "-sJSPI_EXPORTS=['_main']"
-    # "-sJSPI_IMPORTS=['emscripten_sleep','emscripten_yield','emscripten_main_loop_helper','emscripten_asm_const_int','emscripten_asm_const_double','emscripten_asm_const_void','emscripten_scan_registers','getaddrinfo','emscripten_getaddrinfo']"
-    # "-sASYNCIFY_REMOVE=['__wasm_call_ctors','_emscripten_init_main_thread','emscripten_futex_wake','emscripten_runtime_init','*BanManager*','*Server*','*Connection*','*EmergeManager*','*Thread*','*Socket*','*fs*','*filesys*','*NetworkPacket*','*Settings*','*Inventory*','*Mod*','*Script*','*Env*']"
-    "-sASYNCIFY_ADVISE=1"
-    "-sJSPI_IMPORTS=['emscripten_sleep','emscripten_yield','emscripten_main_loop_helper','emscripten_asm_const_int','emscripten_asm_const_double','emscripten_asm_const_void','emscripten_scan_registers','getaddrinfo','emscripten_getaddrinfo']"
-    "-sASYNCIFY_ADD=['_main','main','the_game','*ClientLauncher*run*','*Game*startup*','*Game*init*','*Game*createServer*','*Game*createClient*','*fps_control*limit*','*sleep_ms*']"
-    "-sASYNCIFY_REMOVE=['__wasm_call_ctors','_emscripten_init_main_thread','emscripten_futex_wake','emscripten_runtime_init','*BanManager*','*Server*','*Connection*','*EmergeManager*','*Thread*','*Socket*','*fs*','*filesys*','*NetworkPacket*','*Settings*','*Inventory*','*Mod*','*Script*','*Env*','*lambda*','*$_*']"
-    "-sALLOW_BLOCKING_ON_MAIN_THREAD=1"
     
     # Shell and JS files
     "--shell-file=${CMAKE_SOURCE_DIR}/web/shell.html"
@@ -243,59 +197,40 @@ set(EMSCRIPTEN_FINAL_EXE_FLAGS
 
 # Apply common flags for all links (including CMake tests)
 string(REPLACE ";" " " EMSCRIPTEN_COMMON_FLAGS_STR "${EMSCRIPTEN_COMMON_FLAGS}")
-# Add exception catching for proper error messages and stack traces
-# Add -L/usr/local/lib for zstd library and dummy port libraries (created in Dockerfile)
-# Add port flags at link time so Emscripten builds pthread-enabled versions
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${EMSCRIPTEN_COMMON_FLAGS_STR} -L/usr/local/lib -fwasm-exceptions -sNO_EXIT_RUNTIME=0 -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1 -sUSE_OGG=1 -sUSE_VORBIS=1")
 
 # Enable proper C++ exception handling (compile-time flag required!)
 set(EXCEPTION_FLAGS "-fwasm-exceptions")
 
 # Emscripten port flags MUST be present during compilation for headers to work properly
-# Add -fexceptions for proper C++ exception handling across WASM boundaries
-# Add -pthread for threading support (must match linker flags)
-# Add -I/usr/local/include for zstd headers
-# Note: Debug symbols (-g) are added per build type below
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread -I/usr/local/include -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${EXCEPTION_FLAGS} -pthread -I/usr/local/include -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread -mbulk-memory -mnontrapping-fptoint -I/usr/local/include -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1 -sUSE_OGG=1 -sUSE_VORBIS=1")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${EXCEPTION_FLAGS} -pthread -mbulk-memory -mnontrapping-fptoint -I/usr/local/include -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1 -sUSE_OGG=1 -sUSE_VORBIS=1")
 
 # Store final exe flags for later use (we'll apply them to the main target only)
 # Keep as a list (semicolon-separated) so CMake passes each flag separately
 set(LUANTI_WEB_LINKER_FLAGS ${EMSCRIPTEN_FINAL_EXE_FLAGS} CACHE STRING "Final exe flags for Luanti web build")
 
-# Emscripten has atomics built-in, no library needed
-set(HAVE_LINK_ATOMIC FALSE CACHE BOOL "Whether atomic library is needed" FORCE)
-
 # Compiler optimization flags per build type
-# Release: Maximum performance with LTO
-# Note: -ffast-math removed due to infinity/NaN usage in codebase
 set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG -flto -msimd128" CACHE STRING "" FORCE)
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -flto -msimd128" CACHE STRING "" FORCE)
+set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-O3 -flto" CACHE STRING "" FORCE)
 
 # Debug: No optimization, full debug symbols with source maps
 set(CMAKE_C_FLAGS_DEBUG "-O0 -g -gsource-map -msimd128" CACHE STRING "" FORCE)
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -gsource-map -msimd128" CACHE STRING "" FORCE)
+set(CMAKE_EXE_LINKER_FLAGS_DEBUG "-O0 -g -gsource-map" CACHE STRING "" FORCE)
 
 # MinSizeRel: Optimize for smallest binary size
 set(CMAKE_C_FLAGS_MINSIZEREL "-Oz -DNDEBUG -flto" CACHE STRING "" FORCE)
 set(CMAKE_CXX_FLAGS_MINSIZEREL "-Oz -DNDEBUG -flto" CACHE STRING "" FORCE)
+set(CMAKE_EXE_LINKER_FLAGS_MINSIZEREL "-Oz -flto -sAGGRESSIVE_VARIABLE_ELIMINATION=1" CACHE STRING "" FORCE)
 
 # RelWithDebInfo: Balanced size/speed with debug info
 set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O2 -g -flto" CACHE STRING "" FORCE)
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -flto" CACHE STRING "" FORCE)
 
-# Release linker flags: LTO and aggressive optimizations
-# Note: --closure removed due to compatibility issues with Luanti codebase
-set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-O3 -flto -sAGGRESSIVE_VARIABLE_ELIMINATION=1" CACHE STRING "" FORCE)
-
-# MinSizeRel linker flags: Maximum size reduction
-# Note: --closure removed due to compatibility issues
-set(CMAKE_EXE_LINKER_FLAGS_MINSIZEREL "-Oz -flto -sAGGRESSIVE_VARIABLE_ELIMINATION=1" CACHE STRING "" FORCE)
-
-# Debug linker flags: No optimization, preserve debug info
-set(CMAKE_EXE_LINKER_FLAGS_DEBUG "-O0 -g -gsource-map" CACHE STRING "" FORCE)
-
 # Disable features not supported on web (or complex to configure initially)
+set(HAVE_LINK_ATOMIC FALSE CACHE BOOL "Whether atomic library is needed" FORCE)
 set(ENABLE_LUAJIT OFF CACHE BOOL "Use LuaJIT" FORCE)
 set(ENABLE_GETTEXT OFF CACHE BOOL "Use GetText for internationalization" FORCE)
 set(ENABLE_REDIS OFF CACHE BOOL "Enable Redis backend" FORCE)
@@ -312,7 +247,7 @@ set(ENABLE_OPENGL3 OFF CACHE BOOL "Enable OpenGL 3" FORCE)
 set(ENABLE_GLES2 ON CACHE BOOL "Enable OpenGL ES 2" FORCE)
 
 message(STATUS "=== Emscripten/WebAssembly Configuration ===")
-message(STATUS "  Initial memory: 256MB, Maximum: 4GB")
+message(STATUS "  Initial memory: 2GB, Maximum: 4GB")
 message(STATUS "  WebGL 2.0 enabled")
 message(STATUS "  SDL2 enabled via Emscripten")
 message(STATUS "  Build type: ${CMAKE_BUILD_TYPE}")
