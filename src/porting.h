@@ -43,12 +43,12 @@
 	#define SLEEP_ACCURACY_US 200
 
 	#ifdef __EMSCRIPTEN__
-		// Emscripten: Don't use emscripten_sleep() in game loop - it blocks the event loop!
-		// The browser's requestAnimationFrame will handle frame timing automatically.
-		// emscripten_sleep() is only safe for one-time delays outside the main loop.
+		// Emscripten with JSPI (ASYNCIFY=2) and PROXY_TO_PTHREAD: the app runs on a
+		// worker thread, so emscripten_sleep() works correctly without blocking the
+		// browser's main thread. JSPI handles the suspend/resume efficiently.
 		#include <emscripten.h>
-		#define sleep_ms(x) do { (void)(x); } while(0)  // No-op: browser handles timing
-		#define sleep_us(x) do { (void)(x); } while(0)  // No-op: browser handles timing
+		#define sleep_ms(x) emscripten_sleep(x)
+		#define sleep_us(x) emscripten_sleep((x) / 1000)
 	#else
 		#define sleep_ms(x) usleep((x)*1000)
 		#define sleep_us(x) usleep(x)
@@ -241,8 +241,8 @@ inline void preciseSleepUs(u64 sleep_time)
 	if (sleep_time > 0)
 	{
 #ifdef __EMSCRIPTEN__
-		// On Emscripten, busy-waiting blocks the browser's event loop
-		// Just use regular sleep - vsync will handle frame timing
+		// On Emscripten, skip busy-waiting and just use sleep.
+		// JSPI handles suspend/resume efficiently, and busy loops waste CPU.
 		sleep_us(sleep_time);
 #else
 		u64 target_time = porting::getTimeUs() + sleep_time;

@@ -279,14 +279,8 @@ void UDPSocket::Send(const Address &destination, const void *data, int size)
 		return;
 	}
 
-	if (destination.getFamily() != m_addr_family) {
-#ifdef __EMSCRIPTEN__
-		EM_ASM({
-			console.error('[socket.cpp] Address family mismatch! socket_family=' + $0 + ', dest_family=' + $1);
-		}, m_addr_family, destination.getFamily());
-#endif
+	if (destination.getFamily() != m_addr_family)
 		throw SendFailedException("Address family mismatch");
-	}
 
 	int sent;
 #ifdef __EMSCRIPTEN__
