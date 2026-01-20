@@ -9,9 +9,7 @@ var isWorker = typeof importScripts === 'function';
 
 // Shared memory layout
 var SHARED_MEMORY_SIZE = 2 * 1024 * 1024; // 2MB
-
-// Indices for ring buffer implementation (int32 units)
-var FD_IDX = 0;
+var FD_IDX = 0; // Index of the file descriptor counter
 
 // Capture device pixel ratio early on main thread (before any workers are created)
 // Workers don't have access to window, so we must capture this value here
@@ -28,8 +26,8 @@ if (isMainThread && typeof SharedArrayBuffer !== 'undefined') {
     var _luantiSocketSharedInt32 = new Int32Array(_luantiSocketSharedBuffer);
     
     // Initialize control variables
-    _luantiSocketSharedInt32.set(new Int32Array(32).fill(0));
-    _luantiSocketSharedInt32[FD_IDX] = 100;
+    _luantiSocketSharedInt32.set(new Int32Array(100).fill(0)); // Set up to 100 Int32s to 0 for control variables - more than enough for now
+    _luantiSocketSharedInt32[FD_IDX] = 100; // Set the initial file descriptor counter to 100
     
     // Store in a global location accessible to worker initialization
     // We'll use 'self' which works in both window and worker contexts

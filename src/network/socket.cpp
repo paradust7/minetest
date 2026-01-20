@@ -28,40 +28,41 @@ EM_JS(int, em_socket_create, (int domain, int type, int protocol), {
 	return fd;
 });
 
-EM_JS(int, em_socket_bind, (int fd, const char* address, int port), {
-	var addr_str = UTF8ToString(address);
-	var result = SocketProxy.bind(fd, addr_str, port);
-	console.log('[socket.cpp] em_socket_bind(' + fd + ', ' + addr_str + ', ' + port + ') = ' + result);
+EM_JS(int, em_socket_bind, (int fd, const void* addr_bytes, int addr_len, int family, int port), {
+	// Create a Uint8Array view of the address bytes
+	var addr_data = new Uint8Array(HEAPU8.buffer, addr_bytes, addr_len).slice(0);
+	var result = SocketProxy.bind(fd, addr_data, family, port);
+	console.log('[socket.cpp] em_socket_bind(' + fd + ', ' + family + ', ' + port + ') = ' + result);
 	return result;
 });
 
-EM_JS(int, em_socket_sendto, (int fd, const void* data, int len, const char* dest_addr, int dest_port), {
-	var addr_str = UTF8ToString(dest_addr);
+EM_JS(int, em_socket_sendto, (int fd, const void* data, int len, const void* dest_addr, int dest_addr_len, int dest_port), {
+	// Create a Uint8Array view of the address bytes
+	var dest_addr_array = new Uint8Array(HEAPU8.buffer, dest_addr, dest_addr_len).slice(0);
 	var data_array = new Uint8Array(HEAPU8.buffer, data, len).slice(0);
-	var result = SocketProxy.sendto(fd, data_array, addr_str, dest_port);
+	var result = SocketProxy.sendto(fd, data_array, dest_addr_array, dest_port);
 	return result;
 });
 
-EM_JS(int, em_socket_recvfrom, (int fd, void* buffer, int len, char* src_addr, int src_addr_len, int* src_port), {
+EM_JS(int, em_socket_recvfrom, (int fd, void* buffer, int len, void* src_addr, int* family, int* src_port, int timeout_ms), {
 	var buf = new Uint8Array(len);
-	var result = SocketProxy.recvfrom(fd, buf, len);
+	var result = SocketProxy.recvfrom(fd, buf, len, timeout_ms);
 	
 	if (!result) {
 		// No data available (EAGAIN) - this is normal, don't spam logs
 		return -1;
 	}
 	
-	// Copy data to C++ buffer
+	// Copy data to C++ buffers
 	HEAPU8.set(buf.subarray(0, result.length), buffer);
-	
-	// Write source address if requested
-	if (src_addr && src_addr_len > 0) {
-		stringToUTF8(result.address, src_addr, src_addr_len);
+	if (family) {
+		HEAP32[family >> 2] = result.family;
 	}
-	
-	// Write source port if requested
 	if (src_port) {
 		HEAP32[src_port >> 2] = result.port;
+	}
+	if (src_addr) {
+		HEAPU8.set(result.address, src_addr);
 	}
 	
 	return result.length;
@@ -193,26 +194,15 @@ void UDPSocket::Bind(Address addr)
 		console.log('[socket.cpp] Bind() called, fd=' + $0 + ', family=' + $1 + ', port=' + $2);
 	}, m_handle, m_addr_family, addr.getPort());
 	
-	// Manually format IP address to avoid inet_ntop issues
-	char addr_buf[64];
+	// Pass address as raw bytes to em_socket_bind
+	int ret;
 	if (m_addr_family == AF_INET6) {
-		// IPv6 - treat as localhost for now
-		snprintf(addr_buf, sizeof(addr_buf), "::1");
-		EM_ASM({ console.log('[socket.cpp] Using IPv6 localhost'); });
+		struct in6_addr ipv6 = addr.getAddress6();
+		ret = em_socket_bind(m_handle, &ipv6, sizeof(ipv6), m_addr_family, addr.getPort());
 	} else {
-		// IPv4
-		EM_ASM({ console.log('[socket.cpp] Getting IPv4 address...'); });
 		struct in_addr ipv4 = addr.getAddress();
-		EM_ASM({ console.log('[socket.cpp] Got in_addr, formatting...'); });
-		unsigned char *bytes = (unsigned char*)&ipv4.s_addr;
-		snprintf(addr_buf, sizeof(addr_buf), "%u.%u.%u.%u", 
-			bytes[0], bytes[1], bytes[2], bytes[3]);
-		EM_ASM({ console.log('[socket.cpp] Formatted address: ' + UTF8ToString($0)); }, addr_buf);
+		ret = em_socket_bind(m_handle, &ipv4, sizeof(ipv4), m_addr_family, addr.getPort());
 	}
-	
-	EM_ASM({ console.log('[socket.cpp] Calling em_socket_bind...'); });
-	int ret = em_socket_bind(m_handle, addr_buf, addr.getPort());
-	EM_ASM({ console.log('[socket.cpp] em_socket_bind returned: ' + $0); }, ret);
 	
 	if (ret < 0) {
 		tracestream << (int)m_handle << ": Bind failed (Emscripten)" << std::endl;
@@ -285,20 +275,13 @@ void UDPSocket::Send(const Address &destination, const void *data, int size)
 	int sent;
 #ifdef __EMSCRIPTEN__
 	// Emscripten: Use JavaScript socket proxy for sendto
-	// Manually format IP address
-	// CRITICAL: Always use 127.0.0.1 for localhost (normalize IPv6 ::1 to IPv4)
-	// because our SocketProxy normalizes all addresses to 127.0.0.1
-	char dest_buf[64];
 	if (m_addr_family == AF_INET6) {
-		// IPv6 socket, but normalize ::1 to 127.0.0.1 for SocketProxy
-		snprintf(dest_buf, sizeof(dest_buf), "127.0.0.1");
+		struct in6_addr ipv6 = destination.getAddress6();
+		sent = em_socket_sendto(m_handle, data, size, &ipv6, sizeof(ipv6), destination.getPort());
 	} else {
 		struct in_addr ipv4 = destination.getAddress();
-		unsigned char *bytes = (unsigned char*)&ipv4.s_addr;
-		snprintf(dest_buf, sizeof(dest_buf), "%u.%u.%u.%u", 
-			bytes[0], bytes[1], bytes[2], bytes[3]);
+		sent = em_socket_sendto(m_handle, data, size, &ipv4, sizeof(ipv4), destination.getPort());
 	}
-	sent = em_socket_sendto(m_handle, data, size, dest_buf, destination.getPort());
 #else
 	if (m_addr_family == AF_INET6) {
 		struct sockaddr_in6 address = {};
@@ -329,47 +312,23 @@ int UDPSocket::Receive(Address &sender, void *data, int size)
 	// Emscripten: Use JavaScript socket proxy for recvfrom
 	// No WaitData needed - JavaScript proxy handles non-blocking
 	size = MYMAX(size, 0);
-	char src_addr_buf[256];
+	char src_addr_buf[16];
 	int src_port = 0;
-	int received = em_socket_recvfrom(m_handle, data, size, src_addr_buf, sizeof(src_addr_buf), &src_port);
+	int src_addr_family = 0;
+	int received = em_socket_recvfrom(m_handle, data, size, src_addr_buf, &src_addr_family, &src_port, m_timeout_ms);
 	if (received < 0)
 		return -1;
 	
-	// Parse IP address string and create Address with matching family
-	// CRITICAL: The returned address MUST match the socket's address family
-	// or Send() will fail with "Address family mismatch"
-	unsigned int a, b, c, d;
-	if (sscanf(src_addr_buf, "%u.%u.%u.%u", &a, &b, &c, &d) == 4) {
-		// Received IPv4 address string
-		if (m_addr_family == AF_INET6) {
-			// Socket is IPv6, so return IPv6-mapped IPv4 address
-			/* EM_ASM({ console.log('[socket.cpp] Parsed IPv4, converting to IPv6 for socket compatibility'); }); */
-			// Use IPv6 localhost for simplicity (both client and server use localhost)
-			IPv6AddressBytes bytes;
-			bytes.bytes[0] = 0; bytes.bytes[1] = 0; bytes.bytes[2] = 0; bytes.bytes[3] = 0;
-			bytes.bytes[4] = 0; bytes.bytes[5] = 0; bytes.bytes[6] = 0; bytes.bytes[7] = 0;
-			bytes.bytes[8] = 0; bytes.bytes[9] = 0; bytes.bytes[10] = 0; bytes.bytes[11] = 0;
-			bytes.bytes[12] = 0; bytes.bytes[13] = 0; bytes.bytes[14] = 0; bytes.bytes[15] = 1;
-			sender = Address(&bytes, src_port);
-		} else {
-			// Socket is IPv4, return IPv4 address
-			/* EM_ASM({ console.log('[socket.cpp] Parsed IPv4 address'); }); */
-			sender = Address(a, b, c, d, src_port);
-		}
-	} else {
-		// Assume localhost with matching family
-		EM_ASM({ console.log('[socket.cpp] Using localhost fallback'); });
-		if (m_addr_family == AF_INET6) {
-			IPv6AddressBytes bytes;
-			bytes.bytes[0] = 0; bytes.bytes[1] = 0; bytes.bytes[2] = 0; bytes.bytes[3] = 0;
-			bytes.bytes[4] = 0; bytes.bytes[5] = 0; bytes.bytes[6] = 0; bytes.bytes[7] = 0;
-			bytes.bytes[8] = 0; bytes.bytes[9] = 0; bytes.bytes[10] = 0; bytes.bytes[11] = 0;
-			bytes.bytes[12] = 0; bytes.bytes[13] = 0; bytes.bytes[14] = 0; bytes.bytes[15] = 1;
-			sender = Address(&bytes, src_port);
-		} else {
-			sender = Address(127, 0, 0, 1, src_port);
-		}
+	if (src_addr_family == AF_INET6) {
+		IPv6AddressBytes bytes;
+		memcpy(bytes.bytes, src_addr_buf, 16);
+		sender = Address(&bytes, src_port);
+	} else if (src_addr_family == AF_INET) {
+		struct in_addr ipv4;
+		memcpy(&ipv4.s_addr, src_addr_buf, 4);
+		sender = Address(ntohl(ipv4.s_addr), src_port);
 	}
+
 	return received;
 #else
 	// Return on timeout
