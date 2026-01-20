@@ -784,6 +784,12 @@ var SocketProxy = {
     
     /**
      * Receive data from socket
+     * 
+     * @param {number} fd - Socket file descriptor
+     * @param {Uint8Array} buffer - Buffer to read data into
+     * @param {number} maxLen - Maximum length of data to read
+     * @param {number} timeoutMs - Timeout in milliseconds
+     * @returns {{length: number, address: Uint8Array, family: number, port: number} | null} Data read from packet or null if no packet found
      */
     recvfrom: function(fd, buffer, maxLen, timeoutMs = 0) {
         if (fd !== this.fd && this.loadSocketDataWithAutoBind(fd, false) !== 0) {
@@ -820,6 +826,9 @@ var SocketProxy = {
     
     /**
      * Close socket
+     * 
+     * @param {number} fd - Socket file descriptor
+     * @returns {number} 0 on success, -1 on error
      */
     close: function(fd) {
         if (sharedInt32 === null) {
