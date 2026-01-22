@@ -14,7 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 WWW_DIR="$PROJECT_ROOT/build-web/www"
 
-echo -e "${GREEN}=== Luanti Web Server (nginx) ===${NC}"
+echo -e "${GREEN}=== Luanti Web Server Build (nginx) ===${NC}"
 echo ""
 
 # Check if build-web/www exists
@@ -38,15 +38,4 @@ echo ""
 # Build the server image
 echo -e "${YELLOW}Building nginx server image...${NC}"
 docker build -f "$SCRIPT_DIR/Dockerfile.serve" -t luanti-web-server:latest --no-cache "$PROJECT_ROOT"
-
-echo ""
-echo -e "${GREEN}=== Starting Web Server ===${NC}"
-echo ""
-echo "Server will be available at: ${GREEN}http://localhost:8080${NC}"
-echo ""
-echo "Press Ctrl+C to stop the server"
-echo ""
-
-# Run the server
-docker run --rm -p 8080:8080 --name luanti-web-server luanti-web-server:latest
 
