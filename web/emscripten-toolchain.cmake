@@ -150,7 +150,7 @@ set(EMSCRIPTEN_COMMON_FLAGS
     "-sRUNTIME_DEBUG=0"
     
     # Asyncify (JSPI) and Threading settings
-    "-sASYNCIFY=2"
+    "-sJSPI=1"
     "-sASYNCIFY_STACK_SIZE=8MB"
     "-sJSPI_EXPORTS=['_main']"
     "-sJSPI_IMPORTS=['emscripten_sleep','emscripten_yield','emscripten_main_loop_helper','emscripten_asm_const_int','emscripten_asm_const_double','emscripten_asm_const_void','emscripten_scan_registers','getaddrinfo','emscripten_getaddrinfo']"
@@ -181,7 +181,6 @@ set(EMSCRIPTEN_FINAL_EXE_FLAGS
     "--preload-file=${CMAKE_SOURCE_DIR}/textures@/userdata/textures"
     "--preload-file=${CMAKE_SOURCE_DIR}/fonts@/userdata/fonts"
     "--preload-file=${CMAKE_SOURCE_DIR}/client@/userdata/client"
-    "--preload-file=${CMAKE_SOURCE_DIR}/worlds@/userdata/worlds"
     
     # JavaScript/WASM settings
     "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','FS','ENV','GL']"

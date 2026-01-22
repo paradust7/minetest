@@ -253,12 +253,12 @@ var Module = {
             
             // CRITICAL FIX FOR WASMFS: Set permissions on writable directories
             // WASMFS creates directories with r-x permissions, but we need rwx for writing
+            // NOTE: /userdata/worlds uses OPFS backend (see web_opfs_init.cpp) for persistence
             Module.printErr('Setting permissions on writable directories...');
             var writableDirs = [
                 '/userdata',
                 '/userdata/cache',
                 '/userdata/cache/cdb',
-                '/userdata/worlds',
                 '/userdata/mods',
                 '/userdata/client',
                 '/userdata/client/serverlist'
@@ -281,28 +281,7 @@ var Module = {
                     Module.printErr('  ERROR setting permissions on ' + dir + ': ' + e);
                 }
             });
-
-            // Recursively add write permissions to all files and subdirectories in /userdata/worlds
-            Module.printErr('Step 7: Recursively adding write permissions to /userdata/worlds...');
-            try {
-                FS.chmod('/userdata/worlds', 0o777);
-                Module.printErr('  chmod 0o777: /userdata/worlds');
-                const subdirs = FS.readdir('/userdata/worlds');
-                subdirs.forEach(function(subdir) {
-                    if (subdir === '.' || subdir === '..') return;
-                    FS.chmod('/userdata/worlds/' + subdir, 0o777);
-                    Module.printErr('  chmod 0o777: /userdata/worlds/' + subdir);
-                    const items = FS.readdir('/userdata/worlds/' + subdir);
-                    items.forEach(function(item) {
-                        if (item === '.' || item === '..') return;
-                        FS.chmod('/userdata/worlds/' + subdir + '/' + item, 0o777);
-                        Module.printErr('  chmod 0o777: /userdata/worlds/' + subdir + '/' + item);
-                    });
-                });
-            } catch (e) {
-                Module.printErr('  ERROR setting permissions on /userdata/worlds: ' + e.message);
-            }
-            
+                        
             // Debug font loading
             Module.printErr('Step 5: Verifying fonts...');
             try {
