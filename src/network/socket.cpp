@@ -56,13 +56,13 @@ EM_JS(int, em_socket_recvfrom, (int fd, void* buffer, int len, void* src_addr, i
 	// Copy data to C++ buffers
 	HEAPU8.set(buf.subarray(0, result.length), buffer);
 	if (family) {
-		HEAP32[family >> 2] = result.family;
+		HEAP32[family >> 2] = result.srcFamily;
 	}
 	if (src_port) {
-		HEAP32[src_port >> 2] = result.port;
+		HEAP32[src_port >> 2] = result.srcPort;
 	}
 	if (src_addr) {
-		HEAPU8.set(result.address, src_addr);
+		HEAPU8.set(result.srcAddress, src_addr);
 	}
 	
 	return result.length;

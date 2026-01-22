@@ -18,8 +18,6 @@ if (typeof SharedArrayBuffer === 'undefined') {
 
 var NOOP_INT32 = new Int32Array(new SharedArrayBuffer(4)).fill(0);
 
-var connectionBroadcastChannel = new BroadcastChannel('luanti-proxy-connection');
-
 var WORKER_ROLE_UNKNOWN = 0;
 var WORKER_ROLE_CLIENT = 1;
 var WORKER_ROLE_SERVER = 2;
@@ -91,7 +89,7 @@ var SOCKET_DATA_WORKER_ROLE_IDX = 8;
 // [11]: src port
 // [12]: data length
 // [13-14]: packet creation time (milliseconds)
-// [15-526]: packet data (up to 2048 bytes = 512 Int32s)
+// [15-142]: packet data (up to 512 bytes = 128 Int32s)
 var PACKET_DATA_DEST_ADDRESS_FAMILY_IDX = 0;
 var PACKET_DATA_DEST_ADDRESS_IDX = 1; // 4 Int32s
 var PACKET_DATA_DEST_PORT_IDX = 5;
@@ -102,8 +100,8 @@ var PACKET_DATA_DATA_LENGTH_IDX = 12;
 var PACKET_DATA_CREATION_TIME_IDX = 13; // 1 Float64
 var PACKET_DATA_DATA_IDX = 15;
 
-var MAX_PACKET_DATA_SIZE_UINT8 = 2048;
-var MAX_PACKET_SIZE_INT32 = 527;
+var MAX_PACKET_DATA_SIZE_UINT8 = 512;
+var MAX_PACKET_SIZE_INT32 = 143;
 
 var TOTAL_BUFFER_SIZE_INT32 = (SHARED_MEMORY_SIZE / 4) - TOTAL_RESERVED_SLOTS;
 var PER_SEGMENT_SIZE_PACKETS = Math.floor(Math.floor(TOTAL_BUFFER_SIZE_INT32 / 6) / MAX_PACKET_SIZE_INT32); // six segments
@@ -125,7 +123,7 @@ var sharedUint8 = null;
 /** @type {DataView} */
 var sharedDataView = null;
 
-function initBuffer() {
+function initSharedNetworkBuffer() {
     if (typeof self._luantiSocketSharedBuffer === 'undefined') {
         throw new Error('Shared socket buffer not initialized');
     }
@@ -173,7 +171,7 @@ function isAddressLocal(addr) {
  * @param {Uint8Array} data - Data to send
  * @returns {boolean} true on success, false on error
  */
-function writePacket(workerRole, destAddr, destPort, srcAddr, srcPort, data) {
+function luantiProxyWritePacket(workerRole, destAddr, destPort, srcAddr, srcPort, data) {
     var ringBufferOffset = 0;
     var writeIdxPos = 0;
     var readIdxPos = 0;
@@ -266,7 +264,7 @@ function writePacket(workerRole, destAddr, destPort, srcAddr, srcPort, data) {
     var newWriteIdx = (loadedWriteIdx + MAX_PACKET_SIZE_INT32) % PER_SEGMENT_SIZE_INT32;
     var loadedReadIdx = Atomics.load(sharedInt32, readIdxPos);
     if (newWriteIdx === loadedReadIdx) {
-        console.warn(`[SocketProxyShared] Warning: Packet buffer full, dropping packet (Worker Role: ${workerRole})!`);
+        console.warn(`[SocketProxyShared] Warning: Packet buffer full, dropping packet (Worker Role: ${workerRole}), writeIdxPos=${writeIdxPos}, readIdxPos=${readIdxPos}, doorbellPos=${doorbellPos}, newWriteIdx=${newWriteIdx}, loadedReadIdx=${loadedReadIdx}, writeOffset=${writeOffset}`);
         return false;
     }
 
@@ -284,9 +282,9 @@ function writePacket(workerRole, destAddr, destPort, srcAddr, srcPort, data) {
  * @param {number} maxLen - Maximum length of data to read
  * @param {number} readerFamily - Reader address family (AF_INET = 2, AF_INET6 = 10)
  * @param {number} timeoutMs - Timeout in milliseconds
- * @returns {{length: number, address: Uint8Array, family: number, port: number} | null} Data read from packet or null if no packet found
+ * @returns {{length: number, srcAddress: Uint8Array, srcFamily: number, srcPort: number, destAddress: Uint8Array, destFamily: number, destPort: number} | null} Data read from packet or null if no packet found
  */
-function readPacket(workerRole, buffer, maxLen, readerFamily, timeoutMs) {
+function luantiProxyReadPacket(workerRole, buffer, maxLen, readerFamily, timeoutMs) {
     var ringBufferOffset = 0;
     var readPos = 0;
     var readIdxPos = 0;
@@ -374,6 +372,21 @@ function readPacket(workerRole, buffer, maxLen, readerFamily, timeoutMs) {
 
     var readOffset = ringBufferOffset + readPos;
     // Found matching packet
+    
+    // Read destination address
+    var destAddrFamily = sharedInt32[readOffset + PACKET_DATA_DEST_ADDRESS_FAMILY_IDX];
+    var destAddr;
+    var destAddrOffsetBytes = (readOffset + PACKET_DATA_DEST_ADDRESS_IDX) * 4;
+    if (destAddrFamily === AF_INET6) {
+        destAddr = new Uint8Array(sharedUint8.subarray(destAddrOffsetBytes, destAddrOffsetBytes + 16));
+    } else if (destAddrFamily === AF_INET) {
+        destAddr = new Uint8Array(sharedUint8.subarray(destAddrOffsetBytes, destAddrOffsetBytes + 4));
+    } else {
+        throw new Error('[SocketProxyShared] Invalid destination address family: ' + destAddrFamily);
+    }
+    var destPort = sharedInt32[readOffset + PACKET_DATA_DEST_PORT_IDX];
+    
+    // Read source address
     var srcAddrFamily = sharedInt32[readOffset + PACKET_DATA_SRC_ADDRESS_FAMILY_IDX];
     var srcAddr;
     var addrOffsetBytes = (readOffset + PACKET_DATA_SRC_ADDRESS_IDX) * 4;
@@ -422,9 +435,12 @@ function readPacket(workerRole, buffer, maxLen, readerFamily, timeoutMs) {
     
     return {
         length: copyLen,
-        address: srcAddr,
-        family: srcAddrFamily,
-        port: srcPort
+        srcAddress: srcAddr,
+        srcFamily: srcAddrFamily,
+        srcPort: srcPort,
+        destAddress: destAddr,
+        destFamily: destAddrFamily,
+        destPort: destPort,
     };
 }
 
@@ -549,7 +565,7 @@ var SocketProxy = {
      */
     socket: function(domain, type, protocol) {
         if (sharedInt32 === null) {
-            initBuffer();
+            initSharedNetworkBuffer();
         }
         if (type !== 2) { // Only support UDP sockets for now
             console.error('[SocketProxyShared] Only UDP supported');
@@ -600,7 +616,7 @@ var SocketProxy = {
      */
     bind: function(fd, addr_data, family, port = 0) {
         if (sharedInt32 === null) {
-            initBuffer();
+            initSharedNetworkBuffer();
         }
         if (fd === 0) {
             throw new Error('[SocketProxyShared] bind: Invalid socket fd=0');
@@ -650,9 +666,6 @@ var SocketProxy = {
                     // Address is all 0s, so the server wants to listen publicly
                     console.log('[SocketProxyShared] Server wants to listen publicly');
                     Atomics.store(sharedInt32, IS_SERVER_PUBLIC_IDX, 1);
-                    connectionBroadcastChannel.postMessage({
-                        type: 'host-server'
-                    });
                 }
             }
             if (addressIsZero) {
@@ -681,7 +694,7 @@ var SocketProxy = {
 
     loadSocketDataWithAutoBind: function(fd, autoBind = true) {
         if (sharedInt32 === null) {
-            initBuffer();
+            initSharedNetworkBuffer();
         }
         if (!acquireSocketManagementLock()) {
             console.error('[SocketProxyShared] Failed to acquire socket management lock');
@@ -766,7 +779,7 @@ var SocketProxy = {
             return -1;
         }
         var srcPort = sharedInt32[this.socketDataIdx + SOCKET_DATA_PORT_IDX];
-        if (!writePacket(
+        if (!luantiProxyWritePacket(
             sharedInt32[this.socketDataIdx + SOCKET_DATA_WORKER_ROLE_IDX],
             destAddress,
             destPort,
@@ -789,7 +802,7 @@ var SocketProxy = {
      * @param {Uint8Array} buffer - Buffer to read data into
      * @param {number} maxLen - Maximum length of data to read
      * @param {number} timeoutMs - Timeout in milliseconds
-     * @returns {{length: number, address: Uint8Array, family: number, port: number} | null} Data read from packet or null if no packet found
+     * @returns {{length: number, srcAddress: Uint8Array, srcFamily: number, srcPort: number, destAddress: Uint8Array, destFamily: number, destPort: number} | null} Data read from packet or null if no packet found
      */
     recvfrom: function(fd, buffer, maxLen, timeoutMs = 0) {
         if (fd !== this.fd && this.loadSocketDataWithAutoBind(fd, false) !== 0) {
@@ -821,7 +834,7 @@ var SocketProxy = {
         var family = sharedInt32[this.socketDataIdx + SOCKET_DATA_ADDRESS_FAMILY_IDX];
 
         // Read packet from shared ring buffer
-        return readPacket(workerRole, buffer, maxLen, family, timeoutMs);
+        return luantiProxyReadPacket(workerRole, buffer, maxLen, family, timeoutMs);
     },
     
     /**
@@ -832,7 +845,7 @@ var SocketProxy = {
      */
     close: function(fd) {
         if (sharedInt32 === null) {
-            initBuffer();
+            initSharedNetworkBuffer();
         }
         console.log('[SocketProxyShared] close() called: fd=' + fd);
         if (!acquireSocketManagementLock()) {
