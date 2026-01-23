@@ -37,16 +37,27 @@ EM_JS(int, em_socket_bind, (int fd, const void* addr_bytes, int addr_len, int fa
 });
 
 EM_JS(int, em_socket_sendto, (int fd, const void* data, int len, const void* dest_addr, int dest_addr_len, int dest_port), {
+	if (!self._luantiSendtoDestAddr) {
+		self._luantiSendtoDestAddr = new Uint8Array(16);
+		self._luantiSendtoData = new Uint8Array(512);
+	}
 	// Create a Uint8Array view of the address bytes
-	var dest_addr_array = new Uint8Array(HEAPU8.buffer, dest_addr, dest_addr_len).slice(0);
-	var data_array = new Uint8Array(HEAPU8.buffer, data, len).slice(0);
-	var result = SocketProxy.sendto(fd, data_array, dest_addr_array, dest_port);
+	self._luantiSendtoDestAddr.set(new Uint8Array(HEAPU8.buffer, dest_addr, dest_addr_len));
+	self._luantiSendtoData.set(new Uint8Array(HEAPU8.buffer, data, len));
+	var result = SocketProxy.sendto(
+		fd,
+		new Uint8Array(self._luantiSendtoData.buffer, 0, len),
+		new Uint8Array(self._luantiSendtoDestAddr.buffer, 0, dest_addr_len),
+		dest_port
+	);
 	return result;
 });
 
 EM_JS(int, em_socket_recvfrom, (int fd, void* buffer, int len, void* src_addr, int* family, int* src_port, int timeout_ms), {
-	var buf = new Uint8Array(len);
-	var result = SocketProxy.recvfrom(fd, buf, len, timeout_ms);
+	if (!self._luantiRecvfromData) {
+		self._luantiRecvfromData = new Uint8Array(512);
+	}
+	var result = SocketProxy.recvfrom(fd, self._luantiRecvfromData, len, timeout_ms);
 	
 	if (!result) {
 		// No data available (EAGAIN) - this is normal, don't spam logs
@@ -54,7 +65,7 @@ EM_JS(int, em_socket_recvfrom, (int fd, void* buffer, int len, void* src_addr, i
 	}
 	
 	// Copy data to C++ buffers
-	HEAPU8.set(buf.subarray(0, result.length), buffer);
+	HEAPU8.set(self._luantiRecvfromData.subarray(0, result.length), buffer);
 	if (family) {
 		HEAP32[family >> 2] = result.srcFamily;
 	}

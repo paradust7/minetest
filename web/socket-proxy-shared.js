@@ -123,6 +123,10 @@ var sharedUint8 = null;
 /** @type {DataView} */
 var sharedDataView = null;
 
+var ipv4LocalStaticAddress = new Uint8Array([127, 0, 0, 1]);
+var ipv6LocalStaticAddress = new Uint8Array(16).fill(0);
+ipv6LocalStaticAddress[15] = 1;
+
 function initSharedNetworkBuffer() {
     if (typeof self._luantiSocketSharedBuffer === 'undefined') {
         throw new Error('Shared socket buffer not initialized');
@@ -327,6 +331,7 @@ function luantiProxyReadPacket(workerRole, buffer, maxLen, readerFamily, timeout
     
     var waited = false;
     while (true) {
+        Atomics.store(sharedInt32, DOORBELL_POS, 0);
         var readPos1 = Atomics.load(sharedInt32, READ_IDX_1);
         var writePos1 = Atomics.load(sharedInt32, WRITE_IDX_1);
         var readPos2 = Atomics.load(sharedInt32, READ_IDX_2);
@@ -348,7 +353,7 @@ function luantiProxyReadPacket(workerRole, buffer, maxLen, readerFamily, timeout
             readPos = readPos1;
             // console.log('[SocketProxyShared] readPacket: read packet from ring buffer 1, readPos=' + readPos + ' (Worker Role: ' + workerRole + ')');
             break;
-        } else if (creationTime2 < creationTime1) {
+        } else if (creationTime2 < creationTime1 || creationTime2 < Infinity) {
             ringBufferOffset = OFFSET_2;
             readIdxPos = READ_IDX_2;
             readPos = readPos2;
@@ -378,9 +383,9 @@ function luantiProxyReadPacket(workerRole, buffer, maxLen, readerFamily, timeout
     var destAddr;
     var destAddrOffsetBytes = (readOffset + PACKET_DATA_DEST_ADDRESS_IDX) * 4;
     if (destAddrFamily === AF_INET6) {
-        destAddr = new Uint8Array(sharedUint8.subarray(destAddrOffsetBytes, destAddrOffsetBytes + 16));
+        destAddr = sharedUint8.subarray(destAddrOffsetBytes, destAddrOffsetBytes + 16);
     } else if (destAddrFamily === AF_INET) {
-        destAddr = new Uint8Array(sharedUint8.subarray(destAddrOffsetBytes, destAddrOffsetBytes + 4));
+        destAddr = sharedUint8.subarray(destAddrOffsetBytes, destAddrOffsetBytes + 4);
     } else {
         throw new Error('[SocketProxyShared] Invalid destination address family: ' + destAddrFamily);
     }
@@ -396,27 +401,26 @@ function luantiProxyReadPacket(workerRole, buffer, maxLen, readerFamily, timeout
         if (readerFamily === AF_INET) {
             if (isAddressLocal(srcAddrBytes)) {
                 srcAddrFamily = AF_INET;
-                srcAddrBytes = new Uint8Array([127, 0, 0, 1]);
+                srcAddrBytes = ipv4LocalStaticAddress;
             }
             else {
                 throw new Error('[SocketProxyShared] Invalid source address and family mismatch: ' + srcAddrBytes.join(','));
             }
         }
-        srcAddr = new Uint8Array(srcAddrBytes);
+        srcAddr = srcAddrBytes;
     }
     else if (srcAddrFamily === AF_INET) {
         var srcAddrBytes = sharedUint8.subarray(addrOffsetBytes, addrOffsetBytes + 4);
         if (readerFamily === AF_INET6) {
             if (isAddressLocal(srcAddrBytes)) {
                 srcAddrFamily = AF_INET6;
-                srcAddrBytes = new Uint8Array(16).fill(0);
-                srcAddrBytes[15] = 1;
+                srcAddrBytes = ipv6LocalStaticAddress;
             }
             else {
                 throw new Error('[SocketProxyShared] Invalid source address and family mismatch: ' + srcAddrBytes.join(','));
             }
         }
-        srcAddr = new Uint8Array(srcAddrBytes);
+        srcAddr = srcAddrBytes;
     }
     else {
         throw new Error('[SocketProxyShared] Invalid source address family: ' + srcAddrFamily);
@@ -506,14 +510,14 @@ function getSocketAddress(socketDataIdx) {
     var addrFamily = sharedInt32[socketDataIdx + SOCKET_DATA_ADDRESS_FAMILY_IDX];
     var addr;
     if (addrFamily === AF_INET6) {
-        addr = new Uint8Array(sharedUint8.subarray(
+        addr = sharedUint8.subarray(
             (socketDataIdx + SOCKET_DATA_ADDRESS_IDX) * 4,
-            (socketDataIdx + SOCKET_DATA_ADDRESS_IDX + 4) * 4));
+            (socketDataIdx + SOCKET_DATA_ADDRESS_IDX + 4) * 4);
     }
     else if (addrFamily === AF_INET) {
-        addr = new Uint8Array(sharedUint8.subarray(
+        addr = sharedUint8.subarray(
             (socketDataIdx + SOCKET_DATA_ADDRESS_IDX) * 4,
-            (socketDataIdx + SOCKET_DATA_ADDRESS_IDX + 1) * 4));
+            (socketDataIdx + SOCKET_DATA_ADDRESS_IDX + 1) * 4);
     }
     else {
         throw new Error('[SocketProxyShared] Invalid source address family: ' + addrFamily);
@@ -671,11 +675,10 @@ var SocketProxy = {
             if (addressIsZero) {
                 // Normalize address to local address
                 if (family === AF_INET6) {
-                    addr_data = new Uint8Array(16).fill(0);
-                    addr_data[15] = 1;
+                    addr_data = ipv6LocalStaticAddress;
                 }
                 else if (family === AF_INET) {
-                    addr_data = new Uint8Array([127, 0, 0, 1]);
+                    addr_data = ipv4LocalStaticAddress;
                 }
             }
 
@@ -723,11 +726,10 @@ var SocketProxy = {
             }
             if (addressIsUnset) {
                 if (family === AF_INET) {
-                    address = new Uint8Array([127, 0, 0, 1]);
+                    address = ipv4LocalStaticAddress;
                 }
                 else if (family === AF_INET6) {
-                    address = new Uint8Array(16).fill(0);
-                    address[15] = 1;
+                    address = ipv6LocalStaticAddress;
                 }
                 setSocketAddress(this.socketDataIdx, address);
                 console.log('[SocketProxyShared] loadSocketDataWithAutoBind: set address to ' + address.join(','));
