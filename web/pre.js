@@ -165,13 +165,6 @@ if (isMainThread) {
         }, 5000);
     }
 
-    // Handle beforeunload - save state if possible
-    window.addEventListener('beforeunload', function(e) {
-        console.log('Page unloading, attempting to save state...');
-        // Emscripten's IDBFS can be used here to persist filesystem changes
-        // This would be implemented later for saved games
-    });
-
     // Disable right-click context menu globally for game area
     // This needs to work in both locked and unlocked pointer modes
     function preventContextMenu(e) {

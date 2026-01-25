@@ -65,6 +65,13 @@ var Module = {
                     return;
                 }
                 
+                // Prevent Tab from moving focus outside the canvas
+                // Luanti handles Tab internally for navigating between GUI elements
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    return;
+                }
+                
                 // Prevent other function keys (F1-F12)
                 if (e.key && e.key.startsWith('F') && e.key.length > 1 && e.key.length <= 3) {
                     e.preventDefault();
@@ -85,6 +92,39 @@ var Module = {
             window.addEventListener('keydown', preventKeyDefault, true);
             window.addEventListener('keyup', preventKeyDefault, true);
             window.addEventListener('keypress', preventKeyDefault, true);
+            
+            // Clipboard paste support for Emscripten
+            // SDL_GetClipboardText() in Emscripten only works if we capture paste events
+            // and store the text via SDL_SetClipboardText() first
+            document.addEventListener('paste', function(e) {
+                var text = '';
+                if (e.clipboardData && e.clipboardData.getData) {
+                    text = e.clipboardData.getData('text/plain');
+                } else if (window.clipboardData && window.clipboardData.getData) {
+                    text = window.clipboardData.getData('Text');
+                }
+                
+                if (text && text.length > 0) {
+                    // Store in SDL's clipboard so SDL_GetClipboardText() returns it
+                    // We need to wait for the module to be ready
+                    if (typeof Module !== 'undefined' && Module._SDL_SetClipboardText) {
+                        // Direct SDL3 function call
+                        var ptr = Module.stringToNewUTF8(text);
+                        Module._SDL_SetClipboardText(ptr);
+                        Module._free(ptr);
+                        console.log('[clipboard] Stored paste text via SDL_SetClipboardText:', text.substring(0, 30) + (text.length > 30 ? '...' : ''));
+                    } else if (typeof Module !== 'undefined' && Module.ccall) {
+                        // Fallback using ccall
+                        try {
+                            Module.ccall('SDL_SetClipboardText', 'number', ['string'], [text]);
+                            console.log('[clipboard] Stored paste text via ccall:', text.substring(0, 30) + (text.length > 30 ? '...' : ''));
+                        } catch (err) {
+                            console.warn('[clipboard] Failed to store paste text:', err);
+                        }
+                    }
+                    // Don't preventDefault - let the event propagate so SDL sees the Ctrl+V
+                }
+            });
         }
     ],
     postRun: [

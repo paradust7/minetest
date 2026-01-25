@@ -236,27 +236,25 @@ function luantiProxyWritePacket(workerRole, destAddr, destPort, srcAddr, srcPort
     var writeOffset = ringBufferOffset + loadedWriteIdx;
     if (destAddr.length === 16) {
         sharedInt32[writeOffset + PACKET_DATA_DEST_ADDRESS_FAMILY_IDX] = AF_INET6;
-        sharedUint8.set(destAddr, (writeOffset + PACKET_DATA_DEST_ADDRESS_IDX) * 4);
     }
     else if (destAddr.length === 4) {
         sharedInt32[writeOffset + PACKET_DATA_DEST_ADDRESS_FAMILY_IDX] = AF_INET;
-        sharedUint8.set(destAddr, (writeOffset + PACKET_DATA_DEST_ADDRESS_IDX) * 4);
     }
     else {
         throw new Error('[SocketProxyShared] Invalid destination address length: ' + destAddr.length);
     }
-    sharedInt32[writeOffset + PACKET_DATA_DEST_PORT_IDX] = destPort;
     if (srcAddr.length === 16) {
         sharedInt32[writeOffset + PACKET_DATA_SRC_ADDRESS_FAMILY_IDX] = AF_INET6;
-        sharedUint8.set(srcAddr, (writeOffset + PACKET_DATA_SRC_ADDRESS_IDX) * 4);
     }
     else if (srcAddr.length === 4) {
         sharedInt32[writeOffset + PACKET_DATA_SRC_ADDRESS_FAMILY_IDX] = AF_INET;
-        sharedUint8.set(srcAddr, (writeOffset + PACKET_DATA_SRC_ADDRESS_IDX) * 4);
     }
     else {
         throw new Error('[SocketProxyShared] Invalid source address length: ' + srcAddr.length);
     }
+    sharedUint8.set(destAddr, (writeOffset + PACKET_DATA_DEST_ADDRESS_IDX) * 4);
+    sharedInt32[writeOffset + PACKET_DATA_DEST_PORT_IDX] = destPort;
+    sharedUint8.set(srcAddr, (writeOffset + PACKET_DATA_SRC_ADDRESS_IDX) * 4);
     sharedInt32[writeOffset + PACKET_DATA_SRC_PORT_IDX] = srcPort;
     sharedInt32[writeOffset + PACKET_DATA_DATA_LENGTH_IDX] = data.length;
     sharedDataView.setFloat64((writeOffset + PACKET_DATA_CREATION_TIME_IDX) * 4, Date.now(), true); // 8 bytes per Float64

@@ -5,7 +5,7 @@ console.log('Luanti Web - Post-initialization');
 
 // Expose some useful functions to the browser console
 window.Luanti = {
-    version: '5.14.0-web',
+    version: '5.15.0-web',
     
     // Take a screenshot (saves to browser downloads)
     screenshot: function() {
