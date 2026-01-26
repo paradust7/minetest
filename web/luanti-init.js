@@ -2,10 +2,6 @@
 // This file runs BEFORE luanti.js loads and sets up the environment
 
 console.log('***** Luanti Web Init Script Loaded *****');
-
-// Capture device pixel ratio BEFORE workers are created
-// This must happen on the main thread, as workers don't have access to window
-// Store it in a way that's accessible to all threads
 self._luantiDevicePixelRatio = window.devicePixelRatio || 1.0;
 console.log('Captured devicePixelRatio:', self._luantiDevicePixelRatio);
 
@@ -46,11 +42,6 @@ var Module = {
                 module.ENV.MINETEST_USER_PATH = userDataDir;
                 console.log('preRun: Set MINETEST_USER_PATH to:', userDataDir);
             }
-            
-            // NOTE: With WASMFS, we CANNOT use FS operations here in preRun!
-            // WASMFS native functions are not initialized until onRuntimeInitialized
-            // All FS operations moved to onRuntimeInitialized instead
-            console.log('preRun: Filesystem operations deferred to onRuntimeInitialized (WASMFS requirement)');
 
             // Prevent default key behavior
             function preventKeyDefault(e) {
@@ -92,10 +83,7 @@ var Module = {
             window.addEventListener('keydown', preventKeyDefault, true);
             window.addEventListener('keyup', preventKeyDefault, true);
             window.addEventListener('keypress', preventKeyDefault, true);
-            
-            // Clipboard paste support for Emscripten
-            // SDL_GetClipboardText() in Emscripten only works if we capture paste events
-            // and store the text via SDL_SetClipboardText() first
+
             document.addEventListener('paste', function(e) {
                 var text = '';
                 if (e.clipboardData && e.clipboardData.getData) {
@@ -105,16 +93,12 @@ var Module = {
                 }
                 
                 if (text && text.length > 0) {
-                    // Store in SDL's clipboard so SDL_GetClipboardText() returns it
-                    // We need to wait for the module to be ready
                     if (typeof Module !== 'undefined' && Module._SDL_SetClipboardText) {
-                        // Direct SDL3 function call
                         var ptr = Module.stringToNewUTF8(text);
                         Module._SDL_SetClipboardText(ptr);
                         Module._free(ptr);
                         console.log('[clipboard] Stored paste text via SDL_SetClipboardText:', text.substring(0, 30) + (text.length > 30 ? '...' : ''));
                     } else if (typeof Module !== 'undefined' && Module.ccall) {
-                        // Fallback using ccall
                         try {
                             Module.ccall('SDL_SetClipboardText', 'number', ['string'], [text]);
                             console.log('[clipboard] Stored paste text via ccall:', text.substring(0, 30) + (text.length > 30 ? '...' : ''));
@@ -122,7 +106,6 @@ var Module = {
                             console.warn('[clipboard] Failed to store paste text:', err);
                         }
                     }
-                    // Don't preventDefault - let the event propagate so SDL sees the Ctrl+V
                 }
             });
         }
@@ -200,12 +183,9 @@ var Module = {
         Module.printErr('***** RUNTIME INITIALIZED *****');
         console.error('***** RUNTIME INITIALIZED *****');
         
-        // Trigger canvas resize now that GL context is ready
-        // This ensures DPR scaling is applied correctly after initialization
         if (typeof window.scheduleResize === 'function') {
             try { 
                 window.scheduleResize(); 
-                // Force a second resize after a short delay to ensure SDL picks it up
                 setTimeout(function() {
                     window.scheduleResize();
                 }, 100);
@@ -229,16 +209,9 @@ var Module = {
         }
         
         Module.printErr('FS object acquired, proceeding with filesystem setup...');
-        
-        // Create writable directories for Luanti
-        // With WASMFS=1, files are preloaded directly to /userdata, so no symlinks needed
         try {
             var userDataDir = '/userdata';
             
-            // CRITICAL: Create /userdata and set it as working directory
-            // This must happen FIRST, before any other FS operations
-            // With WASMFS, we can only do this after runtime initialization
-            // Note: Preloading to /userdata/* might have already created /userdata
             Module.printErr('Step 1: Creating /userdata directory...');
             try {
                 FS.mkdir(userDataDir);
@@ -291,9 +264,6 @@ var Module = {
             Module.printErr('Current directory: ' + FS.cwd());
             Module.printErr('Root contents: ' + JSON.stringify(FS.readdir('/')));
             
-            // CRITICAL FIX FOR WASMFS: Set permissions on writable directories
-            // WASMFS creates directories with r-x permissions, but we need rwx for writing
-            // NOTE: /userdata/worlds uses OPFS backend (see web_opfs_init.cpp) for persistence
             Module.printErr('Setting permissions on writable directories...');
             var writableDirs = [
                 '/userdata',
@@ -321,26 +291,6 @@ var Module = {
                     Module.printErr('  ERROR setting permissions on ' + dir + ': ' + e);
                 }
             });
-                        
-            // Debug font loading
-            Module.printErr('Step 5: Verifying fonts...');
-            try {
-                var userdataFonts = FS.readdir('/userdata/fonts');
-                Module.printErr('  /userdata/fonts contains: ' + userdataFonts.length + ' entries');
-                Module.printErr('  Files: ' + JSON.stringify(userdataFonts.filter(f => f !== '.' && f !== '..')));
-            } catch (e) {
-                Module.printErr('  Font directory check failed: ' + e);
-            }
-            
-            // Test write permission
-            Module.printErr('Step 6: Testing write permission...');
-            try {
-                FS.writeFile('/test_write.txt', 'test');
-                FS.unlink('/test_write.txt');
-                Module.printErr('Write permission: OK');
-            } catch (e) {
-                Module.printErr('Write permission test FAILED: ' + e);
-            }
         } catch (e) {
             Module.printErr('CRITICAL ERROR: Failed to set up filesystem: ' + e);
             alert('CRITICAL: Filesystem setup failed!\n\n' + e);
@@ -407,17 +357,6 @@ console.log('Module.arguments:', Module.arguments);
 // Initial status
 Module.setStatus('Downloading Luanti...');
 
-// Resize handling: keep canvas CSS size in sync with its container
-// 
-// IMPORTANT: With OFFSCREENCANVAS_SUPPORT + OFFSCREENCANVASES_TO_PTHREAD:
-// - The HTMLCanvasElement becomes a "placeholder" after being transferred to OffscreenCanvas
-// - The OffscreenCanvas lives in the worker thread and can ONLY be resized from that thread
-// - From JavaScript (main thread), we can ONLY set the CSS size (display size)
-// - The C/C++ code (running in the worker) detects CSS size changes and resizes the backing store
-// 
-// This is the correct architecture:
-//   Main Thread (JS):   Sets canvas.style.width/height → Controls display size
-//   Worker Thread (C++): Reads CSS size, resizes OffscreenCanvas → Controls render resolution
 (function() {
 	// Debounce to avoid rapid resizes
 	var resizeScheduled = false;
@@ -429,19 +368,9 @@ Module.setStatus('Downloading Luanti...');
 		var displayWidth = Math.max(1, Math.floor(container.clientWidth));
 		var displayHeight = Math.max(1, Math.floor(container.clientHeight));
 		
-		// Set CSS size to match container - this controls the display size in the browser
-		// This works for both regular canvas AND placeholder canvas after OffscreenCanvas transfer
 		canvas.style.width = displayWidth + 'px';
 		canvas.style.height = displayHeight + 'px';
 		
-		// NOTE: We do NOT set canvas.width/height or call any resize APIs here!
-		// With OffscreenCanvas, the backing store size MUST be set from the worker thread.
-		// The game's render loop (running in the worker) will detect the CSS size change
-		// and update the OffscreenCanvas dimensions accordingly using emscripten_set_canvas_element_size()
-		// or via SDL/Irrlicht's automatic canvas size handling.
-		
-		// Update the device pixel ratio when window resizes (only on main thread)
-		// This is needed for proper high-DPI rendering on Retina displays
 		if (typeof window !== 'undefined') {
 			var currentDPR = window.devicePixelRatio || 1.0;
 			if (self._luantiDevicePixelRatio !== currentDPR) {
@@ -482,26 +411,18 @@ Module.setStatus('Downloading Luanti...');
 	window.addEventListener('orientationchange', scheduleResize);
 	document.addEventListener('fullscreenchange', scheduleResize);
 	
-	// Initial sizing on load - do it immediately AND schedule it
-	// This ensures the CSS size is set before SDL initializes
 	try {
 		resizeCanvasToContainer();
 		console.log('Initial canvas resize complete');
 	} catch (e) {
 		console.warn('Initial resizeCanvasToContainer failed:', e);
 	}
-	
-	// Also schedule it for the next frame
 	scheduleResize();
-	
-	// Note: Don't wrap Module.onRuntimeInitialized here - it breaks MODULARIZE=1
-	// Instead, we call scheduleResize() inside onRuntimeInitialized directly
 })();
 
 // Initialize Luanti after luanti.js loads
 window.initializeLuanti = function() {
     if (typeof LuantiModule === 'undefined') {
-        // Script not loaded yet, wait a bit
         console.log('Waiting for LuantiModule to load...');
         setTimeout(window.initializeLuanti, 50);
         return;
@@ -510,8 +431,7 @@ window.initializeLuanti = function() {
     console.log('Initializing LuantiModule factory...');
     LuantiModule(Module).then(function(instance) {
         console.log('LuantiModule initialized successfully');
-        // The instance is the final Module object with all Emscripten features
-        window.Module = instance; // Make it globally available for debugging
+        window.Module = instance;
     }).catch(function(err) {
         console.error('Failed to initialize LuantiModule:', err);
         var errorMessage = document.getElementById('error-message');
@@ -523,8 +443,6 @@ window.initializeLuanti = function() {
     });
 };
 
-// Start the initialization process
-// This will poll until luanti.js loads and LuantiModule is available
 console.log('Starting Luanti initialization...');
 window.initializeLuanti();
 

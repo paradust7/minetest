@@ -28,31 +28,20 @@ if (isMainThread && typeof SharedArrayBuffer !== 'undefined') {
     // Initialize control variables
     _luantiSocketSharedInt32.set(new Int32Array(100).fill(0)); // Set up to 100 Int32s to 0 for control variables - more than enough for now
     _luantiSocketSharedInt32[FD_IDX] = 100; // Set the initial file descriptor counter to 100
-    
-    // Store in a global location accessible to worker initialization
-    // We'll use 'self' which works in both window and worker contexts
     self._luantiSocketSharedBuffer = _luantiSocketSharedBuffer;
     self._luantiSocketSharedInt32 = _luantiSocketSharedInt32;
     
     console.log('[pre.js] Shared socket buffer initialized and stored in self');
     
-	// Hook Worker constructor to pass SharedArrayBuffer AND packet queues to workers
-	// This ensures workers have access to the SAME packet queue object
 	var OriginalWorker = self.Worker;
 	self.Worker = function(scriptURL, options) {
 		console.log('[pre.js] Creating worker, will inject SharedArrayBuffer and devicePixelRatio');
 		var worker = new OriginalWorker(scriptURL, options);
 		
-		// Immediately send the SharedArrayBuffer AND device pixel ratio to the worker
-		// Note: Regular objects can't be transferred, but we can use a workaround
-		// by storing the packet queues in a way that's accessible via Atomics.notify/wait
 		worker.postMessage({
 			customCmd: '_luantiSocketInit',  // Use underscore prefix to avoid conflicts
 			sharedBuffer: self._luantiSocketSharedBuffer,
 			devicePixelRatio: self._luantiDevicePixelRatio || 1.0,
-			// We can't actually send the packet queues object reference across threads
-			// Each thread will need its own copy, but we'll use the SharedArrayBuffer
-			// to coordinate packet delivery
 		});
 		
 		return worker;
@@ -90,6 +79,33 @@ if (isWorker) {
 
 // Only run browser checks on main thread
 if (isMainThread) {
+    // Patch querySelector to handle Emscripten's numeric target specifiers
+    // When PROXY_TO_PTHREAD is used, Emscripten's findEventTarget function may receive
+    // numeric targets (0=canvas, 1=window, 2=document) that get incorrectly passed
+    // to querySelector as strings. This patch intercepts those invalid selectors.
+    (function patchQuerySelector() {
+        var originalQuerySelector = document.querySelector.bind(document);
+        document.querySelector = function(selector) {
+            // Handle numeric string selectors that Emscripten might pass
+            if (selector === '0' || selector === 0) {
+                // 0 means "the default canvas element"
+                return document.getElementById('canvas');
+            }
+            if (selector === '1' || selector === 1) {
+                // 1 means window - return null, let caller handle it
+                console.warn('[pre.js] querySelector called with "1" (window) - returning null');
+                return null;
+            }
+            if (selector === '2' || selector === 2) {
+                // 2 means document - return documentElement as closest match
+                console.warn('[pre.js] querySelector called with "2" (document) - returning documentElement');
+                return document.documentElement;
+            }
+            return originalQuerySelector(selector);
+        };
+        console.log('[pre.js] Patched document.querySelector to handle Emscripten numeric targets');
+    })();
+    
     // Check for required browser features
     (function checkBrowserSupport() {
         var errors = [];
@@ -112,10 +128,6 @@ if (isMainThread) {
         
         // Check for WebGL 2.0
         var canvas = document.createElement('canvas');
-        // var gl = canvas.getContext('webgl2');
-        // if (!gl) {
-        //     errors.push('WebGL 2.0 is not supported');
-        // }
         
         if (errors.length > 0) {
             console.error('Browser compatibility errors:', errors);
@@ -124,25 +136,15 @@ if (isMainThread) {
     })();
 }
 
-// WORKAROUND for Emscripten bug: https://github.com/emscripten-core/emscripten/issues/24792
-// EGL calls are hardcoded to proxy to main thread, which breaks OFFSCREENCANVAS_SUPPORT
-// This is a known bug in Emscripten as of January 2025
-// We need to patch the proxying mechanism to skip EGL functions when using OffscreenCanvas
 (function applyEGLProxyWorkaround() {
     console.log('[pre.js] Preparing EGL proxy workaround for OffscreenCanvas support');
-    
-    // This will be called after the module loads
-    // We'll intercept the proxy mechanism and skip EGL functions
+
     if (typeof self !== 'undefined') {
         self._luanti_skipEGLProxy = true;
         console.log('[pre.js] EGL proxy skip flag set');
     }
 })();
 
-// NOTE: FS operations moved to shell.html's Module.preRun
-// This file just does feature detection and logging
-
-// Main thread only: Performance monitoring, event handlers, etc.
 if (isMainThread) {
     // Performance monitoring
     var perfStats = {
@@ -185,6 +187,17 @@ if (isMainThread) {
                     e.preventDefault();
                 }
             }, true);
+            
+            // Prevent page scrolling when using scroll wheel over the canvas
+            // Using window-level capture to catch events in all pointer lock states:
+            // - When pointer is locked: events go to window, not canvas
+            // - When not locked: events go to canvas (e.target === canvas)
+            // IMPORTANT: { passive: false } is required to allow preventDefault()
+            window.addEventListener('wheel', function(e) {
+                if (document.pointerLockElement === canvas || e.target === canvas) {
+                    e.preventDefault();
+                }
+            }, { passive: false, capture: true });
             
             // Monitor pointer lock changes to ensure context menu stays disabled
             document.addEventListener('pointerlockchange', function() {
