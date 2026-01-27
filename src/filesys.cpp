@@ -361,13 +361,56 @@ bool IsExecutable(const std::string &path)
 	return access(path.c_str(), X_OK) == 0;
 }
 
+#ifdef __EMSCRIPTEN__
+
+// Emscripten: Manual recursive deletion since fork()/exec() don't exist in WASM
 bool RecursiveDelete(const std::string &path)
 {
 	assert(IsPathAbsolute(path));
 	if (!PathExists(path))
 		return true;
 
-	// Execute the 'rm' command directly, by fork() and execve()
+	bool is_file = !IsDir(path);
+	infostream << "Recursively deleting " << (is_file ? "file" : "directory")
+		<< " \"" << path << "\"" << std::endl;
+
+	if (is_file) {
+		if (unlink(path.c_str()) != 0) {
+			errorstream << "RecursiveDelete: Failed to delete file \""
+					<< path << "\": " << strerror(errno) << std::endl;
+			return false;
+		}
+		return true;
+	}
+
+	// It's a directory - delete contents first
+	std::vector<DirListNode> content = GetDirListing(path);
+	for (const auto &n : content) {
+		std::string fullpath = path + DIR_DELIM + n.name;
+		if (!RecursiveDelete(fullpath)) {
+			errorstream << "RecursiveDelete: Failed to recurse to \""
+					<< fullpath << "\"" << std::endl;
+			return false;
+		}
+	}
+
+	// Now remove the empty directory
+	if (rmdir(path.c_str()) != 0) {
+		errorstream << "RecursiveDelete: Failed to delete directory \""
+				<< path << "\": " << strerror(errno) << std::endl;
+		return false;
+	}
+	return true;
+}
+
+#else
+
+// POSIX: Execute the 'rm' command directly, by fork() and execve()
+bool RecursiveDelete(const std::string &path)
+{
+	assert(IsPathAbsolute(path));
+	if (!PathExists(path))
+		return true;
 
 	infostream << "Removing \"" << path << "\"" << std::endl;
 
@@ -403,6 +446,8 @@ bool RecursiveDelete(const std::string &path)
 		return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 	}
 }
+
+#endif
 
 bool DeleteSingleFileOrEmptyDirectory(const std::string &path, bool log_error)
 {

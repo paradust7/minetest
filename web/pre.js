@@ -220,7 +220,7 @@ if (isMainThread) {
             var attempts = 0;
             var pollInterval = setInterval(function() {
                 attempts++;
-                if (attachContextMenuPrevention() || attempts > 10) {
+                if (attachContextMenuPrevention() || attempts > 100) {
                     clearInterval(pollInterval);
                 }
             }, 100);

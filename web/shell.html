@@ -24,24 +24,6 @@
             justify-content: center;
         }
 
-        #header {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            padding: 20px;
-            background: rgba(0, 0, 0, 0.3);
-            backdrop-filter: blur(10px);
-            text-align: center;
-            z-index: 100;
-        }
-
-        h1 {
-            font-size: 2em;
-            font-weight: 600;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-        }
-
         #game-container {
             position: relative;
             width: 100%;
@@ -116,74 +98,6 @@
             background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
             transition: width 0.3s ease;
         }
-
-        #controls-info {
-            position: absolute;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.7);
-            padding: 15px 25px;
-            border-radius: 10px;
-            font-size: 0.9em;
-            text-align: center;
-            z-index: 10;
-            max-width: 90%;
-        }
-
-        #controls-info.hidden {
-            display: none;
-        }
-
-        .control-hint {
-            margin: 5px 0;
-        }
-
-        #error-message {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(220, 38, 38, 0.95);
-            padding: 30px;
-            border-radius: 10px;
-            max-width: 500px;
-            text-align: center;
-            display: none;
-            z-index: 200;
-        }
-
-        #error-message.show {
-            display: block;
-        }
-
-        .button {
-            display: inline-block;
-            margin-top: 15px;
-            padding: 10px 20px;
-            background: #fff;
-            color: #dc2626;
-            text-decoration: none;
-            border-radius: 5px;
-            font-weight: 600;
-            cursor: pointer;
-            border: none;
-            font-size: 1em;
-        }
-
-        .button:hover {
-            background: #f3f4f6;
-        }
-
-        @media (max-width: 768px) {
-            h1 {
-                font-size: 1.5em;
-            }
-            #controls-info {
-                font-size: 0.8em;
-                padding: 10px 15px;
-            }
-        }
     </style>
 </head>
 <body>
@@ -201,6 +115,28 @@
 
     <!-- Luanti initialization script (loads before Emscripten) -->
     <script src="luanti-init.js"></script>
+    <script>
+        const interval = setInterval(async () => {
+            if (!!window.Luanti) {
+                clearInterval(interval);
+            }
+            else return;
+
+            const progressListener = (progress) => {
+                const loadingProgress = document.getElementById('loading-progress-bar');
+                if (loadingProgress) {
+                    loadingProgress.style.width = (progress * 100).toFixed(2) + '%';
+                }
+            };
+            Luanti.addProgressChangeListener(progressListener);
+
+            if (await Luanti.isReady) {
+                document.getElementById('loading-screen').classList.add('hidden');
+                Luanti.removeProgressChangeListener(progressListener);
+                Luanti.run();
+            }
+        }, 50);
+    </script>
 
     <!-- Emscripten-generated JavaScript will be inserted here -->
     {{{ SCRIPT }}}

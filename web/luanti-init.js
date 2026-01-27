@@ -8,6 +8,8 @@ console.log('Captured devicePixelRatio:', self._luantiDevicePixelRatio);
 // Global Module configuration for Emscripten
 // This will be read by LuantiModule() when it loads
 var Module = {
+	// Preload everything but don't call main() until user clicks Run
+	noInitialRun: true,
 	// Store DPR in Module so it's available to worker threads
 	devicePixelRatio: self._luantiDevicePixelRatio,
     canvas: (function() {
@@ -21,10 +23,6 @@ var Module = {
     arguments: [],
     printErr: function(text) {
         console.error('stderr:', text);
-        var errorText = document.getElementById('error-text');
-        if (errorText) {
-            errorText.textContent += text + '\n';
-        }
     },
     print: function(text) {
         console.log('stdout:', text);
@@ -110,89 +108,30 @@ var Module = {
             });
         }
     ],
-    postRun: [
-        function() {
-            console.log('***** MODULE POSTRUN EXECUTING *****');
-            console.log('main() has completed!');
-            
-            // Force hide loading screen if postRun executes
-            var loadingScreen = document.getElementById('loading-screen');
-            if (loadingScreen && !loadingScreen.classList.contains('hidden')) {
-                console.log('Hiding loading screen from postRun');
-                loadingScreen.classList.add('hidden');
-                var controlsInfoEl = document.getElementById('controls-info');
-                if (controlsInfoEl) {
-                    controlsInfoEl.classList.remove('hidden');
-                }
-            }
-            
-            // Trigger another resize to ensure DPR is applied after main() starts
-            if (typeof window.scheduleResize === 'function') {
-                console.log('Triggering post-main resize for DPR');
-                setTimeout(function() {
-                    window.scheduleResize();
-                }, 50);
-            }
-        }
-    ],
-    setStatus: function(text) {
-        var loadingScreen = document.getElementById('loading-screen');
-        var loadingStatus = document.getElementById('loading-status');
-        var loadingProgressBar = document.getElementById('loading-progress-bar');
-        var controlsInfo = document.getElementById('controls-info');
-        
-        // If required UI elements are not present (clean shell), just log and return
-        if (!loadingScreen || !loadingStatus || !loadingProgressBar) {
-            if (typeof text !== 'undefined') {
-                console.log('Status:', text);
-            }
-            return;
-        }
-        
-        if (!text) {
-            console.log('***** HIDING LOADING SCREEN *****');
-            loadingScreen.classList.add('hidden');
-            if (controlsInfo) {
-                controlsInfo.classList.remove('hidden');
-            }
-            return;
-        }
-        if (typeof text !== 'string' || (
-            !text.startsWith('Loading dependencies:') && !text.startsWith('Downloading data...'))) {
-            console.log('Status:', text);
-        }
-        loadingStatus.textContent = text;
-        
-        // Parse progress if available
-        var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
-        if (m) {
-            var current = parseFloat(m[2]);
-            var total = parseFloat(m[4]);
-            if (total > 0) {
-                loadingProgressBar.style.width = (current / total * 100) + '%';
-            }
-        }
-        // Don't change progress bar if there's no progress info - let it stay at current value
-    },
+    postRun: [],
     totalDependencies: 0,
     monitorRunDependencies: function(left) {
-        this.totalDependencies = Math.max(this.totalDependencies, left);
-        Module.setStatus(left ? 'Loading dependencies: ' + (this.totalDependencies - left) + '/' + this.totalDependencies : 'All downloads complete.');
+        if (left >= this.totalDependencies) {
+            this.totalDependencies = left;
+        }
+        else if (left > 0) {
+            window.Luanti.setLoadingProgress(0.95 + (((this.totalDependencies - left) / this.totalDependencies) * 0.05));
+        }
+        else {
+            window.Luanti.setLoadingProgress(1);
+        }
+    },
+    setStatus: function(status) {
+        const matches = /\((\d+)\/(\d+)\)/.exec(status);
+        if (matches) {
+            const total = parseInt(matches[2]);
+            const loaded = parseInt(matches[1]);
+            window.Luanti.setLoadingProgress((loaded / total) * 0.95);
+        }
     },
     onRuntimeInitialized: function() {
         Module.printErr('***** RUNTIME INITIALIZED *****');
         console.error('***** RUNTIME INITIALIZED *****');
-        
-        if (typeof window.scheduleResize === 'function') {
-            try { 
-                window.scheduleResize(); 
-                setTimeout(function() {
-                    window.scheduleResize();
-                }, 100);
-            } catch (e) { 
-                console.warn('Resize failed:', e); 
-            }
-        }
         
         Module.printErr('Canvas element exists: ' + !!document.getElementById('canvas'));
         Module.printErr('Creating virtual filesystem directories...');
@@ -210,20 +149,10 @@ var Module = {
         
         Module.printErr('FS object acquired, proceeding with filesystem setup...');
         try {
-            var userDataDir = '/userdata';
-            
-            Module.printErr('Step 1: Creating /userdata directory...');
-            try {
-                FS.mkdir(userDataDir);
-                Module.printErr('Created ' + userDataDir);
-            } catch (e) {
-                // Directory might already exist (created by preload), that's OK
-                Module.printErr(userDataDir + ' already exists (expected with preload)');
-            }
-            
             // IMPORTANT: Change working directory to /userdata
             // With RUN_IN_PLACE=TRUE, Luanti uses cwd as the user data directory
-            Module.printErr('Step 2: Changing working directory to /userdata...');
+            var userDataDir = '/userdata';
+            Module.printErr('Changing working directory to /userdata...');
             try {
                 FS.chdir(userDataDir);
                 Module.printErr('Changed working directory to: ' + FS.cwd());
@@ -233,34 +162,7 @@ var Module = {
                 throw e;
             }
             
-            // Verify preloaded directories exist
-            // Note: With WASMFS, FS.analyzePath() seems problematic, so we use readdir instead
-            Module.printErr('Step 3: Verifying preloaded assets...');
-            try {
-                var entries = FS.readdir(userDataDir);
-                Module.printErr('Contents of ' + userDataDir + ': ' + JSON.stringify(entries));
-                
-                var preloadedDirs = ['builtin', 'fonts', 'games', 'textures', 'client'];
-                var missingDirs = [];
-                preloadedDirs.forEach(function(dir) {
-                    if (entries.indexOf(dir) !== -1) {
-                        Module.printErr('  ✓ ' + dir + ' exists');
-                    } else {
-                        Module.printErr('  ✗ ' + dir + ' NOT FOUND - preload may have failed');
-                        missingDirs.push(dir);
-                    }
-                });
-                
-                if (missingDirs.length > 0) {
-                    Module.printErr('CRITICAL ERROR: Missing required directories: ' + missingDirs.join(', '));
-                    alert('CRITICAL: Missing game files!\nMissing: ' + missingDirs.join(', ') + '\n\nFiles were not preloaded correctly.');
-                }
-            } catch (e) {
-                Module.printErr('CRITICAL ERROR: Could not verify preloaded assets: ' + e.message);
-                alert('CRITICAL: Cannot read /userdata directory!');
-            }
-            
-            Module.printErr('Step 4: Preparing writable directories (will set permissions next)...');
+            Module.printErr('Preparing writable directories (will set permissions next)...');
             Module.printErr('Current directory: ' + FS.cwd());
             Module.printErr('Root contents: ' + JSON.stringify(FS.readdir('/')));
             
@@ -298,29 +200,15 @@ var Module = {
         }
         
         Module.printErr('===== onRuntimeInitialized complete! =====');
-        Module.printErr('About to call main()...');
-        Module.setStatus('Starting Luanti...');
         
-        // Monitor runtime after main() completes (minimal logging)
-        Module.postRun.push(function() {
-            console.log('✅ main() completed, SDL event loop is now active');
-            console.log('Main menu should be interactive. Check CPU usage - should be 10-20%!');
-        });
+        // Signal that preloading is complete - show the Run button
+        window.Luanti.setReady();
     },
     onAbort: function(what) {
         console.error('***** ABORT CALLED *****');
         console.error('Abort reason:', what);
         console.trace('Abort stack trace');
-        var errorMessage = document.getElementById('error-message');
-        var errorText = document.getElementById('error-text');
-        if (errorText && errorMessage) {
-            errorText.textContent = 'ABORT: ' + (what || 'Unknown error');
-            errorMessage.classList.add('show');
-        }
-        var loadingScreen = document.getElementById('loading-screen');
-        if (loadingScreen) {
-            loadingScreen.classList.add('hidden');
-        }
+        window.Luanti.errorOccurred('ABORT: ' + (what || 'Unknown error'))
     }
 };
 
@@ -331,31 +219,18 @@ window.addEventListener('error', function(e) {
     console.error('Filename:', e.filename);
     console.error('Line:', e.lineno, 'Col:', e.colno);
     console.error('Error object:', e.error);
-    var errorMessage = document.getElementById('error-message');
-    var errorText = document.getElementById('error-text');
-    if (errorText && errorMessage) {
-        errorText.textContent = 'ERROR: ' + e.message;
-        errorMessage.classList.add('show');
-    }
+    window.Luanti.errorOccurred('UNCAUGHT ERROR: ' + e.message);
 });
 
 window.addEventListener('unhandledrejection', function(e) {
     console.error('***** UNHANDLED PROMISE REJECTION *****');
     console.error('Reason:', e.reason);
-    var errorMessage = document.getElementById('error-message');
-    var errorText = document.getElementById('error-text');
-    if (errorText && errorMessage) {
-        errorText.textContent = 'PROMISE REJECTED: ' + e.reason;
-        errorMessage.classList.add('show');
-    }
+    window.Luanti.errorOccurred('PROMISE REJECTED: ' + e.reason);
 });
 
 // Log that Module is configured
 console.log('***** MODULE CONFIGURED *****');
 console.log('Module.arguments:', Module.arguments);
-
-// Initial status
-Module.setStatus('Downloading Luanti...');
 
 (function() {
 	// Debounce to avoid rapid resizes
@@ -420,29 +295,86 @@ Module.setStatus('Downloading Luanti...');
 	scheduleResize();
 })();
 
-// Initialize Luanti after luanti.js loads
-window.initializeLuanti = function() {
+// Luanti control object
+let __isReadyResolve = null;
+let __isReadyReject = null;
+window.Luanti = {
+    __ready: false,
+    isReady: new Promise(function(resolve, reject) {
+        __isReadyResolve = resolve;
+        __isReadyReject = reject;
+    }),
+    isRunning: false,
+    loadingProgress: 0,
+    onProgressChangeListeners: new Set(),
+
+    run: function() {
+        if (this.isRunning) {
+            console.log('Luanti is already running');
+            return;
+        }
+        if (!this.__ready) {
+            console.log('Luanti not yet preloaded, please wait...');
+            return;
+        }
+        this.isRunning = true;
+        
+        console.log('Starting Luanti main()...');
+        // Call main() - this starts the actual game
+        try {
+            if (typeof Module.callMain === 'function') {
+                Module.callMain(Module.arguments);
+            } else {
+                throw new Error('Neither callMain nor _main available - rebuild with callMain in EXPORTED_RUNTIME_METHODS');
+            }
+        } catch (err) {
+            console.error('Failed to start Luanti:', err);
+            this.isRunning = false;
+        }
+    },
+
+    setReady: function() {
+        console.log('Luanti is ready');
+        this.__ready = true;
+        __isReadyResolve(true);
+    },
+
+    setLoadingProgress: function(progress) {
+        this.loadingProgress = progress;
+        this.onProgressChangeListeners.forEach(listener => listener(this.loadingProgress));
+    },
+
+    errorOccurred: function(error) {
+        console.error('Luanti error:', error);
+    },
+
+    addProgressChangeListener: function(listener) {
+        this.onProgressChangeListeners.add(listener);
+    },
+
+    removeProgressChangeListener: function(listener) {
+        this.onProgressChangeListeners.delete(listener);
+    },
+};
+
+// Preload Luanti after luanti.js loads (downloads WASM + assets, but doesn't run main())
+window.preloadLuanti = function() {
     if (typeof LuantiModule === 'undefined') {
         console.log('Waiting for LuantiModule to load...');
-        setTimeout(window.initializeLuanti, 50);
+        setTimeout(window.preloadLuanti, 50);
         return;
     }
     
-    console.log('Initializing LuantiModule factory...');
+    console.log('Preloading LuantiModule (noInitialRun=true)...');
     LuantiModule(Module).then(function(instance) {
-        console.log('LuantiModule initialized successfully');
+        console.log('LuantiModule preloaded successfully');
         window.Module = instance;
     }).catch(function(err) {
-        console.error('Failed to initialize LuantiModule:', err);
-        var errorMessage = document.getElementById('error-message');
-        var errorText = document.getElementById('error-text');
-        if (errorText && errorMessage) {
-            errorText.textContent = 'Failed to initialize: ' + err;
-            errorMessage.classList.add('show');
-        }
+        console.error('Failed to preload LuantiModule:', err);
     });
 };
 
-console.log('Starting Luanti initialization...');
-window.initializeLuanti();
+// Start preloading immediately
+console.log('Starting Luanti preload...');
+window.preloadLuanti();
 
