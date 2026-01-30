@@ -56,8 +56,10 @@ EM_JS(int, em_socket_sendto, (int fd, const void* data, int len, const void* des
 EM_JS(int, em_socket_recvfrom, (int fd, void* buffer, int len, void* src_addr, int* family, int* src_port, int timeout_ms), {
 	if (!self._luantiRecvfromData) {
 		self._luantiRecvfromData = new Uint8Array(512);
+		self._luantiRecvfromDestAddr = new Uint8Array(16);
+		self._luantiRecvfromSrcAddr = new Uint8Array(16);
 	}
-	var result = SocketProxy.recvfrom(fd, self._luantiRecvfromData, len, timeout_ms);
+	var result = SocketProxy.recvfrom(fd, self._luantiRecvfromData, self._luantiRecvfromDestAddr, self._luantiRecvfromSrcAddr, len, timeout_ms);
 	
 	if (!result) {
 		// No data available (EAGAIN) - this is normal, don't spam logs
@@ -73,7 +75,11 @@ EM_JS(int, em_socket_recvfrom, (int fd, void* buffer, int len, void* src_addr, i
 		HEAP32[src_port >> 2] = result.srcPort;
 	}
 	if (src_addr) {
-		HEAPU8.set(result.srcAddress, src_addr);
+		if (result.srcFamily === AF_INET6) {
+			HEAPU8.set(self._luantiRecvfromSrcAddr, src_addr);
+		} else if (result.srcFamily === AF_INET) {
+			HEAPU8.set(self._luantiRecvfromSrcAddr.subarray(0, 4), src_addr);
+		}
 	}
 	
 	return result.length;

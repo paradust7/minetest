@@ -30,7 +30,7 @@ var AF_INET = 2;
 var AF_INET6 = 10;
 
 // Shared memory layout
-var SHARED_MEMORY_SIZE = 2 * 1024 * 1024; // 2MB
+var SHARED_MEMORY_SIZE = 12 * 1024 * 1024; // 12MB
 var TOTAL_RESERVED_SLOTS = 40;
 var MAX_SOCKETS = 2; // client and server slots
 var SOCKET_ENTRY_SIZE = 9; // 9 Int32s per socket entry
@@ -61,7 +61,9 @@ var IS_SERVER_PUBLIC_IDX = 17;
 // [18-33]: Sockets
 // [18]: socket management lock
 var MANAGE_SOCKET_LOCK_IDX = 18; // 0 = unlocked, 1 = locked
+
 // [19-36]: two slots for socket management data (client and server slots)
+// [19] is the first free slot for socket management data
 var SOCKET_DATA_ARRAY_IDX = 19;
 // Socket entry layout (in Int32 units):
 // [0]: fd (0 = not in use)
@@ -280,13 +282,15 @@ function luantiProxyWritePacket(workerRole, destAddr, destPort, srcAddr, srcPort
  * Read packet from ring buffer for specific address:port
  * 
  * @param {number} workerRole - Worker role
- * @param {Uint8Array} buffer - Buffer to read data into
+ * @param {Uint8Array} dataBuffer - Buffer to read data into
+ * @param {Uint8Array} destAddressBuffer - Buffer to read destination address into
+ * @param {Uint8Array} srcAddressBuffer - Buffer to read source address into
  * @param {number} maxLen - Maximum length of data to read
  * @param {number} readerFamily - Reader address family (AF_INET = 2, AF_INET6 = 10)
  * @param {number} timeoutMs - Timeout in milliseconds
- * @returns {{length: number, srcAddress: Uint8Array, srcFamily: number, srcPort: number, destAddress: Uint8Array, destFamily: number, destPort: number} | null} Data read from packet or null if no packet found
+ * @returns {{length: number, srcFamily: number, srcPort: number, destFamily: number, destPort: number} | null} Data read from packet or null if no packet found
  */
-function luantiProxyReadPacket(workerRole, buffer, maxLen, readerFamily, timeoutMs) {
+function luantiProxyReadPacket(workerRole, dataBuffer, destAddressBuffer, srcAddressBuffer, maxLen, readerFamily, timeoutMs) {
     var ringBufferOffset = 0;
     var readPos = 0;
     var readIdxPos = 0;
@@ -336,6 +340,7 @@ function luantiProxyReadPacket(workerRole, buffer, maxLen, readerFamily, timeout
         var writePos2 = Atomics.load(sharedInt32, WRITE_IDX_2);
         var creationTime1 = Infinity;
         var creationTime2 = Infinity;
+        var creationTime = 0;
 
         if (readPos1 !== writePos1) {
             var readOffset = OFFSET_1 + readPos1;
@@ -349,27 +354,24 @@ function luantiProxyReadPacket(workerRole, buffer, maxLen, readerFamily, timeout
             ringBufferOffset = OFFSET_1;
             readIdxPos = READ_IDX_1;
             readPos = readPos1;
-            // console.log('[SocketProxyShared] readPacket: read packet from ring buffer 1, readPos=' + readPos + ' (Worker Role: ' + workerRole + ')');
+            creationTime = creationTime1;
             break;
         } else if (creationTime2 < creationTime1 || creationTime2 < Infinity) {
             ringBufferOffset = OFFSET_2;
             readIdxPos = READ_IDX_2;
             readPos = readPos2;
-            // console.log('[SocketProxyShared] readPacket: read packet from ring buffer 2, readPos=' + readPos + ' (Worker Role: ' + workerRole + ')');
+            creationTime = creationTime2;
             break;
-        } else {
-            // console.log('[SocketProxyShared] readPacket: no packet found (Worker Role: ' + workerRole + ')');
-            if (!waited && timeoutMs > 0) {
-                var result = Atomics.wait(sharedInt32, DOORBELL_POS, 0, timeoutMs);
-                if (result === 'timed-out') {
-                    return null;
-                }
-                Atomics.store(sharedInt32, DOORBELL_POS, 0);
-                waited = true;
-            }
-            else {
+        } else if (!waited && timeoutMs > 0) {
+            var result = Atomics.wait(sharedInt32, DOORBELL_POS, 0, timeoutMs);
+            if (result === 'timed-out') {
                 return null;
             }
+            Atomics.store(sharedInt32, DOORBELL_POS, 0);
+            waited = true;
+        }
+        else {
+            return null;
         }
     }
 
@@ -378,20 +380,12 @@ function luantiProxyReadPacket(workerRole, buffer, maxLen, readerFamily, timeout
     
     // Read destination address
     var destAddrFamily = sharedInt32[readOffset + PACKET_DATA_DEST_ADDRESS_FAMILY_IDX];
-    var destAddr;
     var destAddrOffsetBytes = (readOffset + PACKET_DATA_DEST_ADDRESS_IDX) * 4;
-    if (destAddrFamily === AF_INET6) {
-        destAddr = sharedUint8.subarray(destAddrOffsetBytes, destAddrOffsetBytes + 16);
-    } else if (destAddrFamily === AF_INET) {
-        destAddr = sharedUint8.subarray(destAddrOffsetBytes, destAddrOffsetBytes + 4);
-    } else {
-        throw new Error('[SocketProxyShared] Invalid destination address family: ' + destAddrFamily);
-    }
+    destAddressBuffer.set(sharedUint8.subarray(destAddrOffsetBytes, destAddrOffsetBytes + 16));
     var destPort = sharedInt32[readOffset + PACKET_DATA_DEST_PORT_IDX];
     
     // Read source address
     var srcAddrFamily = sharedInt32[readOffset + PACKET_DATA_SRC_ADDRESS_FAMILY_IDX];
-    var srcAddr;
     var addrOffsetBytes = (readOffset + PACKET_DATA_SRC_ADDRESS_IDX) * 4;
     // For local address, convert to reader family if needed
     if (srcAddrFamily === AF_INET6) {
@@ -405,7 +399,7 @@ function luantiProxyReadPacket(workerRole, buffer, maxLen, readerFamily, timeout
                 throw new Error('[SocketProxyShared] Invalid source address and family mismatch: ' + srcAddrBytes.join(','));
             }
         }
-        srcAddr = srcAddrBytes;
+        srcAddressBuffer.set(srcAddrBytes);
     }
     else if (srcAddrFamily === AF_INET) {
         var srcAddrBytes = sharedUint8.subarray(addrOffsetBytes, addrOffsetBytes + 4);
@@ -418,7 +412,7 @@ function luantiProxyReadPacket(workerRole, buffer, maxLen, readerFamily, timeout
                 throw new Error('[SocketProxyShared] Invalid source address and family mismatch: ' + srcAddrBytes.join(','));
             }
         }
-        srcAddr = srcAddrBytes;
+        srcAddressBuffer.set(srcAddrBytes);
     }
     else {
         throw new Error('[SocketProxyShared] Invalid source address family: ' + srcAddrFamily);
@@ -429,7 +423,7 @@ function luantiProxyReadPacket(workerRole, buffer, maxLen, readerFamily, timeout
     // Read packet data
     var copyLen = Math.min(dataLen, maxLen);
     var dataOffsetBytes = (readOffset + PACKET_DATA_DATA_IDX) * 4;
-    buffer.set(sharedUint8.subarray(dataOffsetBytes, dataOffsetBytes + copyLen));
+    dataBuffer.set(sharedUint8.subarray(dataOffsetBytes, dataOffsetBytes + copyLen));
 
     // Advance read index
     var newReadIdx = (readPos + MAX_PACKET_SIZE_INT32) % PER_SEGMENT_SIZE_INT32;
@@ -437,12 +431,11 @@ function luantiProxyReadPacket(workerRole, buffer, maxLen, readerFamily, timeout
     
     return {
         length: copyLen,
-        srcAddress: srcAddr,
         srcFamily: srcAddrFamily,
         srcPort: srcPort,
-        destAddress: destAddr,
         destFamily: destAddrFamily,
         destPort: destPort,
+        creationTime: creationTime,
     };
 }
 
@@ -799,12 +792,14 @@ var SocketProxy = {
      * Receive data from socket
      * 
      * @param {number} fd - Socket file descriptor
-     * @param {Uint8Array} buffer - Buffer to read data into
+     * @param {Uint8Array} dataBuffer - Buffer to read data into
+     * @param {Uint8Array} destAddressBuffer - Buffer to read destination address into
+     * @param {Uint8Array} srcAddressBuffer - Buffer to read source address into
      * @param {number} maxLen - Maximum length of data to read
      * @param {number} timeoutMs - Timeout in milliseconds
-     * @returns {{length: number, srcAddress: Uint8Array, srcFamily: number, srcPort: number, destAddress: Uint8Array, destFamily: number, destPort: number} | null} Data read from packet or null if no packet found
+     * @returns {{length: number, srcFamily: number, srcPort: number, destFamily: number, destPort: number} | null} Data read from packet or null if no packet found
      */
-    recvfrom: function(fd, buffer, maxLen, timeoutMs = 0) {
+    recvfrom: function(fd, dataBuffer, destAddressBuffer, srcAddressBuffer, maxLen, timeoutMs = 0) {
         if (fd !== this.fd && this.loadSocketDataWithAutoBind(fd, false) !== 0) {
             console.error('[SocketProxyShared] Failed to auto-bind socket fd=' + fd);
             return null;
@@ -834,9 +829,9 @@ var SocketProxy = {
         var family = sharedInt32[this.socketDataIdx + SOCKET_DATA_ADDRESS_FAMILY_IDX];
 
         // Read packet from shared ring buffer
-        return luantiProxyReadPacket(workerRole, buffer, maxLen, family, timeoutMs);
+        return luantiProxyReadPacket(workerRole, dataBuffer, destAddressBuffer, srcAddressBuffer, maxLen, family, timeoutMs);
     },
-    
+
     /**
      * Close socket
      * 
