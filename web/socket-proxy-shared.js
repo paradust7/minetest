@@ -30,7 +30,7 @@ var AF_INET = 2;
 var AF_INET6 = 10;
 
 // Shared memory layout
-var SHARED_MEMORY_SIZE = 12 * 1024 * 1024; // 12MB
+var SHARED_MEMORY_SIZE = 8 * 1024 * 1024; // 8MB
 var TOTAL_RESERVED_SLOTS = 40;
 var MAX_SOCKETS = 2; // client and server slots
 var SOCKET_ENTRY_SIZE = 9; // 9 Int32s per socket entry
@@ -182,9 +182,8 @@ function luantiProxyWritePacket(workerRole, destAddr, destPort, srcAddr, srcPort
     var writeIdxPos = 0;
     var readIdxPos = 0;
     var doorbellPos = 0;
-    var addressLocal= isAddressLocal(destAddr);
     if (workerRole === WORKER_ROLE_CLIENT) {
-        if (addressLocal) {
+        if (isAddressLocal(destAddr)) {
             // client to server
             ringBufferOffset = CLIENT_TO_SERVER_OFFSET;
             writeIdxPos = CLIENT_TO_SERVER_WRITE_IDX;
@@ -198,7 +197,7 @@ function luantiProxyWritePacket(workerRole, destAddr, destPort, srcAddr, srcPort
             doorbellPos = DOORBELL_EXTERNAL_IDX;
         }
     } else if (workerRole === WORKER_ROLE_SERVER) {
-        if (addressLocal) {
+        if (isAddressLocal(destAddr)) {
             // server to client
             ringBufferOffset = SERVER_TO_CLIENT_OFFSET;
             writeIdxPos = SERVER_TO_CLIENT_WRITE_IDX;

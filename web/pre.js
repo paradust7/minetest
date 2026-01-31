@@ -8,7 +8,7 @@ var isMainThread = typeof window !== 'undefined';
 var isWorker = typeof importScripts === 'function';
 
 // Shared memory layout
-var SHARED_MEMORY_SIZE = 12 * 1024 * 1024; // 12MB
+var SHARED_MEMORY_SIZE = 8 * 1024 * 1024; // 8MB
 var FD_IDX = 0; // Index of the file descriptor counter
 
 // Capture device pixel ratio early on main thread (before any workers are created)
