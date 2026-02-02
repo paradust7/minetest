@@ -8,8 +8,8 @@ var isMainThread = typeof window !== 'undefined';
 var isWorker = typeof importScripts === 'function';
 
 // Shared memory layout
-var SHARED_MEMORY_SIZE = 8 * 1024 * 1024; // 8MB
-var FD_IDX = 0; // Index of the file descriptor counter
+const _SHARED_MEMORY_SIZE = 8 * 1024 * 1024; // 8MB
+const FD_IDX = 0; // Index of the file descriptor counter
 
 // Capture device pixel ratio early on main thread (before any workers are created)
 // Workers don't have access to window, so we must capture this value here
@@ -22,7 +22,7 @@ if (isMainThread) {
 // Workers will receive the buffer via postMessage when they are created
 if (isMainThread && typeof SharedArrayBuffer !== 'undefined') {
     console.log('[pre.js] Creating shared socket buffer on main thread');
-    var _luantiSocketSharedBuffer = new SharedArrayBuffer(SHARED_MEMORY_SIZE);
+    var _luantiSocketSharedBuffer = new SharedArrayBuffer(_SHARED_MEMORY_SIZE);
     var _luantiSocketSharedInt32 = new Int32Array(_luantiSocketSharedBuffer);
     
     // Initialize control variables

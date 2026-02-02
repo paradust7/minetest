@@ -16,55 +16,359 @@ if (typeof SharedArrayBuffer === 'undefined') {
     throw new Error('SharedArrayBuffer not available');
 }
 
-var NOOP_INT32 = new Int32Array(new SharedArrayBuffer(4)).fill(0);
+// ===== CONSTANTS =====
+// Worker roles
+const WORKER_ROLE_UNKNOWN = 0;
+const WORKER_ROLE_CLIENT = 1;
+const WORKER_ROLE_SERVER = 2;
+const WORKER_ROLE_EXTERNAL = 3;
+// IP address families
+const AF_INET = 2;
+const AF_INET6 = 10;
 
-var WORKER_ROLE_UNKNOWN = 0;
-var WORKER_ROLE_CLIENT = 1;
-var WORKER_ROLE_SERVER = 2;
-var WORKER_ROLE_EXTERNAL = 3;
-var ADDRESS_NOT_SET = -1;
-var PORT_NOT_SET = -1;
+// ===== MEMORY LAYOUT =====
+// All memory layout numbers are provided in bytes
 
-// Constants
-var AF_INET = 2;
-var AF_INET6 = 10;
+// Shared memory size
+const SHARED_MEMORY_SIZE = 8 * 1024 * 1024;
+
+// Cache line size is 64 bytes
+const CACHE_LINE_SIZE = 64;
+const GLOBAL_METADATA_SIZE = 256;
+
+// reader memory
+const READ_IDX_PRIO_0 = 0;
+const READ_IDX_PRIO_1 = 4;
+// writer memory
+const WRITE_IDX_PRIO_0 = 8;
+const WRITE_IDX_PRIO_1 = 12;
+// doorbell memory
+const DOORBELL_IDX = 16;
+// read lock
+const READ_LOCK_IDX = 20;
+// write lock
+const WRITE_LOCK_IDX = 24;
+
+// Metadata size per segment, reserved for READ_IDXs, WRITE_IDXs, and DOORBELL_IDX
+const SEGMENT_METADATA_SIZE = CACHE_LINE_SIZE;
+
+// ===== PACKET BUFFER =====
+// Per packet: 512 bytes of payload data + 64 bytes reserved for packet metadata
+const PACKET_SLOT_SIZE = 512 + 64;
+
+// ===== SEGMENT SIZES =====
+// There are 3 segments in the shared memory buffer, each with 2 prio buffers.
+// Each prio buffer contains prioritized packets for each priority level.
+
+// Reserve 256 bytes for globals, and (3 * SEGMENT_METADATA_SIZE) for per-segment metadata
+const _MAX_BYTES_ALL_SEGMENTS = SHARED_MEMORY_SIZE - GLOBAL_METADATA_SIZE - (3 * SEGMENT_METADATA_SIZE);
+// Calculate max bytes per segment (for 3 segments)
+const _MAX_BYTES_PER_SEGMENT = Math.floor(_MAX_BYTES_ALL_SEGMENTS / 3);
+// Calculate max bytes per prio buffer (for 2 prio buffers per segment)
+const _MAX_BYTES_PER_PRIO_BUFFER = Math.floor(_MAX_BYTES_PER_SEGMENT / 2);
+// Calculate number of packets per prio buffer (2 prio buffers per segment).
+// Prio buffers contain prioritized packets for each priority level.
+const PACKETS_PER_PRIO_BUFFER = Math.floor(_MAX_BYTES_PER_PRIO_BUFFER / PACKET_SLOT_SIZE);
+// Calculate segment bytes size
+const PRIO_BUFFER_SIZE = PACKETS_PER_PRIO_BUFFER * PACKET_SLOT_SIZE;
+const SEGMENT_SIZE = (PRIO_BUFFER_SIZE * 2) + SEGMENT_METADATA_SIZE;
+
+// ===== PRIO BUFFERS =====
+// packet data memory: 2 prio buffers per segment
+const DATA_OFFSET_PRIO_0 = SEGMENT_METADATA_SIZE;
+const DATA_OFFSET_PRIO_1 = DATA_OFFSET_PRIO_0 + PRIO_BUFFER_SIZE;
+
+// ===== PACKET MEMORY LAYOUT =====
+// Packet entry layout (in bytes offsets):
+const PACKET_DEST_ADDR_IDX = 0; // 16 bytes [0-15]
+const PACKET_SRC_ADDR_IDX = 16; // 16 bytes [16-31]
+const PACKET_BUFFERED_TIME_IDX = 32; // 8 bytes [32-39]
+const PACKET_DEST_PORT_IDX = 40; // 2 bytes [40-41]
+const PACKET_SRC_PORT_IDX = 42; // 2 bytes [42-43]
+const PACKET_PAYLOAD_LENGTH_IDX = 44; // 2 bytes [44-45]
+const PACKET_DEST_ADDR_FAMILY_IDX = 46; // 1 byte [46]
+const PACKET_SRC_ADDR_FAMILY_IDX = 47; // 1 byte [47]
+
+const PACKET_PAYLOAD_IDX = 64; // up to 512 bytes [64-..]
+
+class SharedPacketBuffer {
+    constructor(buffer, offset) {
+        if (!(buffer instanceof SharedArrayBuffer)) {
+            throw new Error('Buffer must be a SharedArrayBuffer');
+        }
+        /** @type {Uint8Array<SharedArrayBuffer>} */
+        this.u8 = new Uint8Array(buffer, offset, SEGMENT_SIZE);
+        /** @type {Uint16Array<SharedArrayBuffer>} */
+        this.u16 = new Uint16Array(buffer, offset, SEGMENT_SIZE >> 1);
+        /** @type {Int32Array<SharedArrayBuffer>} */
+        this.i32 = new Int32Array(buffer, offset, SEGMENT_SIZE >> 2);
+        /** @type {DataView<SharedArrayBuffer>} */
+        this.dv = new DataView(buffer, offset, SEGMENT_SIZE);
+    }
+
+    /**
+     * Write packet to ring buffer
+     * @param {Uint8Array} destAddr - Destination address
+     * @param {number} destPort - Destination port
+     * @param {Uint8Array} srcAddr - Source address
+     * @param {number} srcPort - Source port
+     * @param {Uint8Array} payload - Payload to send
+     * @returns {boolean} true on success, false on error
+     */
+    writePacket(destAddr, destPort, srcAddr, srcPort, payload) {
+        const u8 = this.u8;
+        const u16 = this.u16;
+        const i32 = this.i32;
+        const dv = this.dv;
+        const now = Date.now();
+
+        // Get address families
+        let destAddrFamily = AF_INET;
+        let srcAddrFamily = AF_INET;
+        if (destAddr.length === 16) {
+            destAddrFamily = AF_INET6;
+        } else if (destAddr.length !== 4) {
+            throw new Error('Invalid destination address length: ' + destAddr.length);
+        }
+        if (srcAddr.length === 16) {
+            srcAddrFamily = AF_INET6;
+        } else if (srcAddr.length !== 4) {
+            throw new Error('Invalid source address length: ' + srcAddr.length);
+        }
+
+        // Define variables
+        let i = 0;
+        let prio = 0;
+        let readIdx = 0;
+        let writeIdx = 0;
+        let dataOffset = 0;
+
+        // Detect packet priority with deep packet inspection
+        // TODO: Improve this with better packet inspection
+        const protocolHeader = payload[7];
+        if (protocolHeader !== 0) {
+            prio = 1;
+        }
+
+        // Acquire write lock
+        while (Atomics.compareExchange(i32, WRITE_LOCK_IDX >> 2, 0, 1) !== 0) {
+            i++;
+            if (i > 1000) {
+                console.error('Failed to acquire write lock');
+                return false;
+            }
+            Atomics.pause();
+        }
+
+        // Get the read and write indices for the priority buffer
+        if (prio === 0) {
+            readIdx = Atomics.load(i32, READ_IDX_PRIO_0 >> 2);
+            writeIdx = Atomics.load(i32, WRITE_IDX_PRIO_0 >> 2);
+            dataOffset = DATA_OFFSET_PRIO_0;
+        } else {
+            readIdx = Atomics.load(i32, READ_IDX_PRIO_1 >> 2);
+            writeIdx = Atomics.load(i32, WRITE_IDX_PRIO_1 >> 2);
+            dataOffset = DATA_OFFSET_PRIO_1;
+        }
+        
+        const writeOffset = dataOffset + (writeIdx * PACKET_SLOT_SIZE);
+
+        // Write packet data
+        u8.set(destAddr, writeOffset + PACKET_DEST_ADDR_IDX);
+        u8.set(srcAddr, writeOffset + PACKET_SRC_ADDR_IDX);
+        u8[writeOffset + PACKET_DEST_ADDR_FAMILY_IDX] = destAddrFamily;
+        u8[writeOffset + PACKET_SRC_ADDR_FAMILY_IDX] = srcAddrFamily;
+        u16[(writeOffset + PACKET_DEST_PORT_IDX) >> 1] = destPort;
+        u16[(writeOffset + PACKET_SRC_PORT_IDX) >> 1] = srcPort;
+        u16[(writeOffset + PACKET_PAYLOAD_LENGTH_IDX) >> 1] = payload.length;
+        dv.setFloat64(writeOffset + PACKET_BUFFERED_TIME_IDX, now, true);
+        u8.set(payload, writeOffset + PACKET_PAYLOAD_IDX);
+
+        // Update write index
+        writeIdx = (writeIdx + 1) % PACKETS_PER_PRIO_BUFFER;
+        if (writeIdx === readIdx) {
+            console.warn('Packet buffer full, dropping packet');
+            // Release write lock
+            Atomics.store(i32, WRITE_LOCK_IDX >> 2, 0);
+            return false;
+        }
+        if (prio === 0) {
+            Atomics.store(i32, WRITE_IDX_PRIO_0 >> 2, writeIdx);
+        } else {
+            Atomics.store(i32, WRITE_IDX_PRIO_1 >> 2, writeIdx);
+        }
+        // Release write lock
+        Atomics.store(i32, WRITE_LOCK_IDX >> 2, 0);
+
+        // Notify waiting readers
+        Atomics.add(i32, DOORBELL_IDX >> 2, 1);
+        Atomics.notify(i32, DOORBELL_IDX >> 2, 1);
+
+        return true;
+    }
+
+    /**
+     * Read packet from ring buffer for specific address:port
+     * 
+     * @param {Uint8Array} dataBuffer - Buffer to read data into
+     * @param {Uint8Array} destAddressBuffer - Buffer to read destination address into
+     * @param {Uint8Array} srcAddressBuffer - Buffer to read source address into
+     * @param {number} maxLen - Maximum length of data to read
+     * @param {number} timeoutMs - Timeout in milliseconds
+     * @returns {{length: number, srcFamily: number, srcPort: number, destFamily: number, destPort: number} | null} Data read from packet or null if no packet found
+     */
+    readPacket(dataBuffer, destAddressBuffer, srcAddressBuffer, maxLen, timeoutMs) {
+        const u8 = this.u8;
+        const u16 = this.u16;
+        const i32 = this.i32;
+        const dv = this.dv;
+
+        // Get the read index for the priority buffer
+        let i = 0;
+        let waited = false;
+        let readIdx = 0;
+        let writeIdx = 0;
+        let dataOffset = 0;
+        let prio = 0;
+
+        // Acquire read lock
+        while (Atomics.compareExchange(i32, READ_LOCK_IDX >> 2, 0, 1) !== 0) {
+            i++;
+            if (i > 1000) {
+                console.error('Failed to acquire read lock');
+                return null;
+            }
+            Atomics.pause();
+        }
+
+        while (true) {
+            const doorbellCount = Atomics.load(i32, DOORBELL_IDX >> 2);
+            readIdx = Atomics.load(i32, READ_IDX_PRIO_0 >> 2);
+            writeIdx = Atomics.load(i32, WRITE_IDX_PRIO_0 >> 2);
+            dataOffset = DATA_OFFSET_PRIO_0;
+            prio = 0;
+            if (readIdx === writeIdx) {
+                // No packet available in prio_0, try prio_1
+                readIdx = Atomics.load(i32, READ_IDX_PRIO_1 >> 2);
+                writeIdx = Atomics.load(i32, WRITE_IDX_PRIO_1 >> 2);
+                dataOffset = DATA_OFFSET_PRIO_1;
+                prio = 1;
+                if (readIdx === writeIdx) {
+                    if (!waited && timeoutMs > 0) {
+                        const waitResult = Atomics.wait(i32, DOORBELL_IDX >> 2, doorbellCount, timeoutMs);
+                        if (waitResult === 'timed-out') {
+                            // Release read lock
+                            Atomics.store(i32, READ_LOCK_IDX >> 2, 0);
+                            return null;
+                        }
+                        waited = true;
+                        continue;
+                    }
+                    // Release read lock
+                    Atomics.store(i32, READ_LOCK_IDX >> 2, 0);
+                    return null;
+                }
+            }
+            // readIdx !== writeIdx, we have a packet
+            break;
+        }
+        
+        // Get the packet data
+        const readOffset = dataOffset + (readIdx * PACKET_SLOT_SIZE);
+
+        const payloadLength = Math.min(u16[(readOffset + PACKET_PAYLOAD_LENGTH_IDX) >> 1], maxLen);
+        dataBuffer.set(u8.subarray(readOffset + PACKET_PAYLOAD_IDX, readOffset + PACKET_PAYLOAD_IDX + payloadLength), 0);
+        destAddressBuffer.set(u8.subarray(readOffset + PACKET_DEST_ADDR_IDX, readOffset + PACKET_DEST_ADDR_IDX + 16), 0);
+        srcAddressBuffer.set(u8.subarray(readOffset + PACKET_SRC_ADDR_IDX, readOffset + PACKET_SRC_ADDR_IDX + 16), 0);
+        const destAddrFamily = u8[readOffset + PACKET_DEST_ADDR_FAMILY_IDX];
+        const srcAddrFamily = u8[readOffset + PACKET_SRC_ADDR_FAMILY_IDX];
+        const destPort = u16[(readOffset + PACKET_DEST_PORT_IDX) >> 1];
+        const srcPort = u16[(readOffset + PACKET_SRC_PORT_IDX) >> 1];
+        const creationTime = dv.getFloat64(readOffset + PACKET_BUFFERED_TIME_IDX, true);
+
+        // Todo: Prio-based rules for max packet age before dropping?
+
+        // Update read index
+        readIdx = (readIdx + 1) % PACKETS_PER_PRIO_BUFFER;
+        if (prio === 0) {
+            Atomics.store(i32, READ_IDX_PRIO_0 >> 2, readIdx);
+        } else {
+            Atomics.store(i32, READ_IDX_PRIO_1 >> 2, readIdx);
+        }
+
+        // Release read lock
+        Atomics.store(i32, READ_LOCK_IDX >> 2, 0);
+
+        return {
+            length: payloadLength,
+            srcFamily: srcAddrFamily,
+            srcPort: srcPort,
+            destFamily: destAddrFamily,
+            destPort: destPort,
+            creationTime: creationTime,
+        };
+    }
+
+    /**
+     * Reset buffer indices to 0
+     */
+    resetBuffer() {
+        // Try to acquire write lock for 100 ms. Writes don't wait atomic, so 100 ms is enough.
+        let start = Date.now();
+        while (Atomics.compareExchange(i32, WRITE_LOCK_IDX >> 2, 0, 1) !== 0) {
+            if (Date.now() - start > 100) {
+                console.warn('[SocketProxyShared] Failed to acquire write lock to reset buffer');
+                return false;
+            }
+        }
+
+        // Try to acquire read lock for 500 ms. Reads can wait atomic, so we need to wait for a while longer.
+        start = Date.now();
+        while (Atomics.compareExchange(i32, READ_LOCK_IDX >> 2, 0, 1) !== 0) {
+            if (Date.now() - start > 500) {
+                console.warn('[SocketProxyShared] Failed to acquire read lock to reset buffer');
+                // Release write lock
+                Atomics.store(i32, WRITE_LOCK_IDX >> 2, 0);
+                return false;
+            }
+        }
+
+        Atomics.store(i32, READ_IDX_PRIO_0 >> 2, 0);
+        Atomics.store(i32, WRITE_IDX_PRIO_0 >> 2, 0);
+        Atomics.store(i32, READ_IDX_PRIO_1 >> 2, 0);
+        Atomics.store(i32, WRITE_IDX_PRIO_1 >> 2, 0);
+        // Release write lock
+        Atomics.store(i32, WRITE_LOCK_IDX >> 2, 0);
+        // Release read lock
+        Atomics.store(i32, READ_LOCK_IDX >> 2, 0);
+        return true;
+    }
+}
+
+const NOOP_INT32 = new Int32Array(new SharedArrayBuffer(4));
+
+const ADDRESS_NOT_SET = -1;
+const PORT_NOT_SET = -1;
 
 // Shared memory layout
-var SHARED_MEMORY_SIZE = 8 * 1024 * 1024; // 8MB
-var TOTAL_RESERVED_SLOTS = 40;
-var MAX_SOCKETS = 2; // client and server slots
-var SOCKET_ENTRY_SIZE = 9; // 9 Int32s per socket entry
+const MAX_SOCKETS = 2; // client and server slots
+const SOCKET_ENTRY_SIZE = 9; // 9 Int32s per socket entry
 
 // Indices for ring buffer implementation (int32 units)
 // [0-15]: doorbells and ring buffer indices
-var SOCKET_FD_IDX = 0;
-var DOORBELL_SERVER_IDX = 1;
-var DOORBELL_CLIENT_IDX = 2;
-var DOORBELL_EXTERNAL_IDX = 3;
-var CLIENT_TO_SERVER_WRITE_IDX = 4;
-var CLIENT_TO_SERVER_READ_IDX = 5;
-var SERVER_TO_CLIENT_WRITE_IDX = 6;
-var SERVER_TO_CLIENT_READ_IDX = 7;
-var EXTERNAL_TO_SERVER_WRITE_IDX = 8;
-var EXTERNAL_TO_SERVER_READ_IDX = 9;
-var SERVER_TO_EXTERNAL_WRITE_IDX = 10;
-var SERVER_TO_EXTERNAL_READ_IDX = 11;
-var EXTERNAL_TO_CLIENT_WRITE_IDX = 12;
-var EXTERNAL_TO_CLIENT_READ_IDX = 13;
-var CLIENT_TO_EXTERNAL_WRITE_IDX = 14;
-var CLIENT_TO_EXTERNAL_READ_IDX = 15;
+const SOCKET_FD_IDX = 0;
 
 // [16-17]: Server info flags
-var IS_SERVER_RUNNING_IDX = 16;
-var IS_SERVER_PUBLIC_IDX = 17;
+const IS_SERVER_RUNNING_IDX = 1;
+const IS_SERVER_PUBLIC_IDX = 2;
 
 // [18-33]: Sockets
 // [18]: socket management lock
-var MANAGE_SOCKET_LOCK_IDX = 18; // 0 = unlocked, 1 = locked
+const MANAGE_SOCKET_LOCK_IDX = 3; // 0 = unlocked, 1 = locked
 
 // [19-36]: two slots for socket management data (client and server slots)
 // [19] is the first free slot for socket management data
-var SOCKET_DATA_ARRAY_IDX = 19;
+const SOCKET_DATA_ARRAY_IDX = 4;
 // Socket entry layout (in Int32 units):
 // [0]: fd (0 = not in use)
 // [1]: bound (0/1)
@@ -72,48 +376,12 @@ var SOCKET_DATA_ARRAY_IDX = 19;
 // [3]: Address family (AF_INET = 2, AF_INET6 = 10)
 // [4-7]: Address
 // [8]: worker role (0 = unknown, 1 = client, 2 = server) - external (=3) worker role is not used with socket entries
-var SOCKET_DATA_FD_IDX = 0;
-var SOCKET_DATA_BOUND_IDX = 1;
-var SOCKET_DATA_PORT_IDX = 2;
-var SOCKET_DATA_ADDRESS_FAMILY_IDX = 3;
-var SOCKET_DATA_ADDRESS_IDX = 4;
-var SOCKET_DATA_WORKER_ROLE_IDX = 8;
-
-// [37-39]: reserved
-
-// Packets
-// Packet entry layout (in Int32 units):
-// [0]: dest address family
-// [1-4]: dest address
-// [5]: dest port
-// [6]: src address family
-// [7-10]: src address
-// [11]: src port
-// [12]: data length
-// [13-14]: packet creation time (milliseconds)
-// [15-142]: packet data (up to 512 bytes = 128 Int32s)
-var PACKET_DATA_DEST_ADDRESS_FAMILY_IDX = 0;
-var PACKET_DATA_DEST_ADDRESS_IDX = 1; // 4 Int32s
-var PACKET_DATA_DEST_PORT_IDX = 5;
-var PACKET_DATA_SRC_ADDRESS_FAMILY_IDX = 6;
-var PACKET_DATA_SRC_ADDRESS_IDX = 7; // 4 Int32s
-var PACKET_DATA_SRC_PORT_IDX = 11;
-var PACKET_DATA_DATA_LENGTH_IDX = 12;
-var PACKET_DATA_CREATION_TIME_IDX = 13; // 1 Float64
-var PACKET_DATA_DATA_IDX = 15;
-
-var MAX_PACKET_DATA_SIZE_UINT8 = 512;
-var MAX_PACKET_SIZE_INT32 = 143;
-
-var TOTAL_BUFFER_SIZE_INT32 = (SHARED_MEMORY_SIZE / 4) - TOTAL_RESERVED_SLOTS;
-var PER_SEGMENT_SIZE_PACKETS = Math.floor(Math.floor(TOTAL_BUFFER_SIZE_INT32 / 6) / MAX_PACKET_SIZE_INT32); // six segments
-var PER_SEGMENT_SIZE_INT32 = PER_SEGMENT_SIZE_PACKETS * MAX_PACKET_SIZE_INT32;
-var CLIENT_TO_SERVER_OFFSET = TOTAL_RESERVED_SLOTS;
-var SERVER_TO_CLIENT_OFFSET = CLIENT_TO_SERVER_OFFSET + PER_SEGMENT_SIZE_INT32;
-var EXTERNAL_TO_SERVER_OFFSET = SERVER_TO_CLIENT_OFFSET + PER_SEGMENT_SIZE_INT32;
-var SERVER_TO_EXTERNAL_OFFSET = EXTERNAL_TO_SERVER_OFFSET + PER_SEGMENT_SIZE_INT32;
-var EXTERNAL_TO_CLIENT_OFFSET = SERVER_TO_EXTERNAL_OFFSET + PER_SEGMENT_SIZE_INT32;
-var CLIENT_TO_EXTERNAL_OFFSET = EXTERNAL_TO_CLIENT_OFFSET + PER_SEGMENT_SIZE_INT32;
+const SOCKET_DATA_FD_IDX = 0;
+const SOCKET_DATA_BOUND_IDX = 1;
+const SOCKET_DATA_PORT_IDX = 2;
+const SOCKET_DATA_ADDRESS_FAMILY_IDX = 3;
+const SOCKET_DATA_ADDRESS_IDX = 4;
+const SOCKET_DATA_WORKER_ROLE_IDX = 8;
 
 // Use the shared buffer created in pre.js (on main thread before workers started)
 // Note: We access this lazily because workers may load this file before the buffer is visible
@@ -124,6 +392,13 @@ var sharedInt32 = null;
 var sharedUint8 = null;
 /** @type {DataView} */
 var sharedDataView = null;
+
+/** @type {SharedPacketBuffer} */
+var clientPacketBuffer = null;
+/** @type {SharedPacketBuffer} */
+var serverPacketBuffer = null;
+/** @type {SharedPacketBuffer} */
+var externalPacketBuffer = null;
 
 var ipv4LocalStaticAddress = new Uint8Array([127, 0, 0, 1]);
 var ipv6LocalStaticAddress = new Uint8Array(16).fill(0);
@@ -137,6 +412,10 @@ function initSharedNetworkBuffer() {
     sharedInt32 = new Int32Array(self._luantiSocketSharedBuffer);
     sharedUint8= new Uint8Array(self._luantiSocketSharedBuffer);
     sharedDataView = new DataView(self._luantiSocketSharedBuffer);
+
+    clientPacketBuffer = new SharedPacketBuffer(self._luantiSocketSharedBuffer, GLOBAL_METADATA_SIZE);
+    serverPacketBuffer = new SharedPacketBuffer(self._luantiSocketSharedBuffer, GLOBAL_METADATA_SIZE + SEGMENT_SIZE);
+    externalPacketBuffer = new SharedPacketBuffer(self._luantiSocketSharedBuffer, GLOBAL_METADATA_SIZE + (SEGMENT_SIZE * 2));
 }
 
 /**
@@ -178,103 +457,33 @@ function isAddressLocal(addr) {
  * @returns {boolean} true on success, false on error
  */
 function luantiProxyWritePacket(workerRole, destAddr, destPort, srcAddr, srcPort, data) {
-    var ringBufferOffset = 0;
-    var writeIdxPos = 0;
-    var readIdxPos = 0;
-    var doorbellPos = 0;
     if (workerRole === WORKER_ROLE_CLIENT) {
         if (isAddressLocal(destAddr)) {
             // client to server
-            ringBufferOffset = CLIENT_TO_SERVER_OFFSET;
-            writeIdxPos = CLIENT_TO_SERVER_WRITE_IDX;
-            readIdxPos = CLIENT_TO_SERVER_READ_IDX;
-            doorbellPos = DOORBELL_SERVER_IDX;
+            return serverPacketBuffer.writePacket(destAddr, destPort, srcAddr, srcPort, data);
         } else {
             // client to external
-            ringBufferOffset = CLIENT_TO_EXTERNAL_OFFSET;
-            writeIdxPos = CLIENT_TO_EXTERNAL_WRITE_IDX;
-            readIdxPos = CLIENT_TO_EXTERNAL_READ_IDX;
-            doorbellPos = DOORBELL_EXTERNAL_IDX;
+            return externalPacketBuffer.writePacket(destAddr, destPort, srcAddr, srcPort, data);
         }
     } else if (workerRole === WORKER_ROLE_SERVER) {
         if (isAddressLocal(destAddr)) {
             // server to client
-            ringBufferOffset = SERVER_TO_CLIENT_OFFSET;
-            writeIdxPos = SERVER_TO_CLIENT_WRITE_IDX;
-            readIdxPos = SERVER_TO_CLIENT_READ_IDX;
-            doorbellPos = DOORBELL_CLIENT_IDX;
+            return clientPacketBuffer.writePacket(destAddr, destPort, srcAddr, srcPort, data);
         } else {
             // server to external
-            ringBufferOffset = SERVER_TO_EXTERNAL_OFFSET;
-            writeIdxPos = SERVER_TO_EXTERNAL_WRITE_IDX;
-            readIdxPos = SERVER_TO_EXTERNAL_READ_IDX;
-            doorbellPos = DOORBELL_EXTERNAL_IDX;
+            return externalPacketBuffer.writePacket(destAddr, destPort, srcAddr, srcPort, data);
         }
     } else if (workerRole === WORKER_ROLE_EXTERNAL) {
         if (Atomics.load(sharedInt32, IS_SERVER_RUNNING_IDX) === 1) {
             // external to server
-            ringBufferOffset = EXTERNAL_TO_SERVER_OFFSET;
-            writeIdxPos = EXTERNAL_TO_SERVER_WRITE_IDX;
-            readIdxPos = EXTERNAL_TO_SERVER_READ_IDX;
-            doorbellPos = DOORBELL_SERVER_IDX;
+            return serverPacketBuffer.writePacket(destAddr, destPort, srcAddr, srcPort, data);
         } else {
             // external to client
-            ringBufferOffset = EXTERNAL_TO_CLIENT_OFFSET;
-            writeIdxPos = EXTERNAL_TO_CLIENT_WRITE_IDX;
-            readIdxPos = EXTERNAL_TO_CLIENT_READ_IDX;
-            doorbellPos = DOORBELL_CLIENT_IDX;
+            return clientPacketBuffer.writePacket(destAddr, destPort, srcAddr, srcPort, data);
         }
     } else {
         throw new Error('Invalid worker role');
     }
-
-    if (data.length > MAX_PACKET_DATA_SIZE_UINT8) {
-        console.error(`[SocketProxyShared] Packet data length exceeds max size: ${data.length} > ${MAX_PACKET_DATA_SIZE_UINT8}, dropping packet (Worker Role: ${workerRole})!`);
-        return false;
-    }
-
-    var loadedWriteIdx = Atomics.load(sharedInt32, writeIdxPos);
-    var writeOffset = ringBufferOffset + loadedWriteIdx;
-    if (destAddr.length === 16) {
-        sharedInt32[writeOffset + PACKET_DATA_DEST_ADDRESS_FAMILY_IDX] = AF_INET6;
-    }
-    else if (destAddr.length === 4) {
-        sharedInt32[writeOffset + PACKET_DATA_DEST_ADDRESS_FAMILY_IDX] = AF_INET;
-    }
-    else {
-        throw new Error('[SocketProxyShared] Invalid destination address length: ' + destAddr.length);
-    }
-    if (srcAddr.length === 16) {
-        sharedInt32[writeOffset + PACKET_DATA_SRC_ADDRESS_FAMILY_IDX] = AF_INET6;
-    }
-    else if (srcAddr.length === 4) {
-        sharedInt32[writeOffset + PACKET_DATA_SRC_ADDRESS_FAMILY_IDX] = AF_INET;
-    }
-    else {
-        throw new Error('[SocketProxyShared] Invalid source address length: ' + srcAddr.length);
-    }
-    sharedUint8.set(destAddr, (writeOffset + PACKET_DATA_DEST_ADDRESS_IDX) * 4);
-    sharedInt32[writeOffset + PACKET_DATA_DEST_PORT_IDX] = destPort;
-    sharedUint8.set(srcAddr, (writeOffset + PACKET_DATA_SRC_ADDRESS_IDX) * 4);
-    sharedInt32[writeOffset + PACKET_DATA_SRC_PORT_IDX] = srcPort;
-    sharedInt32[writeOffset + PACKET_DATA_DATA_LENGTH_IDX] = data.length;
-    sharedDataView.setFloat64((writeOffset + PACKET_DATA_CREATION_TIME_IDX) * 4, Date.now(), true); // 8 bytes per Float64
-    sharedUint8.set(data, (writeOffset + PACKET_DATA_DATA_IDX) * 4); // 4 bytes per Int32
-
-    // console.log('[SocketProxyShared] writePacket: wrote packet to ring buffer, destAddr=' + destAddr.join(',') + ', writeOffset=' + writeOffset + ', data.length=' + data.length + ' (Worker Role: ' + workerRole + ')');
-
-    // Update write index
-    var newWriteIdx = (loadedWriteIdx + MAX_PACKET_SIZE_INT32) % PER_SEGMENT_SIZE_INT32;
-    var loadedReadIdx = Atomics.load(sharedInt32, readIdxPos);
-    if (newWriteIdx === loadedReadIdx) {
-        console.warn(`[SocketProxyShared] Warning: Packet buffer full, dropping packet (Worker Role: ${workerRole}), writeIdxPos=${writeIdxPos}, readIdxPos=${readIdxPos}, doorbellPos=${doorbellPos}, newWriteIdx=${newWriteIdx}, loadedReadIdx=${loadedReadIdx}, writeOffset=${writeOffset}`);
-        return false;
-    }
-
-    Atomics.store(sharedInt32, writeIdxPos, newWriteIdx);
-    Atomics.store(sharedInt32, doorbellPos, 1);
-    Atomics.notify(sharedInt32, doorbellPos, 1);
-    return true;
 }
 
 /**
@@ -289,153 +498,16 @@ function luantiProxyWritePacket(workerRole, destAddr, destPort, srcAddr, srcPort
  * @param {number} timeoutMs - Timeout in milliseconds
  * @returns {{length: number, srcFamily: number, srcPort: number, destFamily: number, destPort: number} | null} Data read from packet or null if no packet found
  */
-function luantiProxyReadPacket(workerRole, dataBuffer, destAddressBuffer, srcAddressBuffer, maxLen, readerFamily, timeoutMs) {
-    var ringBufferOffset = 0;
-    var readPos = 0;
-    var readIdxPos = 0;
-
-    var READ_IDX_1 = 0;
-    var READ_IDX_2 = 0;
-    var WRITE_IDX_1 = 0;
-    var WRITE_IDX_2 = 0;
-    var OFFSET_1 = 0;
-    var OFFSET_2 = 0;
-    var DOORBELL_POS = 0;
-    
+function luantiProxyReadPacket(workerRole, dataBuffer, destAddressBuffer, srcAddressBuffer, maxLen, timeoutMs) {
     if (workerRole === WORKER_ROLE_CLIENT) {
-        READ_IDX_1 = SERVER_TO_CLIENT_READ_IDX;
-        READ_IDX_2 = EXTERNAL_TO_CLIENT_READ_IDX;
-        WRITE_IDX_1 = SERVER_TO_CLIENT_WRITE_IDX;
-        WRITE_IDX_2 = EXTERNAL_TO_CLIENT_WRITE_IDX;
-        OFFSET_1 = SERVER_TO_CLIENT_OFFSET;
-        OFFSET_2 = EXTERNAL_TO_CLIENT_OFFSET;
-        DOORBELL_POS = DOORBELL_CLIENT_IDX;
+        return clientPacketBuffer.readPacket(dataBuffer, destAddressBuffer, srcAddressBuffer, maxLen, timeoutMs);
     } else if (workerRole === WORKER_ROLE_SERVER) {
-        READ_IDX_1 = CLIENT_TO_SERVER_READ_IDX;
-        READ_IDX_2 = EXTERNAL_TO_SERVER_READ_IDX;
-        WRITE_IDX_1 = CLIENT_TO_SERVER_WRITE_IDX;
-        WRITE_IDX_2 = EXTERNAL_TO_SERVER_WRITE_IDX;
-        OFFSET_1 = CLIENT_TO_SERVER_OFFSET;
-        OFFSET_2 = EXTERNAL_TO_SERVER_OFFSET;
-        DOORBELL_POS = DOORBELL_SERVER_IDX;
+        return serverPacketBuffer.readPacket(dataBuffer, destAddressBuffer, srcAddressBuffer, maxLen, timeoutMs);
     } else if (workerRole === WORKER_ROLE_EXTERNAL) {
-        READ_IDX_1 = CLIENT_TO_EXTERNAL_READ_IDX;
-        READ_IDX_2 = SERVER_TO_EXTERNAL_READ_IDX;
-        WRITE_IDX_1 = CLIENT_TO_EXTERNAL_WRITE_IDX;
-        WRITE_IDX_2 = SERVER_TO_EXTERNAL_WRITE_IDX;
-        OFFSET_1 = CLIENT_TO_EXTERNAL_OFFSET;
-        OFFSET_2 = SERVER_TO_EXTERNAL_OFFSET;
-        DOORBELL_POS = DOORBELL_EXTERNAL_IDX;
+        return externalPacketBuffer.readPacket(dataBuffer, destAddressBuffer, srcAddressBuffer, maxLen, timeoutMs);
     } else {
         throw new Error('Invalid worker role');
     }
-    
-    var waited = false;
-    while (true) {
-        Atomics.store(sharedInt32, DOORBELL_POS, 0);
-        var readPos1 = Atomics.load(sharedInt32, READ_IDX_1);
-        var writePos1 = Atomics.load(sharedInt32, WRITE_IDX_1);
-        var readPos2 = Atomics.load(sharedInt32, READ_IDX_2);
-        var writePos2 = Atomics.load(sharedInt32, WRITE_IDX_2);
-        var creationTime1 = Infinity;
-        var creationTime2 = Infinity;
-        var creationTime = 0;
-
-        if (readPos1 !== writePos1) {
-            var readOffset = OFFSET_1 + readPos1;
-            creationTime1 = sharedDataView.getFloat64((readOffset + PACKET_DATA_CREATION_TIME_IDX) * 4, true);
-        }
-        if (readPos2 !== writePos2) {
-            var readOffset = OFFSET_2 + readPos2;
-            creationTime2 = sharedDataView.getFloat64((readOffset + PACKET_DATA_CREATION_TIME_IDX) * 4, true);
-        }
-        if (creationTime1 < creationTime2) {
-            ringBufferOffset = OFFSET_1;
-            readIdxPos = READ_IDX_1;
-            readPos = readPos1;
-            creationTime = creationTime1;
-            break;
-        } else if (creationTime2 < creationTime1 || creationTime2 < Infinity) {
-            ringBufferOffset = OFFSET_2;
-            readIdxPos = READ_IDX_2;
-            readPos = readPos2;
-            creationTime = creationTime2;
-            break;
-        } else if (!waited && timeoutMs > 0) {
-            var result = Atomics.wait(sharedInt32, DOORBELL_POS, 0, timeoutMs);
-            if (result === 'timed-out') {
-                return null;
-            }
-            Atomics.store(sharedInt32, DOORBELL_POS, 0);
-            waited = true;
-        }
-        else {
-            return null;
-        }
-    }
-
-    var readOffset = ringBufferOffset + readPos;
-    // Found matching packet
-    
-    // Read destination address
-    var destAddrFamily = sharedInt32[readOffset + PACKET_DATA_DEST_ADDRESS_FAMILY_IDX];
-    var destAddrOffsetBytes = (readOffset + PACKET_DATA_DEST_ADDRESS_IDX) * 4;
-    destAddressBuffer.set(sharedUint8.subarray(destAddrOffsetBytes, destAddrOffsetBytes + 16));
-    var destPort = sharedInt32[readOffset + PACKET_DATA_DEST_PORT_IDX];
-    
-    // Read source address
-    var srcAddrFamily = sharedInt32[readOffset + PACKET_DATA_SRC_ADDRESS_FAMILY_IDX];
-    var addrOffsetBytes = (readOffset + PACKET_DATA_SRC_ADDRESS_IDX) * 4;
-    // For local address, convert to reader family if needed
-    if (srcAddrFamily === AF_INET6) {
-        var srcAddrBytes = sharedUint8.subarray(addrOffsetBytes, addrOffsetBytes + 16);
-        if (readerFamily === AF_INET) {
-            if (isAddressLocal(srcAddrBytes)) {
-                srcAddrFamily = AF_INET;
-                srcAddrBytes = ipv4LocalStaticAddress;
-            }
-            else {
-                throw new Error('[SocketProxyShared] Invalid source address and family mismatch: ' + srcAddrBytes.join(','));
-            }
-        }
-        srcAddressBuffer.set(srcAddrBytes);
-    }
-    else if (srcAddrFamily === AF_INET) {
-        var srcAddrBytes = sharedUint8.subarray(addrOffsetBytes, addrOffsetBytes + 4);
-        if (readerFamily === AF_INET6) {
-            if (isAddressLocal(srcAddrBytes)) {
-                srcAddrFamily = AF_INET6;
-                srcAddrBytes = ipv6LocalStaticAddress;
-            }
-            else {
-                throw new Error('[SocketProxyShared] Invalid source address and family mismatch: ' + srcAddrBytes.join(','));
-            }
-        }
-        srcAddressBuffer.set(srcAddrBytes);
-    }
-    else {
-        throw new Error('[SocketProxyShared] Invalid source address family: ' + srcAddrFamily);
-    }
-    var srcPort = sharedInt32[readOffset + PACKET_DATA_SRC_PORT_IDX];
-    var dataLen = sharedInt32[readOffset + PACKET_DATA_DATA_LENGTH_IDX];
-    
-    // Read packet data
-    var copyLen = Math.min(dataLen, maxLen);
-    var dataOffsetBytes = (readOffset + PACKET_DATA_DATA_IDX) * 4;
-    dataBuffer.set(sharedUint8.subarray(dataOffsetBytes, dataOffsetBytes + copyLen));
-
-    // Advance read index
-    var newReadIdx = (readPos + MAX_PACKET_SIZE_INT32) % PER_SEGMENT_SIZE_INT32;
-    Atomics.store(sharedInt32, readIdxPos, newReadIdx);
-    
-    return {
-        length: copyLen,
-        srcFamily: srcAddrFamily,
-        srcPort: srcPort,
-        destFamily: destAddrFamily,
-        destPort: destPort,
-        creationTime: creationTime,
-    };
 }
 
 /**
@@ -825,10 +897,36 @@ var SocketProxy = {
                 }
             }
         }
-        var family = sharedInt32[this.socketDataIdx + SOCKET_DATA_ADDRESS_FAMILY_IDX];
+        var readerFamily = sharedInt32[this.socketDataIdx + SOCKET_DATA_ADDRESS_FAMILY_IDX];
 
         // Read packet from shared ring buffer
-        return luantiProxyReadPacket(workerRole, dataBuffer, destAddressBuffer, srcAddressBuffer, maxLen, family, timeoutMs);
+        const result = luantiProxyReadPacket(workerRole, dataBuffer, destAddressBuffer, srcAddressBuffer, maxLen, timeoutMs);
+
+        if (result === null) {
+            return null;
+        }
+
+        // For local address, convert to reader family if needed
+        if (readerFamily === AF_INET && result.srcFamily === AF_INET6) {
+            if (isAddressLocal(srcAddressBuffer.subarray(0, 16))) {
+                result.srcFamily = AF_INET;
+                srcAddressBuffer.set(ipv4LocalStaticAddress, 0);
+            }
+            else {
+                throw new Error('[SocketProxyShared] Invalid source address and family mismatch: ' + result.srcAddress.join(','));
+            }
+        }
+        else if (readerFamily === AF_INET6 && result.srcFamily === AF_INET) {
+            if (isAddressLocal(srcAddressBuffer.subarray(0, 4))) {
+                result.srcFamily = AF_INET6;
+                srcAddressBuffer.set(ipv6LocalStaticAddress, 0);
+            }
+            else {
+                throw new Error('[SocketProxyShared] Invalid source address and family mismatch: ' + result.srcAddress.join(','));
+            }
+        }
+
+        return result;
     },
 
     /**
@@ -872,10 +970,7 @@ var SocketProxy = {
                     Atomics.store(sharedInt32, IS_SERVER_RUNNING_IDX, 0);
                     break;
                 case WORKER_ROLE_EXTERNAL:
-                    Atomics.store(sharedInt32, EXTERNAL_TO_CLIENT_READ_IDX, 0);
-                    Atomics.store(sharedInt32, EXTERNAL_TO_CLIENT_WRITE_IDX, 0);
-                    Atomics.store(sharedInt32, EXTERNAL_TO_SERVER_READ_IDX, 0);
-                    Atomics.store(sharedInt32, EXTERNAL_TO_SERVER_WRITE_IDX, 0);
+                    console.warn('[SocketProxyShared] close: External worker role not supported');
                     break;
                 default:
                     console.warn('[SocketProxyShared] close: Invalid worker role "unknown", fd=' + fd)
