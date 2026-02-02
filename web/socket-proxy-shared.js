@@ -36,21 +36,24 @@ const SHARED_MEMORY_SIZE = 8 * 1024 * 1024;
 const CACHE_LINE_SIZE = 64;
 const GLOBAL_METADATA_SIZE = 256;
 
-// reader memory
+// reader memory (cache line 0)
 const READ_IDX_PRIO_0 = 0;
 const READ_IDX_PRIO_1 = 4;
-// writer memory
-const WRITE_IDX_PRIO_0 = 8;
-const WRITE_IDX_PRIO_1 = 12;
-// doorbell memory
-const DOORBELL_IDX = 16;
+const READ_IDX_PRIO_2 = 8;
 // read lock
-const READ_LOCK_IDX = 20;
-// write lock
-const WRITE_LOCK_IDX = 24;
+const READ_LOCK_IDX = 12;
 
-// Metadata size per segment, reserved for READ_IDXs, WRITE_IDXs, and DOORBELL_IDX
-const SEGMENT_METADATA_SIZE = CACHE_LINE_SIZE;
+// writer memory (cache line 1)
+const WRITE_IDX_PRIO_0 = 64;
+const WRITE_IDX_PRIO_1 = 68;
+const WRITE_IDX_PRIO_2 = 72;
+// write lock
+const WRITE_LOCK_IDX = 76;
+// doorbell memory (in writer cache line)
+const DOORBELL_IDX = 80;
+
+// Metadata size per segment, reserved for READ_IDXs, WRITE_IDXs, LOCKS and DOORBELL_IDX
+const SEGMENT_METADATA_SIZE = CACHE_LINE_SIZE * 2;
 
 // ===== PACKET BUFFER =====
 // Per packet: 512 bytes of payload data + 64 bytes reserved for packet metadata
@@ -60,23 +63,26 @@ const PACKET_SLOT_SIZE = 512 + 64;
 // There are 3 segments in the shared memory buffer, each with 2 prio buffers.
 // Each prio buffer contains prioritized packets for each priority level.
 
+const _NUM_SEGMENTS = 3;
+const _NUM_PRIO_BUFFERS = 3;
 // Reserve 256 bytes for globals, and (3 * SEGMENT_METADATA_SIZE) for per-segment metadata
-const _MAX_BYTES_ALL_SEGMENTS = SHARED_MEMORY_SIZE - GLOBAL_METADATA_SIZE - (3 * SEGMENT_METADATA_SIZE);
+const _MAX_BYTES_ALL_SEGMENTS = SHARED_MEMORY_SIZE - GLOBAL_METADATA_SIZE;
 // Calculate max bytes per segment (for 3 segments)
-const _MAX_BYTES_PER_SEGMENT = Math.floor(_MAX_BYTES_ALL_SEGMENTS / 3);
-// Calculate max bytes per prio buffer (for 2 prio buffers per segment)
-const _MAX_BYTES_PER_PRIO_BUFFER = Math.floor(_MAX_BYTES_PER_SEGMENT / 2);
-// Calculate number of packets per prio buffer (2 prio buffers per segment).
+const _MAX_BYTES_PER_SEGMENT = Math.floor(_MAX_BYTES_ALL_SEGMENTS / _NUM_SEGMENTS);
+// Calculate max bytes per prio buffer (for 3 prio buffers per segment)
+const _MAX_BYTES_PER_PRIO_BUFFER = Math.floor((_MAX_BYTES_PER_SEGMENT - SEGMENT_METADATA_SIZE) / _NUM_PRIO_BUFFERS);
+// Calculate number of packets per prio buffer (3 prio buffers per segment).
 // Prio buffers contain prioritized packets for each priority level.
 const PACKETS_PER_PRIO_BUFFER = Math.floor(_MAX_BYTES_PER_PRIO_BUFFER / PACKET_SLOT_SIZE);
 // Calculate segment bytes size
 const PRIO_BUFFER_SIZE = PACKETS_PER_PRIO_BUFFER * PACKET_SLOT_SIZE;
-const SEGMENT_SIZE = (PRIO_BUFFER_SIZE * 2) + SEGMENT_METADATA_SIZE;
+const SEGMENT_SIZE = (PRIO_BUFFER_SIZE * _NUM_PRIO_BUFFERS) + SEGMENT_METADATA_SIZE;
 
 // ===== PRIO BUFFERS =====
-// packet data memory: 2 prio buffers per segment
+// packet data memory: 3 prio buffers per segment
 const DATA_OFFSET_PRIO_0 = SEGMENT_METADATA_SIZE;
 const DATA_OFFSET_PRIO_1 = DATA_OFFSET_PRIO_0 + PRIO_BUFFER_SIZE;
+const DATA_OFFSET_PRIO_2 = DATA_OFFSET_PRIO_1 + PRIO_BUFFER_SIZE;
 
 // ===== PACKET MEMORY LAYOUT =====
 // Packet entry layout (in bytes offsets):
@@ -138,6 +144,7 @@ class SharedPacketBuffer {
 
         // Define variables
         let i = 0;
+        /** @type {0 | 1 | 2} */
         let prio = 0;
         let readIdx = 0;
         let writeIdx = 0;
@@ -165,10 +172,14 @@ class SharedPacketBuffer {
             readIdx = Atomics.load(i32, READ_IDX_PRIO_0 >> 2);
             writeIdx = Atomics.load(i32, WRITE_IDX_PRIO_0 >> 2);
             dataOffset = DATA_OFFSET_PRIO_0;
-        } else {
+        } else if (prio === 1) {
             readIdx = Atomics.load(i32, READ_IDX_PRIO_1 >> 2);
             writeIdx = Atomics.load(i32, WRITE_IDX_PRIO_1 >> 2);
             dataOffset = DATA_OFFSET_PRIO_1;
+        } else {
+            readIdx = Atomics.load(i32, READ_IDX_PRIO_2 >> 2);
+            writeIdx = Atomics.load(i32, WRITE_IDX_PRIO_2 >> 2);
+            dataOffset = DATA_OFFSET_PRIO_2;
         }
         
         const writeOffset = dataOffset + (writeIdx * PACKET_SLOT_SIZE);
@@ -194,8 +205,10 @@ class SharedPacketBuffer {
         }
         if (prio === 0) {
             Atomics.store(i32, WRITE_IDX_PRIO_0 >> 2, writeIdx);
-        } else {
+        } else if (prio === 1) {
             Atomics.store(i32, WRITE_IDX_PRIO_1 >> 2, writeIdx);
+        } else {
+            Atomics.store(i32, WRITE_IDX_PRIO_2 >> 2, writeIdx);
         }
         // Release write lock
         Atomics.store(i32, WRITE_LOCK_IDX >> 2, 0);
@@ -242,32 +255,43 @@ class SharedPacketBuffer {
         }
 
         while (true) {
-            const doorbellCount = Atomics.load(i32, DOORBELL_IDX >> 2);
+            const doorbellCounter = Atomics.load(i32, DOORBELL_IDX >> 2);
             readIdx = Atomics.load(i32, READ_IDX_PRIO_0 >> 2);
             writeIdx = Atomics.load(i32, WRITE_IDX_PRIO_0 >> 2);
-            dataOffset = DATA_OFFSET_PRIO_0;
-            prio = 0;
             if (readIdx === writeIdx) {
                 // No packet available in prio_0, try prio_1
                 readIdx = Atomics.load(i32, READ_IDX_PRIO_1 >> 2);
                 writeIdx = Atomics.load(i32, WRITE_IDX_PRIO_1 >> 2);
-                dataOffset = DATA_OFFSET_PRIO_1;
-                prio = 1;
                 if (readIdx === writeIdx) {
-                    if (!waited && timeoutMs > 0) {
-                        const waitResult = Atomics.wait(i32, DOORBELL_IDX >> 2, doorbellCount, timeoutMs);
-                        if (waitResult === 'timed-out') {
-                            // Release read lock
-                            Atomics.store(i32, READ_LOCK_IDX >> 2, 0);
-                            return null;
+                    // No packet available in prio_1, try prio_2
+                    readIdx = Atomics.load(i32, READ_IDX_PRIO_2 >> 2);
+                    writeIdx = Atomics.load(i32, WRITE_IDX_PRIO_2 >> 2);
+                    if (readIdx === writeIdx) {
+                        // No packet available in any priority buffer, wait for a packet if timeout is set
+                        if (!waited && timeoutMs > 0) {
+                            const waitResult = Atomics.wait(i32, DOORBELL_IDX >> 2, doorbellCounter, timeoutMs);
+                            if (waitResult === 'timed-out') {
+                                // Release read lock
+                                Atomics.store(i32, READ_LOCK_IDX >> 2, 0);
+                                return null;
+                            }
+                            waited = true;
+                            continue;
                         }
-                        waited = true;
-                        continue;
+                        // Release read lock
+                        Atomics.store(i32, READ_LOCK_IDX >> 2, 0);
+                        return null;
+                    } else {
+                        dataOffset = DATA_OFFSET_PRIO_2;
+                        prio = 2;
                     }
-                    // Release read lock
-                    Atomics.store(i32, READ_LOCK_IDX >> 2, 0);
-                    return null;
+                } else {
+                    dataOffset = DATA_OFFSET_PRIO_1;
+                    prio = 1;
                 }
+            } else {
+                dataOffset = DATA_OFFSET_PRIO_0;
+                prio = 0;
             }
             // readIdx !== writeIdx, we have a packet
             break;
@@ -292,8 +316,10 @@ class SharedPacketBuffer {
         readIdx = (readIdx + 1) % PACKETS_PER_PRIO_BUFFER;
         if (prio === 0) {
             Atomics.store(i32, READ_IDX_PRIO_0 >> 2, readIdx);
-        } else {
+        } else if (prio === 1) {
             Atomics.store(i32, READ_IDX_PRIO_1 >> 2, readIdx);
+        } else {
+            Atomics.store(i32, READ_IDX_PRIO_2 >> 2, readIdx);
         }
 
         // Release read lock
@@ -313,34 +339,41 @@ class SharedPacketBuffer {
      * Reset buffer indices to 0
      */
     resetBuffer() {
-        // Try to acquire write lock for 100 ms. Writes don't wait atomic, so 100 ms is enough.
-        let start = Date.now();
-        while (Atomics.compareExchange(i32, WRITE_LOCK_IDX >> 2, 0, 1) !== 0) {
-            if (Date.now() - start > 100) {
-                console.warn('[SocketProxyShared] Failed to acquire write lock to reset buffer');
-                return false;
-            }
-        }
+        const i32 = this.i32;
 
         // Try to acquire read lock for 500 ms. Reads can wait atomic, so we need to wait for a while longer.
-        start = Date.now();
+        let start = Date.now();
         while (Atomics.compareExchange(i32, READ_LOCK_IDX >> 2, 0, 1) !== 0) {
             if (Date.now() - start > 500) {
                 console.warn('[SocketProxyShared] Failed to acquire read lock to reset buffer');
-                // Release write lock
-                Atomics.store(i32, WRITE_LOCK_IDX >> 2, 0);
                 return false;
             }
         }
 
+        // Try to acquire write lock for 100 ms. Writes don't wait atomic, so 100 ms is enough.
+        start = Date.now();
+        while (Atomics.compareExchange(i32, WRITE_LOCK_IDX >> 2, 0, 1) !== 0) {
+            if (Date.now() - start > 100) {
+                console.warn('[SocketProxyShared] Failed to acquire write lock to reset buffer');
+                // Release read lock
+                Atomics.store(i32, READ_LOCK_IDX >> 2, 0);
+                return false;
+            }
+        }
+
+        // Reset read and write indices for all priority buffers
         Atomics.store(i32, READ_IDX_PRIO_0 >> 2, 0);
         Atomics.store(i32, WRITE_IDX_PRIO_0 >> 2, 0);
         Atomics.store(i32, READ_IDX_PRIO_1 >> 2, 0);
         Atomics.store(i32, WRITE_IDX_PRIO_1 >> 2, 0);
-        // Release write lock
-        Atomics.store(i32, WRITE_LOCK_IDX >> 2, 0);
+        Atomics.store(i32, READ_IDX_PRIO_2 >> 2, 0);
+        Atomics.store(i32, WRITE_IDX_PRIO_2 >> 2, 0);
+
         // Release read lock
         Atomics.store(i32, READ_LOCK_IDX >> 2, 0);
+        // Release write lock
+        Atomics.store(i32, WRITE_LOCK_IDX >> 2, 0);
+
         return true;
     }
 }
@@ -349,26 +382,24 @@ const NOOP_INT32 = new Int32Array(new SharedArrayBuffer(4));
 
 const ADDRESS_NOT_SET = -1;
 const PORT_NOT_SET = -1;
-
-// Shared memory layout
 const MAX_SOCKETS = 2; // client and server slots
 const SOCKET_ENTRY_SIZE = 9; // 9 Int32s per socket entry
 
 // Indices for ring buffer implementation (int32 units)
-// [0-15]: doorbells and ring buffer indices
+// [0]: fd slot
 const SOCKET_FD_IDX = 0;
 
-// [16-17]: Server info flags
+// [1-3]: Server and client running flags
 const IS_SERVER_RUNNING_IDX = 1;
 const IS_SERVER_PUBLIC_IDX = 2;
+const IS_CLIENT_RUNNING_IDX = 3;
 
-// [18-33]: Sockets
-// [18]: socket management lock
-const MANAGE_SOCKET_LOCK_IDX = 3; // 0 = unlocked, 1 = locked
+// [4]: socket management lock
+const MANAGE_SOCKET_LOCK_IDX = 4; // 0 = unlocked, 1 = locked
 
-// [19-36]: two slots for socket management data (client and server slots)
-// [19] is the first free slot for socket management data
-const SOCKET_DATA_ARRAY_IDX = 4;
+// [5-22]: two slots for socket management data (client and server slots)
+// [5] is the first free slot for socket management data
+const SOCKET_DATA_ARRAY_IDX = 5;
 // Socket entry layout (in Int32 units):
 // [0]: fd (0 = not in use)
 // [1]: bound (0/1)
@@ -477,9 +508,12 @@ function luantiProxyWritePacket(workerRole, destAddr, destPort, srcAddr, srcPort
         if (Atomics.load(sharedInt32, IS_SERVER_RUNNING_IDX) === 1) {
             // external to server
             return serverPacketBuffer.writePacket(destAddr, destPort, srcAddr, srcPort, data);
-        } else {
+        } else if (Atomics.load(sharedInt32, IS_CLIENT_RUNNING_IDX) === 1) {
             // external to client
             return clientPacketBuffer.writePacket(destAddr, destPort, srcAddr, srcPort, data);
+        }
+        else {
+            return false;
         }
     } else {
         throw new Error('Invalid worker role');
@@ -573,13 +607,13 @@ function getSocketAddress(socketDataIdx) {
     var addr;
     if (addrFamily === AF_INET6) {
         addr = sharedUint8.subarray(
-            (socketDataIdx + SOCKET_DATA_ADDRESS_IDX) * 4,
-            (socketDataIdx + SOCKET_DATA_ADDRESS_IDX + 4) * 4);
+            (socketDataIdx + SOCKET_DATA_ADDRESS_IDX) << 2,
+            (socketDataIdx + SOCKET_DATA_ADDRESS_IDX + 4) << 2);
     }
     else if (addrFamily === AF_INET) {
         addr = sharedUint8.subarray(
-            (socketDataIdx + SOCKET_DATA_ADDRESS_IDX) * 4,
-            (socketDataIdx + SOCKET_DATA_ADDRESS_IDX + 1) * 4);
+            (socketDataIdx + SOCKET_DATA_ADDRESS_IDX) << 2,
+            (socketDataIdx + SOCKET_DATA_ADDRESS_IDX + 1) << 2);
     }
     else {
         throw new Error('[SocketProxyShared] Invalid source address family: ' + addrFamily);
@@ -721,6 +755,7 @@ var SocketProxy = {
             if (port === 0) {
                 // Port 0 means "assign any available port" for client workers - allocate an ephemeral port
                 Atomics.store(sharedInt32, this.socketDataIdx + SOCKET_DATA_WORKER_ROLE_IDX, WORKER_ROLE_CLIENT);
+                Atomics.store(sharedInt32, IS_CLIENT_RUNNING_IDX, 1);
                 port = this.randomPort(); // Use random ephemeral port
                 console.log('[SocketProxyShared] Port 0 requested, assigning ephemeral port ' + port);
             }
@@ -802,6 +837,7 @@ var SocketProxy = {
             }
             if (workerRole === WORKER_ROLE_UNKNOWN && autoBind) {
                 Atomics.store(sharedInt32, this.socketDataIdx + SOCKET_DATA_WORKER_ROLE_IDX, WORKER_ROLE_CLIENT);
+                Atomics.store(sharedInt32, IS_CLIENT_RUNNING_IDX, 1);
             }
 
             this.bound = bound;
@@ -956,18 +992,13 @@ var SocketProxy = {
 
             switch (sharedInt32[this.socketDataIdx + SOCKET_DATA_WORKER_ROLE_IDX]) {
                 case WORKER_ROLE_CLIENT:
-                    Atomics.store(sharedInt32, CLIENT_TO_SERVER_READ_IDX, 0);
-                    Atomics.store(sharedInt32, CLIENT_TO_SERVER_WRITE_IDX, 0);
-                    Atomics.store(sharedInt32, CLIENT_TO_EXTERNAL_READ_IDX, 0);
-                    Atomics.store(sharedInt32, CLIENT_TO_EXTERNAL_WRITE_IDX, 0);
+                    Atomics.store(sharedInt32, IS_CLIENT_RUNNING_IDX, 0);
+                    clientPacketBuffer.resetBuffer();
                     break;
                 case WORKER_ROLE_SERVER:
-                    Atomics.store(sharedInt32, SERVER_TO_CLIENT_READ_IDX, 0);
-                    Atomics.store(sharedInt32, SERVER_TO_CLIENT_WRITE_IDX, 0);
-                    Atomics.store(sharedInt32, SERVER_TO_EXTERNAL_READ_IDX, 0);
-                    Atomics.store(sharedInt32, SERVER_TO_EXTERNAL_WRITE_IDX, 0);
                     Atomics.store(sharedInt32, IS_SERVER_PUBLIC_IDX, 0);
                     Atomics.store(sharedInt32, IS_SERVER_RUNNING_IDX, 0);
+                    serverPacketBuffer.resetBuffer();
                     break;
                 case WORKER_ROLE_EXTERNAL:
                     console.warn('[SocketProxyShared] close: External worker role not supported');
