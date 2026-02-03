@@ -97,6 +97,217 @@ const PACKET_SRC_ADDR_FAMILY_IDX = 47; // 1 byte [47]
 
 const PACKET_PAYLOAD_IDX = 64; // up to 512 bytes [64-..]
 
+// ===== PACKET PRIORITY CLASSIFICATION =====
+// Priority 0 (highest): ACKs, position updates, movement - latency critical
+// Priority 1 (medium): Interactive packets - inventory, mining, chat, HUD
+// Priority 2 (lowest): Bulk data - map chunks, media, definitions
+
+const PACKET_DEBUG_LOG = false;
+
+// Transport layer packet types (byte offset 7 after base header)
+const PACKET_TYPE_CONTROL = 0;
+const PACKET_TYPE_ORIGINAL = 1;
+const PACKET_TYPE_SPLIT = 2;
+const PACKET_TYPE_RELIABLE = 3;
+
+// Game command IDs - High priority (latency-critical, frequent updates)
+// Format: Set of u16 command IDs
+const HIGH_PRIORITY_COMMANDS = new Set([
+    // Client -> Server (TOSERVER_*)
+    0x23,  // TOSERVER_PLAYERPOS - player position (sent frequently, unreliable)
+    
+    // Server -> Client (TOCLIENT_*)
+    0x31,  // TOCLIENT_ACTIVE_OBJECT_REMOVE_ADD - entity spawn/despawn
+    0x32,  // TOCLIENT_ACTIVE_OBJECT_MESSAGES - entity movement updates
+    0x2B,  // TOCLIENT_PLAYER_SPEED - speed adjustments
+    0x34,  // TOCLIENT_MOVE_PLAYER - teleport player
+    0x5d,  // TOCLIENT_MOVE_PLAYER_REL - relative player movement
+]);
+
+// Game command IDs - Low priority (bulk data, can be delayed)
+const LOW_PRIORITY_COMMANDS = new Set([
+    // Server -> Client bulk data (TOCLIENT_*)
+    0x20,  // TOCLIENT_BLOCKDATA - map chunks (large, channel 2)
+    0x38,  // TOCLIENT_MEDIA - textures/sounds (large, channel 2)
+    0x3a,  // TOCLIENT_NODEDEF - node definitions (large, one-time)
+    0x3d,  // TOCLIENT_ITEMDEF - item definitions (large, one-time)
+    0x3c,  // TOCLIENT_ANNOUNCE_MEDIA - media list
+    
+    // Client -> Server bulk responses (TOSERVER_*)
+    0x24,  // TOSERVER_GOTBLOCKS - block acknowledgment (channel 2)
+    0x25,  // TOSERVER_DELETEDBLOCKS - block deletion (channel 2)
+    0x40,  // TOSERVER_REQUEST_MEDIA - media request
+    0x41,  // TOSERVER_HAVE_MEDIA - media acknowledgment
+    
+    // Visual effects (can be delayed)
+    0x46,  // TOCLIENT_SPAWN_PARTICLE
+    0x47,  // TOCLIENT_ADD_PARTICLESPAWNER
+    0x64,  // TOCLIENT_SPAWN_PARTICLE_BATCH
+    0x4f,  // TOCLIENT_SET_SKY
+    0x5a,  // TOCLIENT_SET_SUN
+    0x5b,  // TOCLIENT_SET_MOON
+    0x5c,  // TOCLIENT_SET_STARS
+    0x54,  // TOCLIENT_CLOUD_PARAMS
+    0x63,  // TOCLIENT_SET_LIGHTING
+]);
+
+/*
+Base packet:
+[0-3] protocol_id = 0x4f457403 (u32)
+[4-5] sender_peer_id = 0 (u16)
+[6] channel (u8)
+[7] packet_type (u8): 0=CONTROL, 1=ORIGINAL, 2=SPLIT, 3=RELIABLE
+
+Control packet (packet_type = 0):
+[8] control_type (u8) 0=ACK, 1=SET_PEER_ID, 2=PING, 3=DISCO
+(control_type == ACK) => [9-10] seqnum (u16)
+(control_type == SET_PEER_ID) => [9-10] peer_id_new (u16)
+(control_type == PING) => no payload
+(control_type == DISCO) => no payload
+
+Original packet (packet_type = 1):
+(end of header)
+
+Split packet (packet_type = 2):
+[8-9] seqnum (u16)
+[10-11] chunk_count (u16)
+[12-13] chunk_num (u16)
+[14+] data
+
+Reliable packet (packet_type = 3):
+[8-9] seqnum (u16)
+*/
+
+function logPacketDebug(payload) {
+    const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+    const chunks = [
+        'P=' + view.getUint16(4, false).toString(16),
+        'CH=' + view.getUint8(6).toString(16),
+    ];
+
+    let startByteLog = 0;
+    if (payload[7] === PACKET_TYPE_CONTROL) {
+        chunks.push('CONTROL');
+        chunks.push('CT=' + view.getUint8(8).toString(16) + ' | ');
+        startByteLog = 9;
+    } else if (payload[7] === PACKET_TYPE_ORIGINAL) {
+        chunks.push('ORIGINAL' + ' | ');
+        startByteLog = 8;
+    } else if (payload[7] === PACKET_TYPE_SPLIT) {
+        chunks.push('SPLIT');
+        chunks.push('SEQ=' + view.getUint16(8, false).toString(16));
+        chunks.push('CHC=' + view.getUint16(10, false).toString(16));
+        chunks.push('CHN=' + view.getUint16(12, false).toString(16) + ' | ');
+        startByteLog = 14;
+    } else if (payload[7] === PACKET_TYPE_RELIABLE) {
+        chunks.push('RELIABLE');
+        chunks.push('SEQ=' + view.getUint16(8, false).toString(16) + ' | ');
+        startByteLog = 10;
+    }
+    for (let i = startByteLog; i < Math.min(startByteLog + 8, payload.length); i++) {
+        const num = payload[i];
+        chunks.push(num < 16 ? '0' + num.toString(16) : num.toString(16));
+    }
+    if (payload.length >= startByteLog + 8) {
+        chunks.push('...');
+    }
+    chunks.push('L=' + payload.length);
+    console.log('[PACKET DEBUG] ' + chunks.join(' '));
+}
+
+/**
+ * Determine packet priority from raw UDP payload bytes.
+ * 
+ * Packet structure after 7-byte base header:
+ * - CONTROL (type=0):  [7]=type, [8]=controltype, [9-10]=data
+ * - ORIGINAL (type=1): [7]=type, [8-9]=command_u16, [10+]=payload
+ * - SPLIT (type=2):    [7]=type, [8-9]=seqnum, [10-11]=chunk_count, [12-13]=chunk_num, [14+]=data
+ * - RELIABLE (type=3): [7]=type, [8-9]=seqnum, [10+]=inner_packet
+ * 
+ * @param {Uint8Array} payload - Raw UDP packet payload
+ * @returns {0 | 1 | 2} Priority level (0=highest, 2=lowest)
+ */
+function getPacketPriority(payload) {
+    // Minimum packet size: BASE_HEADER(7) + type(1) = 8 bytes
+    if (payload.length < 8) {
+        return 1; // Default to medium for tiny/malformed packets
+    }
+
+    const packetType = payload[7];
+
+    // === FAST PATH 1: Control packets (ACKs, PINGs, DISCO) are highest priority ===
+    // These are essential for protocol health and connection management
+    if (packetType === PACKET_TYPE_CONTROL) {
+        return 0;
+    }
+
+    if (PACKET_DEBUG_LOG) {
+        logPacketDebug(payload);
+    }
+
+    const channel = payload[6];
+
+    // === FAST PATH 2: Channel 2 is designated for bulk data (maps, media) ===
+    if (channel === 2) {
+        return 2;
+    }
+
+    // === Extract command ID based on packet type ===
+    // Use DataView for reading multi-byte values with explicit endianness
+    // Note: payload may be a subarray, so we must use byteOffset
+    const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+    let commandId = -1;
+
+    if (packetType === PACKET_TYPE_ORIGINAL) {
+        // ORIGINAL packet: [7]=type(1), [8-9]=command_u16
+        // Minimum size: 7 (base) + 1 (type) + 2 (command) = 10 bytes
+        if (payload.length >= 10) {
+            // Luanti uses big-endian (network byte order)
+            commandId = view.getUint16(8, false); // false = big-endian
+        }
+    } 
+    else if (packetType === PACKET_TYPE_RELIABLE) {
+        // RELIABLE packet: [7]=type(3), [8-9]=seqnum, [10+]=inner_packet
+        // Minimum size to read inner type: 11 bytes
+        if (payload.length >= 11) {
+            const innerType = payload[10];
+            
+            if (innerType === PACKET_TYPE_ORIGINAL) {
+                // RELIABLE wrapping ORIGINAL: [10]=type(1), [11-12]=command_u16
+                // Minimum size: 7 + 1 + 2 + 1 + 2 = 13 bytes
+                if (payload.length >= 13) {
+                    commandId = view.getUint16(11, false); // false = big-endian
+                }
+            }
+            // SPLIT packets inside RELIABLE need reassembly - use default
+            // Unknown inner types also use default
+        }
+    }
+    // SPLIT packets at top level: can't determine command without reassembly
+    // Use channel-based default (already handled channel 2 above)
+
+    // === Command-based priority lookup ===
+    if (commandId !== -1) {
+        if (HIGH_PRIORITY_COMMANDS.has(commandId)) {
+            return 0;
+        }
+        if (LOW_PRIORITY_COMMANDS.has(commandId)) {
+            return 2;
+        }
+    }
+
+    // Default: medium priority (interactive packets like inventory, chat, HUD, etc.)
+    return 1;
+}
+
+// const writeStats = [0, 0, 0];
+
+// setInterval(() => {
+//     if (writeStats[0] > 0 || writeStats[1] > 0 || writeStats[2] > 0) {
+//         console.log('[SocketProxyShared] Write stats: 0:', writeStats[0], ' 1:', writeStats[1], ' 2:', writeStats[2]);
+//     }
+// }, 1000);
+
 class SharedPacketBuffer {
     constructor(buffer, offset) {
         if (!(buffer instanceof SharedArrayBuffer)) {
@@ -150,12 +361,9 @@ class SharedPacketBuffer {
         let writeIdx = 0;
         let dataOffset = 0;
 
-        // Detect packet priority with deep packet inspection
-        // TODO: Improve this with better packet inspection
-        const protocolHeader = payload[7];
-        if (protocolHeader !== 0) {
-            prio = 1;
-        }
+        // Detect packet priority using deep packet inspection
+        prio = getPacketPriority(payload);
+        // writeStats[prio]++;
 
         // Acquire write lock
         while (Atomics.compareExchange(i32, WRITE_LOCK_IDX >> 2, 0, 1) !== 0) {
