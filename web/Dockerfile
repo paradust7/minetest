@@ -6,10 +6,10 @@
 #
 # Then use with build-with-docker.sh script
 
-FROM emscripten/emsdk:4.0.22
+FROM emscripten/emsdk:5.0.0
 
 LABEL description="Luanti web build environment with Emscripten and Ninja"
-LABEL maintainer="Luanti contributors"
+LABEL maintainer="Jan Hangebrauck"
 
 # Install ninja-build for faster compilation
 # The emscripten image already has: cmake, python3, node, git, make
@@ -25,7 +25,13 @@ RUN apt-get update && \
 RUN wget -q https://github.com/facebook/zstd/releases/download/v1.5.6/zstd-1.5.6.tar.gz && \
     tar -xzf zstd-1.5.6.tar.gz && \
     cd zstd-1.5.6/lib && \
-    emmake make -j$(nproc) CC=emcc AR=emar CFLAGS="-O3 -pthread -fwasm-exceptions" libzstd.a && \
+    emmake make \
+        -j$(nproc) \
+        CC=emcc \
+        AR=emar \
+        CFLAGS="-O3 -pthread -fwasm-exceptions -flto" \
+        CXXFLAGS="-O3 -pthread -fwasm-exceptions -flto" \
+        libzstd.a && \
     mkdir -p /usr/local/include && \
     mkdir -p /usr/local/lib && \
     cp libzstd.a /usr/local/lib/ && \
@@ -41,8 +47,8 @@ RUN wget -q https://github.com/libspatialindex/libspatialindex/releases/download
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/usr/local \
         -DBUILD_SHARED_LIBS=OFF \
-        -DCMAKE_CXX_FLAGS="-O3 -pthread -fwasm-exceptions" \
-        -DCMAKE_C_FLAGS="-O3 -pthread -fwasm-exceptions" && \
+        -DCMAKE_CXX_FLAGS="-O3 -pthread -fwasm-exceptions -flto" \
+        -DCMAKE_C_FLAGS="-O3 -pthread -fwasm-exceptions -flto" && \
     emmake make -j$(nproc) install && \
     cd ../.. && \
     rm -rf spatialindex-src-2.1.0 spatialindex-src-2.1.0.tar.gz
@@ -85,7 +91,6 @@ RUN echo 'int main(){}' > /tmp/prebuild.c && \
         -fwasm-exceptions \
         -pthread \
         -flto \
-        -sSUPPORT_LONGJMP=wasm \
         -sUSE_SDL=2 \
         -sUSE_ZLIB=1 \
         -sUSE_LIBPNG=1 \
@@ -103,7 +108,6 @@ RUN echo 'int main(){}' > /tmp/prebuild.c && \
         -fwasm-exceptions \
         -pthread \
         -flto=thin \
-        -sSUPPORT_LONGJMP=wasm \
         -sUSE_SDL=2 \
         -sUSE_ZLIB=1 \
         -sUSE_LIBPNG=1 \
@@ -120,7 +124,6 @@ RUN echo 'int main(){}' > /tmp/prebuild.c && \
     emcc /tmp/prebuild.c -o /tmp/prebuild.html \
         -fwasm-exceptions \
         -pthread \
-        -sSUPPORT_LONGJMP=wasm \
         -sUSE_SDL=2 \
         -sUSE_ZLIB=1 \
         -sUSE_LIBPNG=1 \

@@ -192,7 +192,6 @@ set(EMSCRIPTEN_FINAL_EXE_FLAGS
     "--shell-file=${CMAKE_SOURCE_DIR}/web/shell.html"
     "--pre-js=${CMAKE_SOURCE_DIR}/web/pre.js"
     "--pre-js=${CMAKE_SOURCE_DIR}/web/socket-proxy-shared.js"
-    "--js-library=${CMAKE_SOURCE_DIR}/web/socket-library.js"
 )
 
 # Apply common flags for all links (including CMake tests)
