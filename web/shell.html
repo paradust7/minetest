@@ -117,10 +117,12 @@
     <script src="luanti-init.js"></script>
     <script>
         const interval = setInterval(async () => {
-            if (!!window.Luanti) {
+            if (!!window.createLuantiInstance) {
                 clearInterval(interval);
             }
             else return;
+
+            const { instance, LuantiStateObject } = await createLuantiInstance();
 
             const progressListener = (progress) => {
                 const loadingProgress = document.getElementById('loading-progress-bar');
@@ -128,14 +130,14 @@
                     loadingProgress.style.width = (progress * 100).toFixed(2) + '%';
                 }
             };
-            Luanti.addProgressChangeListener(progressListener);
+            LuantiStateObject.addProgressChangeListener(progressListener);
 
-            if (await Luanti.isReady) {
+            if (await LuantiStateObject.isReady) {
                 document.getElementById('loading-screen').classList.add('hidden');
-                Luanti.removeProgressChangeListener(progressListener);
-                Luanti.run();
+                LuantiStateObject.removeProgressChangeListener(progressListener);
+                LuantiStateObject.run();
             }
-        }, 50);
+        }, 100);
     </script>
 
     <!-- Emscripten-generated JavaScript will be inserted here -->

@@ -186,6 +186,7 @@ set(EMSCRIPTEN_FINAL_EXE_FLAGS
     "-sEXPORTED_RUNTIME_METHODS=['callMain','ccall','cwrap','FS','ENV','GL','stringToNewUTF8']"
     "-sEXPORTED_FUNCTIONS=['_main','_SDL_SetClipboardText','_free']"
     "-sMODULARIZE=1"
+    "-sEXIT_RUNTIME=1"
     "-sEXPORT_NAME='LuantiModule'"
     
     # Shell and JS files
@@ -196,7 +197,7 @@ set(EMSCRIPTEN_FINAL_EXE_FLAGS
 
 # Apply common flags for all links (including CMake tests)
 string(REPLACE ";" " " EMSCRIPTEN_COMMON_FLAGS_STR "${EMSCRIPTEN_COMMON_FLAGS}")
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${EMSCRIPTEN_COMMON_FLAGS_STR} -L/usr/local/lib -fwasm-exceptions -sNO_EXIT_RUNTIME=0 -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1 -sUSE_OGG=1 -sUSE_VORBIS=1")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${EMSCRIPTEN_COMMON_FLAGS_STR} -L/usr/local/lib -fwasm-exceptions -sEXIT_RUNTIME=1 -sUSE_SDL=2 -sUSE_LIBJPEG=1 -sUSE_LIBPNG=1 -sUSE_ZLIB=1 -sUSE_FREETYPE=1 -sUSE_SQLITE3=1 -sUSE_OGG=1 -sUSE_VORBIS=1")
 
 # Enable C++ exception handling
 set(EXCEPTION_FLAGS "-fwasm-exceptions")
