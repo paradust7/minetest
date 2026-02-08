@@ -122,7 +122,7 @@
             }
             else return;
 
-            const { instance, LuantiStateObject } = await createLuantiInstance();
+            const { instancePromise, LuantiStateObject } = await createLuantiInstance();
 
             const progressListener = (progress) => {
                 const loadingProgress = document.getElementById('loading-progress-bar');

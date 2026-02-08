@@ -44,6 +44,31 @@ function createLuantiModuleConfiguration() {
         }
     };
 
+    const pasteHandler = function(e) {
+        let text = '';
+        if (e.clipboardData && e.clipboardData.getData) {
+            text = e.clipboardData.getData('text/plain');
+        } else if (window.clipboardData && window.clipboardData.getData) {
+            text = window.clipboardData.getData('Text');
+        }
+        
+        if (text && text.length > 0) {
+            if (typeof Module !== 'undefined' && Module._SDL_SetClipboardText) {
+                const ptr = Module.stringToNewUTF8(text);
+                Module._SDL_SetClipboardText(ptr);
+                Module._free(ptr);
+                console.log('[clipboard] Stored paste text via SDL_SetClipboardText:', text.substring(0, 30) + (text.length > 30 ? '...' : ''));
+            } else if (typeof Module !== 'undefined' && Module.ccall) {
+                try {
+                    Module.ccall('SDL_SetClipboardText', 'number', ['string'], [text]);
+                    console.log('[clipboard] Stored paste text via ccall:', text.substring(0, 30) + (text.length > 30 ? '...' : ''));
+                } catch (err) {
+                    console.warn('[clipboard] Failed to store paste text:', err);
+                }
+            }
+        }
+    };
+
     const Module = {
         // Preload everything but don't call main() until user clicks Run
         noInitialRun: true,
@@ -82,30 +107,7 @@ function createLuantiModuleConfiguration() {
                 window.addEventListener('keyup', preventKeyDefault, true);
                 window.addEventListener('keypress', preventKeyDefault, true);
 
-                document.addEventListener('paste', function(e) {
-                    let text = '';
-                    if (e.clipboardData && e.clipboardData.getData) {
-                        text = e.clipboardData.getData('text/plain');
-                    } else if (window.clipboardData && window.clipboardData.getData) {
-                        text = window.clipboardData.getData('Text');
-                    }
-                    
-                    if (text && text.length > 0) {
-                        if (typeof Module !== 'undefined' && Module._SDL_SetClipboardText) {
-                            const ptr = Module.stringToNewUTF8(text);
-                            Module._SDL_SetClipboardText(ptr);
-                            Module._free(ptr);
-                            console.log('[clipboard] Stored paste text via SDL_SetClipboardText:', text.substring(0, 30) + (text.length > 30 ? '...' : ''));
-                        } else if (typeof Module !== 'undefined' && Module.ccall) {
-                            try {
-                                Module.ccall('SDL_SetClipboardText', 'number', ['string'], [text]);
-                                console.log('[clipboard] Stored paste text via ccall:', text.substring(0, 30) + (text.length > 30 ? '...' : ''));
-                            } catch (err) {
-                                console.warn('[clipboard] Failed to store paste text:', err);
-                            }
-                        }
-                    }
-                });
+                document.addEventListener('paste', pasteHandler);
             }
         ],
         postRun: [],
@@ -268,20 +270,6 @@ function createLuantiModuleConfiguration() {
         });
     }
     
-    // Make scheduleResize globally accessible for onRuntimeInitialized
-    window.scheduleResize = scheduleResize;
-    
-    // Observe container size changes
-    try {
-        const container = document.getElementById('game-container') || (Module && Module.canvas ? Module.canvas.parentElement : null);
-        if (container && typeof ResizeObserver !== 'undefined') {
-            const ro = new ResizeObserver(scheduleResize);
-            ro.observe(container);
-        }
-    } catch (e) {
-        console.warn('ResizeObserver unavailable:', e);
-    }
-    
     // Window and fullscreen events
     window.addEventListener('resize', scheduleResize);
     window.addEventListener('orientationchange', scheduleResize);
@@ -372,13 +360,16 @@ function createLuantiModuleConfiguration() {
     };
 
     const cleanUp = function() {
-        window.removeEventListener('keydown', preventKeyDefault);
-        window.removeEventListener('keyup', preventKeyDefault);
-        window.removeEventListener('keypress', preventKeyDefault);
+        window.removeEventListener('keydown', preventKeyDefault, true);
+        window.removeEventListener('keyup', preventKeyDefault, true);
+        window.removeEventListener('keypress', preventKeyDefault, true);
         window.removeEventListener('error', errorHandler);
         window.removeEventListener('unhandledrejection', unhandledRejectionHandler);
         window.removeEventListener('resize', scheduleResize);
         window.removeEventListener('orientationchange', scheduleResize);
+        document.removeEventListener('fullscreenchange', scheduleResize);
+        document.removeEventListener('paste', pasteHandler);
+        Module.printErr('***** CLEANUP COMPLETE *****');
     };
 
     return {
@@ -397,9 +388,9 @@ window.createLuantiInstance = async () => {
     
     try {
         const { Module, LuantiStateObject, cleanUp } = createLuantiModuleConfiguration();
-        const instance = await LuantiModule(Module);
-        console.log('LuantiModule preloaded successfully');
-        return { instance, LuantiStateObject, cleanUp };
+        const instancePromise = LuantiModule(Module);
+        console.log('LuantiModule started loading');
+        return { instancePromise, LuantiStateObject, cleanUp };
     } catch (err) {
         console.error('Failed to preload LuantiModule:', err);
         throw err;
