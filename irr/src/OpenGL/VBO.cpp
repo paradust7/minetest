@@ -41,7 +41,10 @@ void OpenGLVBO::upload(const void *data, size_t size, size_t offset,
 		m_size = size;
 	} else {
 #ifdef __EMSCRIPTEN__
-		GL.BufferSubData(m_target, offset, size, data);
+		// Always use BufferData for streaming buffers to enable buffer orphaning
+		// This avoids glBufferSubData stalls on macOS WebGL drivers
+		GL.BufferData(m_target, size, data, usage);
+		m_size = size;
 #else
 		GL.BufferSubData(GL_ARRAY_BUFFER, offset, size, data);
 #endif
