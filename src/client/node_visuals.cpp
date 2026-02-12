@@ -4,6 +4,10 @@
 
 #include "node_visuals.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #include "mesh.h"
 #include "shader.h"
 #include "client.h"
@@ -185,6 +189,17 @@ static bool isWorldAligned(AlignStyle style, WorldAlignMode mode, NodeDrawType d
 /// @return maximum number of layers in array textures we can use (0 if unsupported)
 static size_t getArrayTextureMax(IShaderSource *shdsrc)
 {
+#ifdef __EMSCRIPTEN__
+	// Array textures via PROXY_TO_PTHREAD can fail on Firefox
+	// due to limited OffscreenCanvas WebGL2 support for GL_TEXTURE_2D_ARRAY.
+	bool is_firefox = EM_ASM_INT({
+		return navigator.userAgent.indexOf('Firefox') !== -1 ? 1 : 0;
+	});
+	if (is_firefox) {
+		infostream << "Array textures disabled (Firefox + PROXY_TO_PTHREAD)" << std::endl;
+		return 0;
+	}
+#endif
 	auto *driver = RenderingEngine::get_video_driver();
 	// needs to support creating array textures
 	if (!driver->queryFeature(video::EVDF_TEXTURE_2D_ARRAY))

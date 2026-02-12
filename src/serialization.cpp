@@ -181,8 +181,8 @@ struct ZSTD_Deleter {
 		ZSTD_freeCStream(cstream);
 	}
 
-	void operator() (ZSTD_DStream* dstream) {
-		ZSTD_freeDStream(dstream);
+	void operator() (ZSTD_DStream* ds) {
+		ZSTD_freeDStream(ds);
 	}
 };
 

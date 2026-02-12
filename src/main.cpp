@@ -140,6 +140,7 @@ int main(int argc, char *argv[])
 	debug_set_exception_handler();
 
 #ifdef __EMSCRIPTEN__
+	emscripten_sleep(100);
 	if (!emscripten_is_main_browser_thread()) {
 		backend_t opfs_backend = wasmfs_create_opfs_backend();
 		fprintf(stderr, "[OPFS] OPFS backend created successfully\n");

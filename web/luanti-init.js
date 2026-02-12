@@ -33,6 +33,14 @@ function createLuantiModuleConfiguration() {
             return;
         }
         
+        // Prevent "/" from opening Firefox's Quick Find
+        // Only block on 'keypress' — blocking on 'keydown' would suppress the
+        // keypress event entirely, preventing the character from reaching Emscripten/SDL.
+        if (e.key === '/' && e.type === 'keypress') {
+            e.preventDefault();
+            return;
+        }
+        
         // Prevent browser shortcuts (Ctrl/Cmd + key)
         if (e.ctrlKey || e.metaKey) {
             // Allow common text editing shortcuts

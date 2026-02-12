@@ -187,32 +187,38 @@ private:
 
 #ifdef __EMSCRIPTEN__
 /*
- * Emscripten/JSPI workaround: The thread_local LogStream objects trigger
- * complex static initialization involving std::ostream and mutex guards.
- * This causes "trying to suspend without WebAssembly.promising" errors
- * because JSPI isn't ready during static initialization.
+ * Emscripten/JSPI workaround: thread_local LogStream objects with std::ostream
+ * members trigger guarded static initialization (locale, facets) that calls
+ * EM_ASM internally. Since emscripten_asm_const_int is a JSPI import and only
+ * _main is in JSPI_EXPORTS, non-main threads crash with "trying to suspend
+ * without WebAssembly.promising".
  *
- * Use a simple no-op stream that avoids all the problematic initialization.
+ * Fix: use thread_local pointers (trivially constructible, no JSPI interaction)
+ * and lazily heap-allocate LogStream on first use. By then, the JSPI-wrapped
+ * main thread has already resolved all one-time locale guards, so std::ostream
+ * construction on other threads no longer triggers JSPI imports.
  */
-class NullLogStream {
-public:
-	template<typename T>
-	NullLogStream& operator<<(T&&) { return *this; }
-	NullLogStream& operator<<(std::ostream& (*)(std::ostream&)) { return *this; }
-	operator bool() const { return false; }
-	operator std::ostream&();  // Returns a static null stream
-};
+LogStream& get_dstream();
+LogStream& get_rawstream();
+LogStream& get_errorstream();
+LogStream& get_warningstream();
+LogStream& get_actionstream();
+LogStream& get_infostream();
+LogStream& get_verbosestream();
+LogStream& get_tracestream();
+LogStream& get_derr_con();
+LogStream& get_dout_con();
 
-extern NullLogStream dstream;
-extern NullLogStream rawstream;
-extern NullLogStream errorstream;
-extern NullLogStream warningstream;
-extern NullLogStream actionstream;
-extern NullLogStream infostream;
-extern NullLogStream verbosestream;
-extern NullLogStream tracestream;
-extern NullLogStream derr_con;
-extern NullLogStream dout_con;
+#define dstream       (get_dstream())
+#define rawstream     (get_rawstream())
+#define errorstream   (get_errorstream())
+#define warningstream (get_warningstream())
+#define actionstream  (get_actionstream())
+#define infostream    (get_infostream())
+#define verbosestream (get_verbosestream())
+#define tracestream   (get_tracestream())
+#define derr_con      (get_derr_con())
+#define dout_con      (get_dout_con())
 
 #else // !__EMSCRIPTEN__
 

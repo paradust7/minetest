@@ -73,33 +73,31 @@ LevelTarget verbose_target(g_logger, LL_VERBOSE);
 LevelTarget trace_target(g_logger, LL_TRACE);
 
 #ifdef __EMSCRIPTEN__
-// Emscripten/JSPI workaround: Use no-op streams to avoid problematic
-// thread_local static initialization that triggers mutex guards.
-// This prevents "trying to suspend without WebAssembly.promising" errors.
+// Emscripten/JSPI workaround: Lazily heap-allocate LogStream per thread via
+// thread_local pointers. The pointer itself is trivially constructible (no
+// JSPI interaction during TLS init). The LogStream (with std::ostream members)
+// is constructed on first use, by which time the main thread has resolved all
+// one-time locale/facet guards.
 
-// Null stream buffer that discards everything
-class NullStreamBuf : public std::streambuf {
-protected:
-	int overflow(int c) override { return c; }
-};
+#define DEFINE_LAZY_LOG_STREAM(getter_name, target_ref) \
+	LogStream& getter_name() { \
+		thread_local LogStream* s = nullptr; \
+		if (!s) s = new LogStream(target_ref); \
+		return *s; \
+	}
 
-static NullStreamBuf s_null_buf;
-static std::ostream s_null_ostream(&s_null_buf);
+DEFINE_LAZY_LOG_STREAM(get_dstream, none_target)
+DEFINE_LAZY_LOG_STREAM(get_rawstream, none_target_raw)
+DEFINE_LAZY_LOG_STREAM(get_errorstream, error_target)
+DEFINE_LAZY_LOG_STREAM(get_warningstream, warning_target)
+DEFINE_LAZY_LOG_STREAM(get_actionstream, action_target)
+DEFINE_LAZY_LOG_STREAM(get_infostream, info_target)
+DEFINE_LAZY_LOG_STREAM(get_verbosestream, verbose_target)
+DEFINE_LAZY_LOG_STREAM(get_tracestream, trace_target)
+DEFINE_LAZY_LOG_STREAM(get_derr_con, verbose_target)
+DEFINE_LAZY_LOG_STREAM(get_dout_con, trace_target)
 
-NullLogStream::operator std::ostream&() {
-	return s_null_ostream;
-}
-
-NullLogStream dstream;
-NullLogStream rawstream;
-NullLogStream errorstream;
-NullLogStream warningstream;
-NullLogStream actionstream;
-NullLogStream infostream;
-NullLogStream verbosestream;
-NullLogStream tracestream;
-NullLogStream derr_con;
-NullLogStream dout_con;
+#undef DEFINE_LAZY_LOG_STREAM
 
 #else // !__EMSCRIPTEN__
 
