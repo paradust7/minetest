@@ -179,6 +179,7 @@ function createLuantiModuleConfiguration() {
                 Module.printErr('Setting permissions on writable directories...');
                 const writableDirs = [
                     '/userdata',
+                    '/userdata/games',
                     '/userdata/cache',
                     '/userdata/cache/cdb',
                     '/userdata/mods',

@@ -177,10 +177,11 @@ set(EMSCRIPTEN_FINAL_EXE_FLAGS
     # Preload game data (can't be used during CMake tests)
     # With WASMFS=1, we preload directly to /userdata where Luanti expects them
     "--preload-file=${CMAKE_SOURCE_DIR}/builtin@/userdata/builtin"
-    "--preload-file=${CMAKE_SOURCE_DIR}/games@/userdata/games"
     "--preload-file=${CMAKE_SOURCE_DIR}/textures@/userdata/textures"
     "--preload-file=${CMAKE_SOURCE_DIR}/fonts@/userdata/fonts"
     "--preload-file=${CMAKE_SOURCE_DIR}/client@/userdata/client"
+    # Disable copying devtest game by default.
+    # "--preload-file=${CMAKE_SOURCE_DIR}/games@/userdata/games"
     
     # JavaScript/WASM settings
     "-sEXPORTED_RUNTIME_METHODS=['callMain','ccall','cwrap','FS','ENV','stringToNewUTF8','PThread','abort']"
