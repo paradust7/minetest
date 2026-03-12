@@ -53,6 +53,15 @@ extern "C" {
 #error Luanti cannot be built without exceptions or RTTI
 #endif
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/wasmfs.h>
+#include <emscripten/threading.h>
+#include <cstdio>
+#include <cerrno>
+#include <sys/stat.h>
+#endif
+
 #if defined(__MINGW32__) && !defined(__clang__)
 // see <https://github.com/luanti-org/luanti/issues/14140> or
 // <https://github.com/luanti-org/luanti/issues/10137> for some of the issues we had
@@ -129,6 +138,23 @@ int main(int argc, char *argv[])
 {
 	int retval;
 	debug_set_exception_handler();
+
+#ifdef __EMSCRIPTEN__
+	emscripten_sleep(100);
+	if (!emscripten_is_main_browser_thread()) {
+		backend_t opfs_backend = wasmfs_create_opfs_backend();
+		fprintf(stderr, "[OPFS] OPFS backend created successfully\n");
+		int err = wasmfs_create_directory("/userdata/worlds", 0777, opfs_backend);
+		if (err != 0) {
+			fprintf(stderr, "[OPFS] ERROR: Failed to mount OPFS at /userdata/worlds: %d (errno=%d)\n", err, errno);
+			fprintf(stderr, "[OPFS] World saves will NOT be persistent.\n");
+		}
+		else {
+			fprintf(stderr, "[OPFS] OPFS mounted at /userdata/worlds\n");
+    		fprintf(stderr, "[OPFS] World saves will persist across browser sessions!\n");
+		}
+	}
+#endif
 
 	g_logger.registerThread("Main");
 	g_logger.addOutputMaxLevel(&stderr_output, LL_ACTION);

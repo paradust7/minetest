@@ -12,6 +12,85 @@
 #include "log.h"
 #include "networkexceptions.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+
+// Emscripten: JavaScript socket proxy functions
+// These call into our SocketProxy JavaScript object for in-memory packet routing
+// With SharedArrayBuffer, SocketProxy is now thread-safe and works across all pthreads
+EM_JS(int, em_socket_create, (int domain, int type, int protocol), {
+	if (typeof SocketProxy === 'undefined') {
+		console.error('[socket.cpp] SocketProxy not found!');
+		return -1;
+	}
+	var fd = SocketProxy.socket(domain, type, protocol);
+	console.log('[socket.cpp] em_socket_create returning fd=' + fd);
+	return fd;
+});
+
+EM_JS(int, em_socket_bind, (int fd, const void* addr_bytes, int addr_len, int family, int port), {
+	// Create a Uint8Array view of the address bytes
+	var addr_data = new Uint8Array(HEAPU8.buffer, addr_bytes, addr_len).slice(0);
+	var result = SocketProxy.bind(fd, addr_data, family, port);
+	console.log('[socket.cpp] em_socket_bind(' + fd + ', ' + family + ', ' + port + ') = ' + result);
+	return result;
+});
+
+EM_JS(int, em_socket_sendto, (int fd, const void* data, int len, const void* dest_addr, int dest_addr_len, int dest_port), {
+	if (!self._luantiSendtoDestAddr) {
+		self._luantiSendtoDestAddr = new Uint8Array(16);
+		self._luantiSendtoData = new Uint8Array(512);
+	}
+	// Create a Uint8Array view of the address bytes
+	self._luantiSendtoDestAddr.set(new Uint8Array(HEAPU8.buffer, dest_addr, dest_addr_len));
+	self._luantiSendtoData.set(new Uint8Array(HEAPU8.buffer, data, len));
+	var result = SocketProxy.sendto(
+		fd,
+		new Uint8Array(self._luantiSendtoData.buffer, 0, len),
+		new Uint8Array(self._luantiSendtoDestAddr.buffer, 0, dest_addr_len),
+		dest_port
+	);
+	return result;
+});
+
+EM_JS(int, em_socket_recvfrom, (int fd, void* buffer, int len, void* src_addr, int* family, int* src_port, int timeout_ms), {
+	if (!self._luantiRecvfromData) {
+		self._luantiRecvfromData = new Uint8Array(512);
+		self._luantiRecvfromDestAddr = new Uint8Array(16);
+		self._luantiRecvfromSrcAddr = new Uint8Array(16);
+	}
+	var result = SocketProxy.recvfrom(fd, self._luantiRecvfromData, self._luantiRecvfromDestAddr, self._luantiRecvfromSrcAddr, len, timeout_ms);
+	
+	if (!result) {
+		// No data available (EAGAIN) - this is normal, don't spam logs
+		return -1;
+	}
+	
+	// Copy data to C++ buffers
+	HEAPU8.set(self._luantiRecvfromData.subarray(0, result.length), buffer);
+	if (family) {
+		HEAP32[family >> 2] = result.srcFamily;
+	}
+	if (src_port) {
+		HEAP32[src_port >> 2] = result.srcPort;
+	}
+	if (src_addr) {
+		if (result.srcFamily === AF_INET6) {
+			HEAPU8.set(self._luantiRecvfromSrcAddr, src_addr);
+		} else if (result.srcFamily === AF_INET) {
+			HEAPU8.set(self._luantiRecvfromSrcAddr.subarray(0, 4), src_addr);
+		}
+	}
+	
+	return result.length;
+});
+
+EM_JS(int, em_socket_close, (int fd), {
+	return SocketProxy.close(fd);
+});
+
+#endif // __EMSCRIPTEN__
+
 #ifdef _WIN32
 #include <windows.h>
 #include <winsock2.h>
@@ -82,7 +161,13 @@ bool UDPSocket::init(bool ipv6, bool noExceptions)
 
 	// Use IPv6 if specified
 	m_addr_family = ipv6 ? AF_INET6 : AF_INET;
+	
+#ifdef __EMSCRIPTEN__
+	// Emscripten: Use JavaScript socket proxy
+	m_handle = em_socket_create(m_addr_family, SOCK_DGRAM, IPPROTO_UDP);
+#else
 	m_handle = socket(m_addr_family, SOCK_DGRAM, IPPROTO_UDP);
+#endif
 
 	if (m_handle < 0) {
 		auto msg = std::string("Failed to create socket: ") +
@@ -101,7 +186,9 @@ bool UDPSocket::init(bool ipv6, bool noExceptions)
 UDPSocket::~UDPSocket()
 {
 	if (m_handle >= 0) {
-#ifdef _WIN32
+#ifdef __EMSCRIPTEN__
+		em_socket_close(m_handle);
+#elif defined(_WIN32)
 		closesocket(m_handle);
 #else
 		close(m_handle);
@@ -118,6 +205,27 @@ void UDPSocket::Bind(Address addr)
 		throw SocketException(errmsg);
 	}
 
+#ifdef __EMSCRIPTEN__
+	// Emscripten: Use JavaScript socket proxy for bind
+	EM_ASM({
+		console.log('[socket.cpp] Bind() called, fd=' + $0 + ', family=' + $1 + ', port=' + $2);
+	}, m_handle, m_addr_family, addr.getPort());
+	
+	// Pass address as raw bytes to em_socket_bind
+	int ret;
+	if (m_addr_family == AF_INET6) {
+		struct in6_addr ipv6 = addr.getAddress6();
+		ret = em_socket_bind(m_handle, &ipv6, sizeof(ipv6), m_addr_family, addr.getPort());
+	} else {
+		struct in_addr ipv4 = addr.getAddress();
+		ret = em_socket_bind(m_handle, &ipv4, sizeof(ipv4), m_addr_family, addr.getPort());
+	}
+	
+	if (ret < 0) {
+		tracestream << (int)m_handle << ": Bind failed (Emscripten)" << std::endl;
+		throw SocketException("Failed to bind socket");
+	}
+#else
 	if (m_addr_family == AF_INET6) {
 		// Allow our socket to accept both IPv4 and IPv6 connections
 		// required on Windows:
@@ -161,6 +269,7 @@ void UDPSocket::Bind(Address addr)
 			<< SOCKET_ERR_STR(LAST_SOCKET_ERR()) << std::endl;
 		throw SocketException("Failed to bind socket");
 	}
+#endif
 }
 
 void UDPSocket::Send(const Address &destination, const void *data, int size)
@@ -181,6 +290,16 @@ void UDPSocket::Send(const Address &destination, const void *data, int size)
 		throw SendFailedException("Address family mismatch");
 
 	int sent;
+#ifdef __EMSCRIPTEN__
+	// Emscripten: Use JavaScript socket proxy for sendto
+	if (m_addr_family == AF_INET6) {
+		struct in6_addr ipv6 = destination.getAddress6();
+		sent = em_socket_sendto(m_handle, data, size, &ipv6, sizeof(ipv6), destination.getPort());
+	} else {
+		struct in_addr ipv4 = destination.getAddress();
+		sent = em_socket_sendto(m_handle, data, size, &ipv4, sizeof(ipv4), destination.getPort());
+	}
+#else
 	if (m_addr_family == AF_INET6) {
 		struct sockaddr_in6 address = {};
 		address.sin6_family = AF_INET6;
@@ -198,6 +317,7 @@ void UDPSocket::Send(const Address &destination, const void *data, int size)
 		sent = sendto(m_handle, (const char *)data, size, 0,
 				(struct sockaddr *)&address, sizeof(struct sockaddr_in));
 	}
+#endif
 
 	if (sent != size)
 		throw SendFailedException("Failed to send packet");
@@ -205,6 +325,29 @@ void UDPSocket::Send(const Address &destination, const void *data, int size)
 
 int UDPSocket::Receive(Address &sender, void *data, int size)
 {
+#ifdef __EMSCRIPTEN__
+	// Emscripten: Use JavaScript socket proxy for recvfrom
+	// No WaitData needed - JavaScript proxy handles non-blocking
+	size = MYMAX(size, 0);
+	char src_addr_buf[16];
+	int src_port = 0;
+	int src_addr_family = 0;
+	int received = em_socket_recvfrom(m_handle, data, size, src_addr_buf, &src_addr_family, &src_port, m_timeout_ms);
+	if (received < 0)
+		return -1;
+	
+	if (src_addr_family == AF_INET6) {
+		IPv6AddressBytes bytes;
+		memcpy(bytes.bytes, src_addr_buf, 16);
+		sender = Address(&bytes, src_port);
+	} else if (src_addr_family == AF_INET) {
+		struct in_addr ipv4;
+		memcpy(&ipv4.s_addr, src_addr_buf, 4);
+		sender = Address(ntohl(ipv4.s_addr), src_port);
+	}
+
+	return received;
+#else
 	// Return on timeout
 	assert(m_timeout_ms >= 0);
 	if (!WaitData(m_timeout_ms))
@@ -247,6 +390,7 @@ int UDPSocket::Receive(Address &sender, void *data, int size)
 	}
 
 	return received;
+#endif
 }
 
 void UDPSocket::setTimeoutMs(int timeout_ms)

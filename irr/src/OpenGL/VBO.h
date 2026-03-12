@@ -13,8 +13,13 @@ namespace video
 class OpenGLVBO
 {
 public:
+#ifdef __EMSCRIPTEN__
+	/// @param target GL buffer target (GL_ARRAY_BUFFER or GL_ELEMENT_ARRAY_BUFFER)
+	OpenGLVBO(GLenum target = GL_ARRAY_BUFFER) : m_target(target) {}
+#else
 	/// @note does not create on GL side
 	OpenGLVBO() = default;
+#endif
 	/// @note does not free on GL side
 	~OpenGLVBO() = default;
 
@@ -26,6 +31,11 @@ public:
 	/// @return size of this buffer in bytes
 	size_t getSize() const { return m_size; }
 
+#ifdef __EMSCRIPTEN__
+	/// @return GL buffer target (GL_ARRAY_BUFFER or GL_ELEMENT_ARRAY_BUFFER)
+	GLenum getTarget() const { return m_target; }
+#endif
+
 	/**
 	 * Upload buffer data to GL.
 	 *
@@ -35,20 +45,23 @@ public:
 	 * @param offset offset to upload at
 	 * @param usage usage pattern passed to GL (only if buffer is new)
 	 * @param mustShrink force re-create of buffer if it became smaller
-	 * @note modifies GL_ARRAY_BUFFER binding
+	 * @note modifies buffer binding for this VBO's target
 	 */
 	void upload(const void *data, size_t size, size_t offset,
 		GLenum usage, bool mustShrink = false);
 
 	/**
 	 * Free buffer in GL.
-	 * @note modifies GL_ARRAY_BUFFER binding
+	 * @note modifies buffer binding for this VBO's target
 	 */
 	void destroy();
 
 private:
 	GLuint m_name = 0;
 	size_t m_size = 0;
+#ifdef __EMSCRIPTEN__
+	GLenum m_target = GL_ARRAY_BUFFER;  // WebGL-safe: separate buffers for vertices vs indices
+#endif
 };
 
 }

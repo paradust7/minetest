@@ -24,17 +24,37 @@ void OpenGLVBO::upload(const void *data, size_t size, size_t offset,
 		newBuffer = size != m_size;
 	}
 
+#ifdef __EMSCRIPTEN__
+	// WebGL-safe: Use the target this VBO was created for
+	GL.BindBuffer(m_target, m_name);
+#else
 	GL.BindBuffer(GL_ARRAY_BUFFER, m_name);
+#endif
 
 	if (newBuffer) {
 		assert(offset == 0);
+#ifdef __EMSCRIPTEN__
+		GL.BufferData(m_target, size, data, usage);
+#else
 		GL.BufferData(GL_ARRAY_BUFFER, size, data, usage);
+#endif
 		m_size = size;
 	} else {
+#ifdef __EMSCRIPTEN__
+		// Always use BufferData for streaming buffers to enable buffer orphaning
+		// This avoids glBufferSubData stalls on macOS WebGL drivers
+		GL.BufferData(m_target, size, data, usage);
+		m_size = size;
+#else
 		GL.BufferSubData(GL_ARRAY_BUFFER, offset, size, data);
+#endif
 	}
 
+#ifdef __EMSCRIPTEN__
+	GL.BindBuffer(m_target, 0);
+#else
 	GL.BindBuffer(GL_ARRAY_BUFFER, 0);
+#endif
 }
 
 void OpenGLVBO::destroy()

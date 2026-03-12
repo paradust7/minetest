@@ -185,6 +185,43 @@ private:
  * by the mutex in g_logger.
 */
 
+#ifdef __EMSCRIPTEN__
+/*
+ * Emscripten/JSPI workaround: thread_local LogStream objects with std::ostream
+ * members trigger guarded static initialization (locale, facets) that calls
+ * EM_ASM internally. Since emscripten_asm_const_int is a JSPI import and only
+ * _main is in JSPI_EXPORTS, non-main threads crash with "trying to suspend
+ * without WebAssembly.promising".
+ *
+ * Fix: use thread_local pointers (trivially constructible, no JSPI interaction)
+ * and lazily heap-allocate LogStream on first use. By then, the JSPI-wrapped
+ * main thread has already resolved all one-time locale guards, so std::ostream
+ * construction on other threads no longer triggers JSPI imports.
+ */
+LogStream& get_dstream();
+LogStream& get_rawstream();
+LogStream& get_errorstream();
+LogStream& get_warningstream();
+LogStream& get_actionstream();
+LogStream& get_infostream();
+LogStream& get_verbosestream();
+LogStream& get_tracestream();
+LogStream& get_derr_con();
+LogStream& get_dout_con();
+
+#define dstream       (get_dstream())
+#define rawstream     (get_rawstream())
+#define errorstream   (get_errorstream())
+#define warningstream (get_warningstream())
+#define actionstream  (get_actionstream())
+#define infostream    (get_infostream())
+#define verbosestream (get_verbosestream())
+#define tracestream   (get_tracestream())
+#define derr_con      (get_derr_con())
+#define dout_con      (get_dout_con())
+
+#else // !__EMSCRIPTEN__
+
 extern thread_local LogStream dstream;
 extern thread_local LogStream rawstream;  // Writes directly to all LL_NONE log outputs with no prefix.
 extern thread_local LogStream errorstream;
@@ -196,6 +233,8 @@ extern thread_local LogStream tracestream;
 // TODO: Search/replace these with verbose/tracestream
 extern thread_local LogStream derr_con;
 extern thread_local LogStream dout_con;
+
+#endif // __EMSCRIPTEN__
 
 #define TRACESTREAM(x) do {	\
 	if (tracestream) { 	\

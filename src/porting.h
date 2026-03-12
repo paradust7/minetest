@@ -42,8 +42,17 @@
 
 	#define SLEEP_ACCURACY_US 200
 
-	#define sleep_ms(x) usleep((x)*1000)
-	#define sleep_us(x) usleep(x)
+	#ifdef __EMSCRIPTEN__
+		// Emscripten with JSPI (ASYNCIFY=2) and PROXY_TO_PTHREAD: the app runs on a
+		// worker thread, so emscripten_sleep() works correctly without blocking the
+		// browser's main thread. JSPI handles the suspend/resume efficiently.
+		#include <emscripten.h>
+		#define sleep_ms(x) emscripten_sleep(x)
+		#define sleep_us(x) emscripten_sleep((x) / 1000)
+	#else
+		#define sleep_ms(x) usleep((x)*1000)
+		#define sleep_us(x) usleep(x)
+	#endif
 #endif
 
 #ifdef _MSC_VER
@@ -155,7 +164,7 @@ inline u64 getTimeNs() { return os_get_time(1000*1000*1000); }
 
 inline void os_get_clock(struct timespec *ts)
 {
-#if defined(CLOCK_MONOTONIC_RAW)
+#if defined(CLOCK_MONOTONIC_RAW) && !defined(__EMSCRIPTEN__)
 	clock_gettime(CLOCK_MONOTONIC_RAW, ts);
 #elif defined(_POSIX_MONOTONIC_CLOCK) && _POSIX_MONOTONIC_CLOCK > 0
 	clock_gettime(CLOCK_MONOTONIC, ts);
@@ -231,6 +240,11 @@ inline void preciseSleepUs(u64 sleep_time)
 {
 	if (sleep_time > 0)
 	{
+#ifdef __EMSCRIPTEN__
+		// On Emscripten, skip busy-waiting and just use sleep.
+		// JSPI handles suspend/resume efficiently, and busy loops waste CPU.
+		sleep_us(sleep_time);
+#else
 		u64 target_time = porting::getTimeUs() + sleep_time;
 		if (sleep_time > SLEEP_ACCURACY_US)
 			sleep_us(sleep_time - SLEEP_ACCURACY_US);
@@ -239,6 +253,7 @@ inline void preciseSleepUs(u64 sleep_time)
 		// The target - now > 0 construct will handle overflow gracefully (even though it should
 		// never happen)
 		while ((s64)(target_time - porting::getTimeUs()) > 0) {}
+#endif
 	}
 }
 

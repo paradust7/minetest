@@ -72,6 +72,35 @@ LevelTarget info_target(g_logger, LL_INFO);
 LevelTarget verbose_target(g_logger, LL_VERBOSE);
 LevelTarget trace_target(g_logger, LL_TRACE);
 
+#ifdef __EMSCRIPTEN__
+// Emscripten/JSPI workaround: Lazily heap-allocate LogStream per thread via
+// thread_local pointers. The pointer itself is trivially constructible (no
+// JSPI interaction during TLS init). The LogStream (with std::ostream members)
+// is constructed on first use, by which time the main thread has resolved all
+// one-time locale/facet guards.
+
+#define DEFINE_LAZY_LOG_STREAM(getter_name, target_ref) \
+	LogStream& getter_name() { \
+		thread_local LogStream* s = nullptr; \
+		if (!s) s = new LogStream(target_ref); \
+		return *s; \
+	}
+
+DEFINE_LAZY_LOG_STREAM(get_dstream, none_target)
+DEFINE_LAZY_LOG_STREAM(get_rawstream, none_target_raw)
+DEFINE_LAZY_LOG_STREAM(get_errorstream, error_target)
+DEFINE_LAZY_LOG_STREAM(get_warningstream, warning_target)
+DEFINE_LAZY_LOG_STREAM(get_actionstream, action_target)
+DEFINE_LAZY_LOG_STREAM(get_infostream, info_target)
+DEFINE_LAZY_LOG_STREAM(get_verbosestream, verbose_target)
+DEFINE_LAZY_LOG_STREAM(get_tracestream, trace_target)
+DEFINE_LAZY_LOG_STREAM(get_derr_con, verbose_target)
+DEFINE_LAZY_LOG_STREAM(get_dout_con, trace_target)
+
+#undef DEFINE_LAZY_LOG_STREAM
+
+#else // !__EMSCRIPTEN__
+
 thread_local LogStream dstream(none_target);
 thread_local LogStream rawstream(none_target_raw);
 thread_local LogStream errorstream(error_target);
@@ -82,6 +111,8 @@ thread_local LogStream verbosestream(verbose_target);
 thread_local LogStream tracestream(trace_target);
 thread_local LogStream derr_con(verbose_target);
 thread_local LogStream dout_con(trace_target);
+
+#endif // __EMSCRIPTEN__
 
 // Android
 #ifdef __ANDROID__

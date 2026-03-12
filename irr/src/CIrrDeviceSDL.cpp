@@ -118,6 +118,53 @@ static inline bool is_fake_key(EKEY_CODE key) {
 static int SDLDeviceInstances = 0;
 
 #ifdef _IRR_EMSCRIPTEN_PLATFORM_
+// Get device pixel ratio for high-DPI displays (e.g., Retina)
+// This must work in both main thread and worker thread contexts
+// The DPR is captured on the main thread before workers are created
+EM_JS(double, emscripten_get_device_pixel_ratio, (), {
+	// Workers don't have 'window', but they do have access to Module
+	// which was configured with devicePixelRatio before threading started
+	if (typeof Module !== 'undefined' && Module.devicePixelRatio) {
+		return Module.devicePixelRatio;
+	}
+	// Fallback to self (works in both window and worker contexts)
+	if (typeof self !== 'undefined' && self._luantiDevicePixelRatio) {
+		return self._luantiDevicePixelRatio;
+	}
+	// Last resort: try window (only works on main thread)
+	if (typeof window !== 'undefined' && window.devicePixelRatio) {
+		return window.devicePixelRatio;
+	}
+	// Default to 1.0 if nothing else works
+	return 1.0;
+});
+
+// Get the CSS size (client size) of the canvas, not the backing store size
+// This uses emscripten_run_script_int which runs on the main thread
+static void emscripten_get_canvas_css_size(const char* target, int* width, int* height) {
+	// Use emscripten_run_script to execute on main thread and get canvas CSS size
+	// This ensures we can access DOM elements even from worker threads
+	*width = emscripten_run_script_int(
+		"(function() {"
+		"  var canvas = Module['canvas'];"
+		"  if (!canvas && typeof document !== 'undefined') {"
+		"    canvas = document.getElementById('canvas');"
+		"  }"
+		"  return canvas ? (canvas.clientWidth || 0) : 0;"
+		"})()"
+	);
+	
+	*height = emscripten_run_script_int(
+		"(function() {"
+		"  var canvas = Module['canvas'];"
+		"  if (!canvas && typeof document !== 'undefined') {"
+		"    canvas = document.getElementById('canvas');"
+		"  }"
+		"  return canvas ? (canvas.clientHeight || 0) : 0;"
+		"})()"
+	);
+}
+
 EM_BOOL CIrrDeviceSDL::MouseUpDownCallback(int eventType, const EmscriptenMouseEvent *event, void *userData)
 {
 	// We need this callback so far only because otherwise "emscripten_request_pointerlock" calls will
@@ -646,11 +693,19 @@ bool CIrrDeviceSDL::createWindowWithContext()
 	SDL_GL_ResetAttributes();
 
 #ifdef _IRR_EMSCRIPTEN_PLATFORM_
-	if (Width != 0 || Height != 0)
-		emscripten_set_canvas_size(Width, Height);
-	else {
-		int w, h, fs;
-		emscripten_get_canvas_size(&w, &h, &fs);
+	// Use the new emscripten_*_canvas_element_size API which supports OffscreenCanvas
+	// The old emscripten_set/get_canvas_size API is deprecated and doesn't work with
+	// OFFSCREENCANVASES_TO_PTHREAD (throws "Cannot resize canvas after transferControlToOffscreen")
+	
+	// Don't apply DPR scaling here - let updateSizeAndScale() handle it
+	// The Width/Height from settings are CSS-level dimensions, and applying DPR here
+	// can cause mismatches. updateSizeAndScale() will be called right after this
+	// and will properly apply DPR scaling.
+	if (Width != 0 || Height != 0) {
+		emscripten_set_canvas_element_size("#canvas", Width, Height);
+	} else {
+		int w, h;
+		emscripten_get_canvas_element_size("#canvas", &w, &h);
 		Width = w;
 		Height = h;
 	}
@@ -672,7 +727,31 @@ bool CIrrDeviceSDL::createWindowWithContext()
 		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 0);
 	}
 
-	SDL_CreateWindowAndRenderer(0, 0, SDL_Flags, &Window, &Renderer); // 0,0 will use the canvas size
+	Window = SDL_CreateWindow("", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, Width, Height, SDL_Flags);
+	if (!Window) {
+		os::Printer::log("Could not create window", SDL_GetError(), ELL_WARNING);
+		return false;
+	}
+
+	Context = SDL_GL_CreateContext(Window);
+	if (!Context) {
+		os::Printer::log("Could not create context", SDL_GetError(), ELL_WARNING);
+		SDL_DestroyWindow(Window);
+		Window = nullptr;
+		return false;
+	}
+
+	updateSizeAndScale();
+	if (ScaleX != 1.0f || ScaleY != 1.0f) {
+		// The given window size is in pixels, not in screen coordinates.
+		// We can only do the conversion now since we didn't know the scale before.
+		SDL_SetWindowSize(Window,
+				static_cast<int>(CreationParams.WindowSize.Width / ScaleX),
+				static_cast<int>(CreationParams.WindowSize.Height / ScaleY));
+		// Re-center, otherwise large, non-maximized windows go offscreen.
+		SDL_SetWindowPosition(Window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+		updateSizeAndScale();
+	}
 
 	logAttributes();
 
@@ -869,6 +948,11 @@ bool CIrrDeviceSDL::run()
 			}
 			irrevent.MouseInput.X = MouseX;
 			irrevent.MouseInput.Y = MouseY;
+
+#ifdef __EMSCRIPTEN__
+			irrevent.MouseInput.XRel = MouseXRel;
+			irrevent.MouseInput.YRel = MouseYRel;
+#endif
 
 			irrevent.MouseInput.ButtonStates = MouseButtonStates;
 			irrevent.MouseInput.Shift = (keymod & SDL_KMOD_SHIFT) != 0;
@@ -1300,8 +1384,58 @@ void CIrrDeviceSDL::updateSizeAndScale()
 	int drawable_w, drawable_h;
 	SDL_GetWindowSizeInPixels(Window, &drawable_w, &drawable_h);
 
+#ifdef _IRR_EMSCRIPTEN_PLATFORM_
+	// On Emscripten, always get the CSS size and apply DPR manually
+	// SDL doesn't reliably handle DPR with OffscreenCanvas, so we do it ourselves
+	double dpr = emscripten_get_device_pixel_ratio();
+	
+	// Get CSS size from canvas element
+	int css_w = 0, css_h = 0;
+	try {
+		emscripten_get_canvas_css_size("#canvas", &css_w, &css_h);
+	} catch (...) {
+		// If we can't get CSS size, fall back to SDL values
+		css_w = 0;
+		css_h = 0;
+	}
+	
+	// Apply DPR scaling if we have valid CSS size
+	if (css_w > 0 && css_h > 0) {
+		// Calculate target size with DPR
+		int target_w = (int)(css_w * dpr);
+		int target_h = (int)(css_h * dpr);
+		
+		// Sanity check
+		if (target_w > 0 && target_h > 0 && target_w <= 16384 && target_h <= 16384) {
+			drawable_w = target_w;
+			drawable_h = target_h;
+			
+			// Set the canvas backing store size
+			emscripten_set_canvas_element_size("#canvas", drawable_w, drawable_h);
+			
+			// Scale is DPR
+			ScaleX = (float)dpr;
+			ScaleY = (float)dpr;
+			
+			char buf[256];
+			snprintf(buf, sizeof(buf), "updateSizeAndScale: CSS %dx%d * DPR %.2f = %dx%d", 
+				css_w, css_h, dpr, drawable_w, drawable_h);
+			os::Printer::log(buf, ELL_INFORMATION);
+		} else {
+			os::Printer::log("updateSizeAndScale: Target size out of range, using SDL defaults", ELL_WARNING);
+			ScaleX = (float)drawable_w / (float)window_w;
+			ScaleY = (float)drawable_h / (float)window_h;
+		}
+	} else {
+		// Couldn't get CSS size, use SDL defaults
+		os::Printer::log("updateSizeAndScale: No CSS size available, using SDL defaults", ELL_WARNING);
+		ScaleX = (float)drawable_w / (float)window_w;
+		ScaleY = (float)drawable_h / (float)window_h;
+	}
+#else
 	ScaleX = (float)drawable_w / (float)window_w;
 	ScaleY = (float)drawable_h / (float)window_h;
+#endif
 
 	Width = drawable_w;
 	Height = drawable_h;
